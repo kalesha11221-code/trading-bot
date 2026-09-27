@@ -1,0 +1,1065 @@
+import os
+import subprocess
+import sys
+
+# Auto-start trading bot in the background if running in cloud or locally
+if not os.environ.get("BOT_LAUNCHED"):
+    os.environ["BOT_LAUNCHED"] = "1"
+    try:
+        # Launch binance_bot.py as a separate background process
+        subprocess.Popen([sys.executable, "binance_bot.py"])
+    except Exception as e:
+        pass
+
+import streamlit as st
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+
+def fancy_metric(label, value, delta="", delta_color="normal"):
+    val_str = str(value)
+    if "₹" in val_str:
+        try:
+            clean_val = val_str.replace('₹', '').replace(',', '').strip()
+            val_f = float(clean_val)
+            int_p = int(abs(val_f))
+            dec_p = int(round(abs(val_f) % 1 * 100))
+            sign = "-" if val_f < 0 else ""
+            formatted_val = f"{sign}₹{int_p:,}<span style='font-size: 0.55em; opacity: 0.6;'>.{dec_p:02d}</span>"
+        except:
+            formatted_val = val_str
+    else:
+        formatted_val = val_str
+        
+    color_map = {
+        "normal": "#00ff00" if ("-" not in str(delta) and "నష్టం" not in str(delta) and "Loss" not in str(delta)) else "#ff3333",
+        "inverse": "#ff3333" if ("-" not in str(delta)) else "#00ff00",
+        "off": "gray"
+    }
+    
+    # Overrides based on text content
+    if delta:
+        if any(w in str(delta).lower() for w in ["సూపర్", "లాభం", "bullish", "profit", "up"]): color = "#00ff00"
+        elif any(w in str(delta).lower() for w in ["నష్టం", "loss", "bearish", "down", "risk", "రిస్క్"]): color = "#ff3333"
+        else: color = color_map.get(delta_color, "gray")
+        
+        delta_html = f"<div style='font-size: 0.9em; color: {color}; margin-top: 4px;'>{delta}</div>"
+    else:
+        delta_html = ""
+        
+    html = f'''
+    <div style="background-color: rgba(255, 255, 255, 0.05); padding: 15px; border-radius: 10px; margin-bottom: 15px; border-left: 3px solid {color if delta else '#555'};">
+        <div style="font-size: 0.85em; color: #a0a0a0; margin-bottom: 5px;">{label}</div>
+        <div style="font-size: 1.8em; font-weight: bold; color: white;">{formatted_val}</div>
+        {delta_html}
+    </div>
+    '''
+    return html
+
+
+from plotly.subplots import make_subplots
+import time
+
+import base64
+from gtts import gTTS
+from streamlit_mic_recorder import speech_to_text
+import google.generativeai as genai
+
+# గూగుల్ జెమినీ API కీ సెటప్
+GEMINI_API_KEY = "AQ.Ab8RN6KSOIMcia4BvnmtR5CxhuTrDJ7jQxe9MmwfCPXIDRQ_Ig"
+genai.configure(api_key=GEMINI_API_KEY)
+
+st.set_page_config(page_title="AI Trading Master Dashboard", layout="wide", initial_sidebar_state="expanded")
+
+# 🌟 Professional CSS Styling
+st.markdown("""
+<style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    /* Tab styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 20px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: #1e1e1e;
+        border-radius: 10px 10px 0px 0px;
+        padding: 10px 20px;
+        box-shadow: 0px 2px 5px rgba(0,0,0,0.2);
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #2e7bcf !important;
+        color: white !important;
+        font-weight: bold;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
+# Live Bot Toast Notifications (Right Corner Alerts)
+if 'last_toast_log' not in st.session_state:
+    st.session_state.last_toast_log = ""
+
+if os.path.exists('bot_logs.txt'):
+    try:
+        with open('bot_logs.txt', 'r') as f:
+            lines = f.readlines()
+            if lines:
+                last_line = lines[-1].strip()
+                if last_line and last_line != st.session_state.last_toast_log:
+                    st.session_state.last_toast_log = last_line
+                    # Don't toast the boring "HOLD" scans, only Action or Extreme logs
+                    if "BUY" in last_line:
+                        st.toast(last_line, icon="🚀")
+                    elif "SELL" in last_line:
+                        st.toast(last_line, icon="📉")
+                    elif "ONLINE" in last_line:
+                        st.toast(last_line, icon="🔥")
+                    elif "ఎర్రర్" in last_line:
+                        st.toast(last_line, icon="⚠️")
+                    elif "HOLD" not in last_line:
+                        st.toast(last_line, icon="🤖")
+    except:
+        pass
+
+st.title("📈 AI Trading Master - Live Dashboard")
+
+# Display Market Segment Badge
+st.markdown('''
+<div style="display: flex; gap: 10px; margin-bottom: 20px;">
+    <span style="background-color: #2e7d32; color: white; padding: 5px 15px; border-radius: 20px; font-weight: bold; font-size: 14px;">📈 Market: SPOT TRADING</span>
+    <span style="background-color: #1565c0; color: white; padding: 5px 15px; border-radius: 20px; font-weight: bold; font-size: 14px;">🤖 AI Engine: Active</span>
+</div>
+''', unsafe_allow_html=True)
+
+st.markdown("ప్రొఫెషనల్ ట్రేడర్స్ ఉపయోగించే అడ్వాన్స్డ్ టెక్నికల్ అనాలసిస్ (EMA, RSI, MACD) ఆధారంగా పనిచేసే AI బాట్.")
+
+# Live Refresh Button
+colA, colB = st.columns([8, 2])
+with colA:
+    pass # Title is already above
+with colB:
+    if st.button("🔄 Get Live Updates", use_container_width=True):
+        st.toast("✅ లాగ్స్ అప్‌డేట్ అయ్యాయి!", icon="🔄")
+
+
+# Sidebar options
+st.sidebar.header("⚙️ Settings")
+symbol_options = {
+    # Crypto
+    "Bitcoin (BTC)": "BTC-USD",
+    "Ethereum (ETH)": "ETH-USD",
+    "Solana (SOL)": "SOL-USD",
+    "Binance Coin (BNB)": "BNB-USD",
+    
+    # Indian Stocks
+    "Nifty 50 (Index)": "^NSEI",
+    "Bank Nifty (Index)": "^NSEBANK",
+    "Reliance": "RELIANCE.NS",
+    "Infosys": "INFY.NS",
+    "SBI": "SBIN.NS",
+    
+    # US Stocks
+    "Apple (AAPL)": "AAPL",
+    "Tesla (TSLA)": "TSLA",
+    "Nvidia (NVDA)": "NVDA",
+    "Amazon (AMZN)": "AMZN",
+    
+    # Forex
+    "EUR/USD": "EURUSD=X",
+    "GBP/USD": "GBPUSD=X",
+    "USD/JPY": "JPY=X",
+    
+    # Commodities
+    "Gold (MCX/COMEX)": "GC=F",
+    "Crude Oil": "CL=F"
+}
+
+
+st.sidebar.title("🤖 AI Trading Mode")
+
+# Trading Mode Switch
+trading_mode = st.sidebar.radio("స్విచ్ (Mode Switch)", ["📝 Paper Trading (Virtual)", "💰 Live Trading (Binance)"])
+st.sidebar.markdown("---")
+
+live_usdt_balance = 0.0
+# Always fetch and show Real Binance Balance regardless of mode!
+try:
+    import ccxt
+    API_KEY = "guVp9OI7eoqXeNvKy1DlalCwwcP2W2CHRm6FWRy1mxY3AwZCdW7hIk9ubEVPrIoN"
+    SECRET_KEY = "sdpe9Q3BVdmzTnhhDY7zraFH2SDIBPWt6UTuY70n6ycLHPueEpYuHviS7imsHzNf"
+    exchange = ccxt.binance({
+        'apiKey': API_KEY,
+        'secret': SECRET_KEY,
+        'enableRateLimit': True,
+    })
+    balance = exchange.fetch_balance()
+    live_usdt_balance = balance['free'].get('USDT', 0.0)
+    st.sidebar.success(f"✅ Real Binance Balance: **${live_usdt_balance:.2f}**")
+
+
+
+except Exception as e:
+    st.sidebar.error(f"⚠️ బినాన్స్ కనెక్ట్ అవ్వలేదు. (Keys Check చేయండి)")
+    if trading_mode == "💰 Live Trading (Binance)":
+        trading_mode = "📝 Paper Trading (Virtual)"
+
+if trading_mode == "📝 Paper Trading (Virtual)":
+    st.sidebar.info("ప్రస్తుతం ప్రాక్టీస్ (Virtual) మోడ్ లో ఉంది. మీ రియల్ బినాన్స్ మనీ కట్ అవ్వదు.")
+else:
+    st.sidebar.warning("⚠️ Live Trading On! బాట్ నిజమైన ట్రేడ్స్ చేస్తుంది.")
+
+# Save mode to file for binance_bot.py to read
+with open('trading_mode.txt', 'w') as f:
+    f.write(trading_mode)
+
+
+import json
+
+# Load existing settings or defaults
+try:
+    with open('settings.json', 'r') as f:
+        bot_settings = json.load(f)
+except:
+    bot_settings = {"risk_level": "Moderate (Smart AI)", "trading_style": "Scalping (Fast)", "panic_mode": False}
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("🛠️ AI Advanced Settings")
+
+# 1. Trading Style
+new_style = st.sidebar.selectbox(
+    "⏱️ Trading Style", 
+    ["Scalping (Fast)", "Swing (Hold for Targets)"], 
+    index=["Scalping (Fast)", "Swing (Hold for Targets)"].index(bot_settings.get("trading_style", "Scalping (Fast)"))
+)
+
+# 2. Risk Management
+
+# 4. Market Segment
+st.sidebar.markdown("<br>", unsafe_allow_html=True)
+market_segment = st.sidebar.selectbox(
+    "📊 Market Segment", 
+    ["Spot Trading (Safe & Real Assets)", "Futures (Coming Soon)", "Options (Coming Soon)"], 
+    index=0
+)
+
+new_risk = st.sidebar.select_slider(
+    "🔥 Risk Aggression",
+    options=["Safe (Low Risk)", "Moderate (Smart AI)", "Extreme (High Profit)"],
+    value=bot_settings.get("risk_level", "Moderate (Smart AI)")
+)
+
+# 3. Panic Button (Emergency Stop)
+st.sidebar.markdown("<br>", unsafe_allow_html=True)
+panic = st.sidebar.button("🛑 EMERGENCY PANIC STOP", help="కొన్న కాయిన్స్ అన్నీ వెంటనే అమ్మేసి బాట్ ని ఆపేస్తుంది!", use_container_width=True)
+
+# Update settings if changed
+if new_style != bot_settings.get("trading_style") or new_risk != bot_settings.get("risk_level") or panic:
+    bot_settings["trading_style"] = new_style
+    bot_settings["risk_level"] = new_risk
+    if panic:
+        bot_settings["panic_mode"] = True
+        st.sidebar.error("🚨 Panic Mode Activated! అన్నీ అమ్మేస్తోంది...")
+    
+    with open('settings.json', 'w') as f:
+        json.dump(bot_settings, f)
+    st.toast("✅ Settings Updated Successfully!", icon="⚙️")
+    
+if bot_settings.get("panic_mode"):
+    st.sidebar.warning("⚠️ ప్రస్తుతం బాట్ PANIC STOP లో ఉంది. రీస్టార్ట్ చేయడానికి కింద బటన్ నొక్కండి.")
+    if st.sidebar.button("▶️ Resume Trading"):
+        bot_settings["panic_mode"] = False
+        with open('settings.json', 'w') as f:
+            json.dump(bot_settings, f)
+        st.rerun()
+
+
+# AI Brain Status Widget
+try:
+    with open('ai_brain.json', 'r') as f:
+        brain = json.load(f)
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🧠 AI Self-Learning Brain")
+    st.sidebar.caption(f"Learning Iterations: {brain.get('learning_iterations', 0)}")
+    
+    st.sidebar.progress(brain.get('ML_weight', 1.0) / 2.0, text=f"ML Prediction Trust ({brain.get('ML_weight', 1.0):.2f})")
+    st.sidebar.progress(brain.get('MACD_weight', 1.0) / 2.0, text=f"MACD Strategy ({brain.get('MACD_weight', 1.0):.2f})")
+    st.sidebar.progress(brain.get('RSI_weight', 1.0) / 2.0, text=f"RSI Strategy ({brain.get('RSI_weight', 1.0):.2f})")
+    st.sidebar.progress(brain.get('BOL_weight', 1.0) / 2.0, text=f"Bollinger Strategy ({brain.get('BOL_weight', 1.0):.2f})")
+except:
+    pass
+
+st.sidebar.markdown("---")
+
+portfolio_value = 10000.0 if trading_mode == "📝 Paper Trading (Virtual)" else (live_usdt_balance * 84.5)
+roi = 0.0
+invested_amount = 0.0
+available_cash = portfolio_value
+
+st.sidebar.markdown("---")
+
+selected_name = st.sidebar.selectbox("ట్రేడింగ్ పెయిర్ (Trading Pair) ఎంచుకోండి:", list(symbol_options.keys()))
+symbol = symbol_options[selected_name]
+
+# బాట్ కి కూడా ఇదే సింబల్ వెళ్ళడానికి ఫైల్ లో సేవ్ చేద్దాం
+with open('selected_symbol.txt', 'w') as f:
+    f.write(symbol)
+
+timeframe = '1m'
+auto_refresh = st.sidebar.checkbox("🟢 Auto Refresh (Live)", value=False)
+enable_voice = st.sidebar.checkbox("🔊 బాట్ వాయిస్ (Voice Output)", value=True)
+st.sidebar.markdown("---")
+st.sidebar.info("ఈరోజు ఆదివారం కాబట్టి ఇండియన్ స్టాక్ మార్కెట్ ఆగిపోయి ఉంటుంది. కేవలం Bitcoin మాత్రమే లైవ్ లో కదులుతుంది!")
+
+@st.cache_data(ttl=30) # 30 సెకన్లకు ఒకసారి మాత్రమే ఫ్రెష్ డేటా తెస్తుంది
+def fetch_and_analyze(sym):
+    try:
+        # Yahoo Finance నుండి డేటా తెచ్చుకోవడం
+        df = yf.download(sym, period="1d", interval="1m", progress=False)
+        if df.empty:
+            df = yf.download(sym, period="5d", interval="1m", progress=False)
+        
+        # yfinance columns are MultiIndex sometimes, so flatten them if needed
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+            
+        df = df.reset_index()
+        df.rename(columns={'Datetime': 'timestamp', 'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close', 'Volume': 'volume'}, inplace=True)
+        
+        if df.empty:
+            return None, "HOLD", None
+            
+        # 1. EMA
+        df['EMA_50'] = df['close'].ewm(span=50, adjust=False).mean()
+        df['EMA_200'] = df['close'].ewm(span=200, adjust=False).mean()
+        
+        # సపోర్ట్ అండ్ రెసిస్టెన్స్
+        df['Support'] = df['low'].rolling(window=200).min()
+        df['Resistance'] = df['high'].rolling(window=200).max()
+        
+        # 2. RSI
+        delta = df['close'].diff()
+        gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+        loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+        rs = gain / loss
+        df['RSI'] = 100 - (100 / (1 + rs))
+        
+        # 3. MACD
+        ema_12 = df['close'].ewm(span=12, adjust=False).mean()
+        ema_26 = df['close'].ewm(span=26, adjust=False).mean()
+        df['MACD_Line'] = ema_12 - ema_26
+        df['MACD_Signal'] = df['MACD_Line'].ewm(span=9, adjust=False).mean()
+        
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
+        
+        near_support = last['close'] <= (last['Support'] * 1.002)
+        near_resistance = last['close'] >= (last['Resistance'] * 0.998)
+        
+        avg_volume = df['volume'].rolling(window=20).mean()
+        volume_spike = last['volume'] > (avg_volume.iloc[-1] * 2) if not pd.isna(avg_volume.iloc[-1]) else False
+        
+        buy_score = 0
+        sell_score = 0
+        
+        if last['close'] > last['EMA_200']: buy_score += 1
+        else: sell_score += 1
+            
+        if last['RSI'] < 35: buy_score += 2
+        elif last['RSI'] > 70: sell_score += 2
+            
+        if prev['MACD_Line'] <= prev['MACD_Signal'] and last['MACD_Line'] > last['MACD_Signal']: buy_score += 2
+        elif prev['MACD_Line'] >= prev['MACD_Signal'] and last['MACD_Line'] < last['MACD_Signal']: sell_score += 2
+            
+        if near_support: buy_score += 2
+        if near_resistance: sell_score += 2
+            
+        if volume_spike:
+            if last['close'] > prev['close']: buy_score += 1
+            else: sell_score += 1
+            
+        signal = "HOLD"
+        if buy_score >= 3: signal = "BUY"
+        elif sell_score >= 3: signal = "SELL"
+            
+        return df, signal, last
+    
+
+
+    except Exception as e:
+        st.error(f"డేటా తేవడంలో ఎర్రర్: {e}")
+        return None, "HOLD", None
+
+placeholder = st.empty()
+
+tab1, tab2 = st.tabs(["🔴 Live Trading Dashboard", "🔥 Pro Market Screener (All Stocks)"])
+
+with tab1:
+    def draw_dashboard():
+        df, signal, last = fetch_and_analyze(symbol)
+        if df is None:
+            st.warning("మార్కెట్ డేటా దొరకలేదు. బహుశా మార్కెట్ క్లోజ్ అయ్యిందేమో!")
+            return
+        current_price = last['close']
+        
+        with placeholder.container():
+            initial_capital = 10000.00 if trading_mode == "📝 Paper Trading (Virtual)" else (live_usdt_balance * 84.5)
+            total_profit = 0.0
+            current_balance = initial_capital
+            invested_amount = 0.0
+            
+            if os.path.exists('trades_log.csv'):
+                try:
+                    hist_df = pd.read_csv('trades_log.csv')
+                    
+                    # 1. Calculate PnL from SELL trades
+                    if 'Profit' in hist_df.columns:
+                        g_prof = 0.0
+                        g_loss = 0.0
+                        taxes = 0.0
+                        for idx, row in hist_df.iterrows():
+                            if row['Action'] == 'SELL' and str(row['Profit']) != '-':
+                                p_str = str(row['Profit']).replace('₹', '').replace(',', '')
+                                if p_str.startswith('-'):
+                                    p = -float(p_str.replace('-', ''))
+                                else:
+                                    p = float(p_str)
+                                if p > 0:
+                                    g_prof += p
+                                elif p < 0:
+                                    g_loss += abs(p)
+                                taxes += 0.50
+                        total_profit = (g_prof - g_loss) - taxes
+                        
+                    # 2. Calculate Invested Amount from Open BUY trades
+                    for sym, group in hist_df.groupby('Symbol'):
+                        last_trade = group.iloc[-1]
+                        if last_trade['Action'] == 'BUY':
+                            price = float(str(last_trade['Price']).replace('₹', '').replace(',', ''))
+                            qty = float(last_trade['Shares'])
+                            invested_amount += (price * qty)
+                            
+                except:
+                    pass
+
+            portfolio_value = initial_capital + total_profit
+            available_cash = portfolio_value - invested_amount
+            roi = (total_profit / initial_capital) * 100 if initial_capital > 0 else 0.0
+            
+            title_str = "Virtual: ₹10,000" if trading_mode == "📝 Paper Trading (Virtual)" else "Live Binance USDT"
+            st.markdown(f"### 🏦 పోర్ట్‌ఫోలియో బ్యాలెన్స్ ({title_str})")
+            b1, b2, b3, b4 = st.columns(4)
+            b1.markdown(fancy_metric("టోటల్ పోర్ట్‌ఫోలియో", f"₹{portfolio_value:,.2f}", f"{roi:.2f}% ROI"), unsafe_allow_html=True)
+            b2.markdown(fancy_metric("ఇన్వెస్ట్ చేసిన మొత్తం (Locked)", f"₹{invested_amount:,.2f}", "-ట్రేడ్స్ లో ఉంది", "off"), unsafe_allow_html=True)
+            b3.markdown(fancy_metric("మిగిలిన క్యాష్ (Margin)", f"₹{available_cash:,.2f}", "ట్రేడింగ్ కి రెడీ"), unsafe_allow_html=True)
+            if signal == "BUY": b4.success(f"🤖 Action: {signal}")
+            elif signal == "SELL": b4.error(f"🤖 Action: {signal}")
+            else: b4.warning(f"🤖 Action: {signal}")
+
+            st.markdown("---")
+            
+            # 🌟 Professional UI Tabs
+            tab1, tab2, tab3 = st.tabs(["📊 Live Trading Chart", "🏦 PnL & History", "💬 AI తో మాట్లాడండి (Voice Chat)"])
+            
+            with tab1:
+                st.markdown("### 📈 టెక్నికల్ అనాలసిస్ (Live Data)")
+                
+                # --- NEW PREMIUM GAUGE CHART ---
+                gauge_val = 50
+                if signal == "BUY": gauge_val = 85
+                elif signal == "SELL": gauge_val = 15
+                
+                fig_gauge = go.Figure(go.Indicator(
+                    mode = "gauge",
+                    value = gauge_val,
+                    domain = {'x': [0, 1], 'y': [0, 1]},
+                    title = {'text': f"🤖 AI మార్కెట్ సెంటిమెంట్: <b>{signal}</b>", 'font': {'size': 20, 'color': 'white'}},
+                    gauge = {
+                        'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "white"},
+                        'bar': {'color': "white"},
+                        'bgcolor': "black",
+                        'borderwidth': 2,
+                        'bordercolor': "gray",
+                        'steps': [
+                            {'range': [0, 35], 'color': 'rgba(255, 50, 50, 0.8)'},     # Red / Sell
+                            {'range': [35, 65], 'color': 'rgba(100, 100, 100, 0.6)'}, # Gray / Hold
+                            {'range': [65, 100], 'color': 'rgba(50, 255, 50, 0.8)'}], # Green / Buy
+                    }
+                ))
+                fig_gauge.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10), template='plotly_dark')
+                
+                col_g1, col_g2 = st.columns([1, 2])
+                with col_g1:
+                    st.plotly_chart(fig_gauge, use_container_width=True)
+                with col_g2:
+                    st.markdown("<br><br>", unsafe_allow_html=True)
+                    
+                    
+                    @st.cache_data(ttl=600)
+                    def get_news_with_sentiment(sym):
+                        try:
+                            import urllib.request
+                            import xml.etree.ElementTree as ET
+                            search_term = sym.replace('-USD', '') + " market news crypto"
+                            url = f"https://news.google.com/rss/search?q={search_term.replace(' ', '+')}&hl=en-US&gl=US&ceid=US:en"
+                            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                            with urllib.request.urlopen(req) as response:
+                                xml_data = response.read()
+                            root = ET.fromstring(xml_data)
+                            
+                            pos_words = ['surge', 'soar', 'bull', 'high', 'profit', 'gain', 'buy', 'up', 'breakout', 'record', 'pump']
+                            neg_words = ['crash', 'fall', 'bear', 'drop', 'loss', 'sell', 'down', 'hack', 'ban', 'lawsuit', 'dump']
+                            
+                            news_items = []
+                            score = 0
+                            for item in root.findall('.//item')[:4]:
+                                title = item.find('title').text
+                                link = item.find('link').text
+                                news_items.append((title, link))
+                                
+                                title_lower = title.lower()
+                                for w in pos_words:
+                                    if w in title_lower: score += 1
+                                for w in neg_words:
+                                    if w in title_lower: score -= 1
+                                    
+                            return news_items, score
+                        except:
+                            return [], 0
+
+                    news, sentiment_score = get_news_with_sentiment(symbol)
+                    
+                    st.markdown("##### ⚡ Extreme AI Engine Status")
+
+                    
+                    # Compute ML Prediction
+                    try:
+                        x = np.arange(20)
+                        y = df['close'].tail(20).values
+                        slope, intercept = np.polyfit(x, y, 1)
+                        predicted_next = slope * 20 + intercept
+                        ml_status = "Up (Bullish)" if slope > 0 else "Down (Bearish)"
+                    except:
+                        predicted_next = current_price
+                        ml_status = "Neutral"
+                        
+                    # Compute Kelly Criterion
+                    try:
+                        if os.path.exists('trades_log.csv'):
+                            tdf = pd.read_csv('trades_log.csv')
+                            sym_trades = tdf[(tdf['Symbol'] == symbol) & (tdf['Action'] == 'SELL')]
+                            total_trades = len(sym_trades)
+                            if total_trades > 0:
+                                wins = len(sym_trades[sym_trades['Profit'] > 0])
+                                win_rate = wins / total_trades
+                                kelly_pct = max(0.05, min(0.60, (2 * win_rate - 1))) * 100
+                            else:
+                                kelly_pct = 20.0
+                        else:
+                            kelly_pct = 20.0
+                    except:
+                        kelly_pct = 20.0
+
+                    m1, m2, m3 = st.columns(3)
+                    m1.markdown(fancy_metric("ట్రేడింగ్ పెయిర్", symbol), unsafe_allow_html=True)
+                    m2.markdown(fancy_metric("లైవ్ ప్రైస్", f"₹{current_price:,.2f}"), unsafe_allow_html=True)
+                    m3.markdown(fancy_metric("RSI (14)", f"{last['RSI']:.1f}", "Overbought" if last['RSI']>70 else "Oversold" if last['RSI']<30 else "Normal", "inverse"), unsafe_allow_html=True)
+                    
+                    st.markdown("---")
+                    e1, e2, e3 = st.columns(3)
+                    e1.markdown(fancy_metric("🤖 ML Predictor (2m)", f"₹{predicted_next:,.2f}", ml_status), unsafe_allow_html=True)
+                    e2.markdown(fancy_metric("📰 News Sentiment (Score)", f"{sentiment_score}", "Bullish" if sentiment_score > 0 else "Bearish" if sentiment_score < 0 else "Neutral"), unsafe_allow_html=True)
+                    e3.markdown(fancy_metric("⚡ Kelly Risk %", f"{kelly_pct:.1f}%", "Auto-Compounding"), unsafe_allow_html=True)
+
+                with st.expander("📰 బ్రేకింగ్ న్యూస్ (Live News)"):
+                    if news:
+                        for title, link in news:
+                            st.write(f"🔹 **[{title}]({link})**")
+                    else:
+                        st.write("ఈ స్టాక్ కి సంబంధించి తాజా వార్తలు ఏమీ లేవు.")
+
+
+                
+
+                
+                st.subheader("📊 Advanced Technical Chart")
+                # Subplots: 1 for Price/EMA, 1 for MACD, 1 for RSI
+                fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.6, 0.2, 0.2])
+                
+                # Row 1: Candlesticks & EMA
+                fig.add_trace(go.Candlestick(x=df['timestamp'], open=df['open'], high=df['high'], low=df['low'], close=df['close'], name='Price'), row=1, col=1)
+                fig.add_trace(go.Scatter(x=df['timestamp'], y=df['EMA_50'], line=dict(color='cyan', width=1.5), name='EMA 50'), row=1, col=1)
+                fig.add_trace(go.Scatter(x=df['timestamp'], y=df['EMA_200'], line=dict(color='orange', width=2), name='EMA 200 (Trend)'), row=1, col=1)
+                
+                # Row 2: MACD
+                fig.add_trace(go.Scatter(x=df['timestamp'], y=df['MACD_Line'], line=dict(color='blue', width=1.5), name='MACD'), row=2, col=1)
+                fig.add_trace(go.Scatter(x=df['timestamp'], y=df['MACD_Signal'], line=dict(color='orange', width=1.5), name='Signal'), row=2, col=1)
+                # MACD Histogram
+                colors = ['green' if val >= 0 else 'red' for val in (df['MACD_Line'] - df['MACD_Signal'])]
+                fig.add_trace(go.Bar(x=df['timestamp'], y=(df['MACD_Line'] - df['MACD_Signal']), marker_color=colors, name='Histogram'), row=2, col=1)
+                
+                # Row 3: RSI
+                fig.add_trace(go.Scatter(x=df['timestamp'], y=df['RSI'], line=dict(color='purple', width=1.5), name='RSI'), row=3, col=1)
+                # RSI Overbought/Oversold lines
+                fig.add_hline(y=70, line_dash="dash", line_color="red", row=3, col=1)
+                fig.add_hline(y=30, line_dash="dash", line_color="green", row=3, col=1)
+
+                fig.update_layout(template='plotly_dark', height=800, xaxis_rangeslider_visible=False, margin=dict(l=0, r=0, t=30, b=0))
+                st.plotly_chart(fig, use_container_width=True)
+                
+
+            with tab2:
+                st.subheader("🔥 లైవ్ లో రన్ అవుతున్న ట్రేడ్స్ (Open Positions)")
+                if os.path.exists('trades_log.csv'):
+                    tdf = pd.read_csv('trades_log.csv')
+                    open_pos = {}
+                    for idx, row in tdf.iterrows():
+                        sym = row['Symbol']
+                        action = row['Action']
+                        try:
+                            qty = float(str(row['Shares']).replace(',', ''))
+                            price = float(str(row['Price']).replace('₹', '').replace(',', ''))
+                        except:
+                            continue
+                        if action == 'BUY':
+                            open_pos[sym] = {'qty': qty, 'buy_price': price, 'time': row['Time']}
+                        elif action == 'SELL':
+                            if sym in open_pos:
+                                del open_pos[sym]
+                                
+                    if len(open_pos) > 0:
+                        st.write(f"మొత్తం **{len(open_pos)}** కాయిన్స్/స్టాక్స్ లో మీ డబ్బులు ఇన్వెస్ట్ అయ్యి ఉన్నాయి. వాటి లైవ్ లాభనష్టాలు ఇక్కడ చూడండి:")
+                        
+                        cols = st.columns(3)
+                        col_idx = 0
+                        for sym, data in open_pos.items():
+                            # Fetch live price quickly
+                            try:
+                                live_df, _, live_last = fetch_and_analyze(sym)
+                                live_price = live_last['close']
+                            except:
+                                live_price = data['buy_price']
+                                
+                            invested = data['buy_price'] * data['qty']
+                            current_val = live_price * data['qty']
+                            floating_pnl = current_val - invested
+                            pnl_pct = (floating_pnl / invested) * 100
+                            
+                            with cols[col_idx % 3]:
+                                st.info(f"**{sym}**")
+                                st.write(f"కొన్న రేటు: ₹{data['buy_price']:.2f}")
+                                try:
+                                    time_12hr = pd.to_datetime(data['time']).strftime('%I:%M:%S %p')
+                                except:
+                                    time_12hr = data['time']
+                                st.write(f"కొన్న టైమ్: {time_12hr}")
+                                st.write(f"లైవ్ ప్రైస్: ₹{live_price:.2f}")
+                                st.markdown(fancy_metric("Live PnL (లైవ్ లాభం/నష్టం)", f"₹{floating_pnl:.2f}", f"{pnl_pct:.2f}%"), unsafe_allow_html=True)
+                                
+                            col_idx += 1
+                        st.markdown("---")
+                    else:
+                        st.success("ప్రస్తుతం ట్రేడ్స్ ఏమీ రన్ అవ్వట్లేదు. అంతా సేఫ్ గా బుక్ అయిపోయింది. కొత్త ఛాన్స్ కోసం బాట్ వెయిట్ చేస్తోంది.")
+                else:
+                    st.info("ఇంకా ఎలాంటి ట్రేడ్ జరగలేదు.")
+                    
+                st.subheader("📝 పాత ఫైనాన్షియల్ రిపోర్ట్ (PnL & History)")
+
+                # --- ADVANCED OVERALL PERFORMANCE WIDGET ---
+                if os.path.exists('trades_log.csv'):
+                    df_perf = pd.read_csv('trades_log.csv')
+                    sells = df_perf[df_perf['Action'] == 'SELL'].copy()
+                    if not sells.empty:
+                        # Clean Profit column
+                        def clean_profit(val):
+                            if str(val) == '-': return 0.0
+                            p_str = str(val).replace('₹', '').replace(',', '')
+                            try:
+                                return -float(p_str.replace('-', '')) if p_str.startswith('-') else float(p_str)
+                            except: return 0.0
+                            
+                        sells['CleanProfit'] = sells['Profit'].apply(clean_profit)
+                        total_trades = len(sells)
+                        wins = len(sells[sells['CleanProfit'] > 0])
+                        losses = len(sells[sells['CleanProfit'] < 0])
+                        breakeven = len(sells[sells['CleanProfit'] == 0])
+                        win_rate = (wins / total_trades) * 100 if total_trades > 0 else 0
+                        
+                        gross_profit = sells[sells['CleanProfit'] > 0]['CleanProfit'].sum()
+                        gross_loss = sells[sells['CleanProfit'] < 0]['CleanProfit'].sum()
+                        taxes = total_trades * 0.50 # 50 paise tax per trade
+                        net_profit = gross_profit + gross_loss - taxes # loss is already negative
+                        
+                        st.markdown(f'''
+                        <div style="background: linear-gradient(135deg, #1e1e1e 0%, #2a2a2a 100%); padding: 20px; border-radius: 15px; border: 1px solid #333; box-shadow: 0 4px 15px rgba(0,0,0,0.5); margin-bottom: 20px;">
+                            <h3 style="color: #00ffcc; margin-top: 0; text-align: center; font-family: sans-serif;">🤖 AI Overall Performance Summary</h3>
+                            <div style="display: flex; justify-content: space-around; flex-wrap: wrap; margin-top: 15px;">
+                                <div style="text-align: center; margin: 10px;">
+                                    <p style="color: #aaa; margin: 0; font-size: 14px;">Total Trades (SELLs)</p>
+                                    <h2 style="color: white; margin: 5px 0;">{total_trades}</h2>
+                                </div>
+                                <div style="text-align: center; margin: 10px;">
+                                    <p style="color: #aaa; margin: 0; font-size: 14px;">Win Rate (Accuracy)</p>
+                                    <h2 style="color: #00ff00; margin: 5px 0;">{win_rate:.1f}%</h2>
+                                    <p style="color: #666; font-size: 12px; margin: 0;">{wins} Wins | {losses} Losses</p>
+                                </div>
+                                <div style="text-align: center; margin: 10px;">
+                                    <p style="color: #aaa; margin: 0; font-size: 14px;">Gross Profit</p>
+                                    <h2 style="color: #00ff00; margin: 5px 0;">₹{gross_profit:.2f}</h2>
+                                </div>
+                                <div style="text-align: center; margin: 10px;">
+                                    <p style="color: #aaa; margin: 0; font-size: 14px;">Gross Loss</p>
+                                    <h2 style="color: #ff3333; margin: 5px 0;">₹{abs(gross_loss):.2f}</h2>
+                                </div>
+                                <div style="text-align: center; margin: 10px;">
+                                    <p style="color: #aaa; margin: 0; font-size: 14px;">Taxes & Fees</p>
+                                    <h2 style="color: #ff9900; margin: 5px 0;">₹{taxes:.2f}</h2>
+                                </div>
+                                <div style="text-align: center; margin: 10px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 10px;">
+                                    <p style="color: #00ffcc; margin: 0; font-size: 14px; font-weight: bold;">NET PNL (After Taxes)</p>
+                                    <h1 style="color: {'#00ff00' if net_profit >= 0 else '#ff3333'}; margin: 5px 0; font-size: 32px;">₹{net_profit:.2f}</h1>
+                                </div>
+                            </div>
+                        </div>
+                        ''', unsafe_allow_html=True)
+                # ----------------------------------------
+
+
+                if os.path.exists('trades_log.csv'):
+                    history_df = pd.read_csv('trades_log.csv')
+                    
+                    # ఫైనాన్షియల్ లెక్కలు
+                    g_profit = 0.0
+                    g_loss = 0.0
+                    t_taxes = 0.0
+                    tax_per_trade = 0.50 # ప్రతి SELL ట్రేడ్ కి బ్రోకరేజ్/టాక్స్ 50 సెంట్లు అనుకుందాం
+                    
+                    if 'Profit' in history_df.columns:
+                        for idx, row in history_df.iterrows():
+                            if row['Action'] == 'SELL' and str(row['Profit']) != '-':
+                                try:
+                                    p_str = str(row['Profit']).replace('₹', '').replace(',', '')
+                                    if p_str.startswith('-'):
+                                        p = -float(p_str.replace('-', ''))
+                                    else:
+                                        p = float(p_str)
+                                        
+                                    if p > 0:
+                                        g_profit += p
+                                    elif p < 0:
+                                        g_loss += abs(p)
+                                    t_taxes += tax_per_trade
+                                except:
+                                    pass
+                                    
+                    net = (g_profit - g_loss) - t_taxes
+                    
+                    pnl_col1, pnl_col2, pnl_col3, pnl_col4 = st.columns(4)
+                    pnl_col1.markdown(fancy_metric("గ్రాస్ లాభం (Gross Profit)", f"₹{g_profit:.4f}", "సూపర్!"), unsafe_allow_html=True)
+                    pnl_col2.markdown(fancy_metric("నష్టం (Gross Loss)", f"₹{g_loss:.4f}", "-రిస్క్"), unsafe_allow_html=True)
+                    pnl_col3.markdown(fancy_metric("టాక్స్ & ఫీజు (Taxes/Fees)", f"₹{t_taxes:.4f}", "-కట్ అయ్యాయి"), unsafe_allow_html=True)
+                    
+                    profit_color = "normal" if net >= 0 else "inverse"
+                    pnl_col4.markdown(fancy_metric("అసలు లాభం (Net Profit)", f"₹{net:.4f}", f"{'లాభం' if net >= 0 else 'నష్టం'}", profit_color), unsafe_allow_html=True)
+                    
+                    st.markdown("---")
+                    st.subheader("📊 కాయిన్ ల వారీగా ఫుల్ రిపోర్ట్ (Coin-wise Summary)")
+                    
+                    coin_stats = []
+                    for sym in history_df['Symbol'].unique():
+                        sym_df = history_df[(history_df['Symbol'] == sym) & (history_df['Action'] == 'SELL')]
+                        num_trades = len(sym_df)
+                        
+                        tot_profit = 0.0
+                        tot_loss = 0.0
+                        
+                        for _, row in sym_df.iterrows():
+                            if str(row['Profit']) != '-':
+                                try:
+                                    p_str = str(row['Profit']).replace('₹', '').replace(',', '')
+                                    if p_str.startswith('-'):
+                                        p = -float(p_str.replace('-', ''))
+                                    else:
+                                        p = float(p_str)
+                                        
+                                    if p > 0:
+                                        tot_profit += p
+                                    elif p < 0:
+                                        tot_loss += abs(p)
+                                except:
+                                    pass
+                                    
+                        net = tot_profit - tot_loss
+                        
+                        if num_trades > 0 or tot_profit > 0 or tot_loss > 0:
+                            coin_stats.append({
+                                'కాయిన్ (Coin)': sym,
+                                'మొత్తం ట్రేడ్స్ (Trades)': num_trades,
+                                'లాభం (Profit)': f"₹{tot_profit:.4f}",
+                                'నష్టం (Loss)': f"₹{tot_loss:.4f}",
+                                'మిగిలింది (Net PnL)': f"₹{net:.4f}"
+                            })
+                            
+                    if coin_stats:
+                        summary_df = pd.DataFrame(coin_stats)
+                        
+                        def style_net_pnl(val):
+                            try:
+                                v = float(str(val).replace('₹','').replace(',',''))
+                                if v > 0: return 'color: #00ff00; font-weight: bold;'
+                                elif v < 0: return 'color: #ff3333; font-weight: bold;'
+                            except: pass
+                            return ''
+                            
+                        styled_summary = summary_df.style.map(style_net_pnl, subset=['మిగిలింది (Net PnL)'])
+                        st.dataframe(styled_summary, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("ఇంకా కాయిన్ల వారీగా కంప్లీట్ అయిన ట్రేడ్స్ ఏమీ లేవు.")
+                    
+                    st.markdown("---")
+                    st.subheader("📋 హిస్టరీ (All Trades)")
+                    # 🎨 Dataframe Styling (Neat and Clean UI)
+                    def highlight_profit(val):
+                        if str(val) == '-': return ''
+                        try:
+                            v = float(str(val).replace('₹','').replace(',',''))
+                            if v > 0: return 'color: #00ff00; font-weight: bold;'
+                            elif v < 0: return 'color: #ff3333; font-weight: bold;'
+                        except: pass
+                        return ''
+                    
+                    def highlight_action(val):
+                        if val == 'BUY': return 'background-color: rgba(0,255,0,0.1); color: #00ff00; font-weight: bold;'
+                        elif val == 'SELL': return 'background-color: rgba(255,0,0,0.1); color: #ff3333; font-weight: bold;'
+                        return ''
+                        
+                    # Format Time column to 12-hour AM/PM format
+                    display_df = history_df.copy()
+                    if 'Time' in display_df.columns:
+                        try:
+                            display_df['Time'] = pd.to_datetime(display_df['Time']).dt.strftime('%Y-%m-%d %I:%M:%S %p')
+                        except:
+                            pass
+                            
+                    styled_df = display_df.iloc[::-1].style.map(highlight_action, subset=['Action']).map(highlight_profit, subset=['Profit'])
+                    st.dataframe(styled_df, use_container_width=True, hide_index=True)
+                else:
+                    st.info("ఇంకా ఎలాంటి ట్రేడ్ జరగలేదు. బాట్ ఎదురుచూస్తోంది...")
+
+        with tab3:
+            st.markdown("### 💬 ట్రేడింగ్ అసిస్టెంట్ (WhatsApp Style)")
+            st.markdown("చాట్ చేస్తున్నప్పుడు దయచేసి సెట్టింగ్స్ లో 'Auto Refresh' ఆఫ్ చేయండి.")
+            
+            if st.button("🗑️ చాట్ క్లియర్ చేయి (Clear Chat & Fix Errors)"):
+                st.session_state.messages = [
+                    {"role": "assistant", "content": "హలో! పాత ఎర్రర్స్ అన్నీ క్లియర్ చేశాను. ఇప్పుడు నన్ను మళ్లీ కొత్తగా అడగండి!"}
+                ]
+                st.rerun()
+            
+            # Create a narrow layout like a mobile phone screen
+            _, center_col, _ = st.columns([1, 2, 1])
+            
+            with center_col:
+                # యూజర్ అడిగిన ప్రశ్నలు దాచుకోవడానికి సెషన్ స్టేట్
+                if "messages" not in st.session_state:
+                    st.session_state.messages = [
+                        {"role": "assistant", "content": "హలో! నేను మీ పర్సనల్ ట్రేడింగ్ అసిస్టెంట్ ని. మీకు ఎలాంటి డౌట్స్ ఉన్నా అడగొచ్చు."}
+                    ]
+                
+                # వాట్సాప్ లాగా ఫిక్స్డ్ హైట్ కంటైనర్ (స్క్రోల్ చేసుకోవచ్చు)
+                chat_box = st.container(height=400)
+                
+                with chat_box:
+                    for msg in st.session_state.messages:
+                        avatar = "🤖" if msg["role"] == "assistant" else "👤"
+                        with st.chat_message(msg["role"], avatar=avatar):
+                            st.write(msg["content"])
+                
+                # వాయిస్ ఇన్పుట్ బటన్ (చిన్నగా)
+                voice_prompt = speech_to_text(
+                    language='te-IN', 
+                    start_prompt="🎙️ వాయిస్ మెసేజ్ పంపడానికి ఇక్కడ నొక్కండి",
+                    stop_prompt="🛑 ఆపడానికి ఇక్కడ నొక్కండి (రికార్డింగ్ ఆగుతుంది)",
+                    use_container_width=False, 
+                    just_once=True, 
+                    key='STT'
+                )
+                
+                # యూజర్ టైప్ లేదా మాట్లాడినది తీసుకోవడం
+                prompt = st.chat_input("లేదా మీ ప్రశ్న ఇక్కడ టైప్ చేయండి...")
+                final_prompt = voice_prompt if voice_prompt else prompt
+            
+            if final_prompt:
+                # Prevent infinite loop API calls if streamlit reruns with same mic prompt
+                last_user_msg = ""
+                for m in reversed(st.session_state.messages):
+                    if m["role"] == "user":
+                        last_user_msg = m["content"]
+                        break
+                is_duplicate = (last_user_msg == final_prompt)
+                              
+                if not is_duplicate:
+                    # యూజర్ మెసేజ్ సేవ్ చేయడం
+                    st.session_state.messages.append({"role": "user", "content": final_prompt})
+                    with st.chat_message("user", avatar="👤"):
+                        st.write(final_prompt)
+                    
+                    # అసిస్టెంట్ రిప్లై లాజిక్ (Gemini AI)
+                    user_text = final_prompt
+                
+                try:
+                    df_current, sig_current, last_current = fetch_and_analyze(symbol)
+                    
+                    cmd_lower = final_prompt.lower()
+                    response = ""
+                    
+                    # 1. COMMANDS
+                    if "buy" in cmd_lower or "konu" in cmd_lower or "కొను" in cmd_lower:
+                        if "btc" in cmd_lower or "బిట్" in cmd_lower:
+                            with open('ai_commands.txt', 'w') as f: f.write("FORCE_BUY BTC-USD")
+                            response = "👍 ఓకే బాస్! బ్యాక్ గ్రౌండ్ లో బిట్ కాయిన్ (BTC) కొనమని కమాండ్ పంపించాను. టెర్మినల్ లో అది కొనేస్తుంది!"
+                        elif "eth" in cmd_lower:
+                            with open('ai_commands.txt', 'w') as f: f.write("FORCE_BUY ETH-USD")
+                            response = "👍 ఓకే బాస్! ఇథీరియం (ETH) కొనమని కమాండ్ పంపించాను."
+                        elif "sol" in cmd_lower:
+                            with open('ai_commands.txt', 'w') as f: f.write("FORCE_BUY SOL-USD")
+                            response = "👍 ఓకే బాస్! సొలానా (SOL) కొనమని కమాండ్ పంపించాను."
+                        elif "bnb" in cmd_lower:
+                            with open('ai_commands.txt', 'w') as f: f.write("FORCE_BUY BNB-USD")
+                            response = "👍 ఓకే బాస్! బినాన్స్ కాయిన్ (BNB) కొనమని కమాండ్ పంపించాను."
+                        else:
+                            response = "🤔 ఏ కాయిన్ కొనాలో కరెక్ట్ గా చెప్పండి బాస్. (Ex: 'buy btc')"
+                            
+                    elif "sell all" in cmd_lower or "ammey" in cmd_lower or "aapey" in cmd_lower or "అమ్మేయ్" in cmd_lower or "stop" in cmd_lower or "ఆపేయ్" in cmd_lower:
+                        with open('ai_commands.txt', 'w') as f: f.write("PANIC_SELL_ALL")
+                        import json
+                        try:
+                            with open('settings.json', 'r') as f: bs = json.load(f)
+                            bs['panic_mode'] = True
+                            with open('settings.json', 'w') as f: json.dump(bs, f)
+                        except: pass
+                        response = "🚨 ఎమర్జెన్సీ ఆర్డర్ రిసీవ్డ్! వెంటనే ట్రేడింగ్ ఆపేసి, ఉన్న కాయిన్స్ అన్నీ అమ్మేస్తున్నాను బాస్!"
+                        
+                    # 2. BOT STATUS (READING LOGS)
+                    elif "status" in cmd_lower or "em chestunnav" in cmd_lower or "em chestunavu" in cmd_lower or "em chestunnavu" in cmd_lower or "ఏం చేస్తున్నావ్" in cmd_lower or "ఏం చేస్తున్నావు" in cmd_lower or "trade" in cmd_lower or "ట్రేడ్" in cmd_lower:
+                        bot_context = "లాగ్స్ ఇంకా రాలేదు బాస్, మార్కెట్ స్కాన్ చేస్తున్నాను."
+                        try:
+                            
+                            if os.path.exists('bot_logs.txt'):
+                                with open('bot_logs.txt', 'r') as log_f:
+                                    lines = log_f.readlines()
+                                    if lines:
+                                        bot_context = lines[-1].strip()
+                        except: pass
+                        response = "🤖 నేను వాల్ స్ట్రీట్ లో బిజీగా ఉన్నాను బాస్. నా లేటెస్ట్ యాక్షన్ ఇదిగో: " + bot_context
+                    elif "price" in cmd_lower or "rate" in cmd_lower or "cost" in cmd_lower or "రేటు" in cmd_lower or "ధర" in cmd_lower:
+                        if df_current is not None:
+                            response = f"📈 ప్రస్తుతం {symbol} ప్రైస్: ₹{last_current['close']:,.2f} నడుస్తోంది సార్."
+                        else:
+                            response = "ప్రస్తుతం మార్కెట్ ప్రైస్ చెక్ చేయలేకపోతున్నాను."
+                    elif "trend" in cmd_lower or "ela undi" in cmd_lower or "market" in cmd_lower or "ట్రెండ్" in cmd_lower or "మార్కెట్ ఎలా ఉంది" in cmd_lower:
+                        if df_current is not None:
+                            if last_current['close'] > last_current['EMA_200']:
+                                response = f"🚀 మార్కెట్ స్ట్రాంగ్ గా ఉంది సార్! (Bullish Trend). కొంటే లాభాలు వస్తాయి."
+                            else:
+                                response = f"⚠️ మార్కెట్ వీక్ గా పడిపోతూ ఉంది సార్! (Bearish Trend). ఇప్పుడు కొనకపోవడమే సేఫ్."
+                        else:
+                            response = "మార్కెట్ ట్రెండ్ చెక్ చేయలేకపోతున్నాను."
+                    elif "hi" in cmd_lower or "hello" in cmd_lower or "హలో" in cmd_lower or "హాయ్" in cmd_lower:
+                        response = "హలో బాస్! నేను మీ యాంటైగ్రావిటీ రోబోట్ ని. డైరెక్ట్ ఆర్డర్ (Ex: 'buy btc') ఇస్తారా? లేదా రిపోర్ట్ (Ex: 'లాభం ఎంత?', 'ఏం చేస్తున్నావు?') చెప్పమంటారా?"
+                    
+                    # 3. INTERNET SEARCH FALLBACK
+                    else:
+                        try:
+                            import urllib.request, urllib.parse, json, re
+                            url = "https://te.wikipedia.org/w/api.php?action=query&list=search&srsearch=" + urllib.parse.quote(final_prompt) + "&utf8=&format=json"
+                            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                            with urllib.request.urlopen(req, timeout=5) as res:
+                                data = json.loads(res.read().decode())
+                                results = data.get('query', {}).get('search', [])
+                                if results:
+                                    snippet = re.sub('<[^<]+>', '', results[0]['snippet'])
+                                    title = results[0]['title']
+                                    response = "🔍 ఇంటర్నెట్ లో వెతికాను బాస్! '" + title + "' గురించి నాకు దొరికిన సమాచారం: " + snippet
+                                else:
+                                    url_en = "https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=" + urllib.parse.quote(final_prompt) + "&utf8=&format=json"
+                                    req_en = urllib.request.Request(url_en, headers={'User-Agent': 'Mozilla/5.0'})
+                                    with urllib.request.urlopen(req_en, timeout=5) as res_en:
+                                        data_en = json.loads(res_en.read().decode())
+                                        results_en = data_en.get('query', {}).get('search', [])
+                                        if results_en:
+                                            snippet_en = re.sub('<[^<]+>', '', results_en[0]['snippet'])
+                                            response = "🔍 ఇంటర్నెట్ లో ఇంగ్లీష్ లో దొరికింది: " + snippet_en
+                                        else:
+                                            response = "🤔 బాస్.. నాకు మీరు అడిగినదాని గురించి ఇంటర్నెట్ లో కూడా ఎలాంటి ఆన్సర్ దొరకలేదు."
+                        except Exception as e:
+                            response = "🤔 బాస్.. నాకు మీరు చెప్పింది సరిగ్గా అర్థం కాలేదు, ఇంటర్నెట్ లో వెతుకుదామంటే కనెక్షన్ కట్ అయ్యింది."
+                except Exception as e:
+                    response = f"నా ఆఫ్ లైన్ బ్రెయిన్ లో చిన్న ఎర్రర్ వచ్చింది: {e}"
+                
+                st.session_state.messages.append({"role": "assistant", "content": response})
+                with st.chat_message("assistant", avatar="🤖"):
+                    st.write(response)
+                    if enable_voice:
+                        try:
+                            tts = gTTS(text=response, lang='te')
+                            tts.save("response.mp3")
+                            with open("response.mp3", "rb") as f:
+                                data = f.read()
+                                b64 = base64.b64encode(data).decode()
+                                md = f'''
+                                    <audio autoplay="true">
+                                    <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
+                                    </audio>
+                                    '''
+                                st.markdown(md, unsafe_allow_html=True)
+                        except Exception as ex:
+                            pass
+                    
+
+
+
+        # Moved logs outside inner tabs
+        st.markdown("---")
+        st.subheader("📝 Live Bot Updates (లాగ్స్)")
+        with st.expander("బాట్ ఏం చేస్తోందో టెర్మినల్ లాగ్స్ ఇక్కడ చూడండి"):
+            if os.path.exists('bot_logs.txt'):
+                with open('bot_logs.txt', 'r') as f:
+                    logs = f.readlines()
+                recent_logs = logs[-10:] if len(logs) > 10 else logs
+                log_text = "".join(recent_logs)
+                st.code(log_text, language="bash")
+            else:
+                st.info("బాట్ ఇంకా ఆన్ అవ్వలేదు.")
+
+    draw_dashboard()
+
+with tab2:
+    st.header("🔥 Pro Market Analyzer")
+    st.write("ప్రపంచంలోని బెస్ట్ స్టాక్స్/కాయిన్స్ ని ఒకేసారి స్కాన్ చేసి, ఎందులో ట్రేడ్ చేస్తే బాగుంటుందో ఒక ప్రొఫెషనల్ లాగా బాట్ మీకు చెబుతుంది.")
+    
+    if st.button("🚀 మార్కెట్ ని అనలైజ్ చేయి (Scan All)"):
+        st.info("బాట్ మార్కెట్ ని స్కాన్ చేస్తోంది. దయచేసి వేచి ఉండండి...")
+        results = []
+        for name, sym in symbol_options.items():
+            df, sig, last = fetch_and_analyze(sym)
+            if df is not None:
+                trend = "Bullish (Up)" if last['close'] > last['EMA_200'] else "Bearish (Down)"
+                rsi_status = "Overbought (Risk)" if last['RSI'] > 70 else "Oversold (Buy Zone)" if last['RSI'] < 30 else "Neutral"
+                
+                results.append({
+                    "Stock / Coin": name,
+                    "Live Price": f"₹{last['close']:,.2f}",
+                    "Trend (EMA 200)": trend,
+                    "RSI (14)": f"{last['RSI']:.1f} - {rsi_status}",
+                    "AI Action": sig
+                })
+        
+        st.success("అనాలసిస్ పూర్తయింది!")
+        st.table(pd.DataFrame(results))
+
+if auto_refresh:
+    time.sleep(5)
+    st.rerun()
