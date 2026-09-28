@@ -58,8 +58,8 @@ symbols_to_trade = [
     # 💱 Forex (Currencies)
     "EURUSD=X", "GBPUSD=X", "JPY=X",
     # 🛢️ Commodities
-    "GC=F", # Gold
-    "CL=F"  # Crude Oil
+    "GLD", # Gold
+    "USO"  # Crude Oil
 ]
 
 timeframe = '1m'
