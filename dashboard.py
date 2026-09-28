@@ -1,15 +1,22 @@
 import os
-import subprocess
 import sys
+import threading
 
-# Auto-start trading bot in the background if running in cloud or locally
-if not os.environ.get("BOT_LAUNCHED"):
-    os.environ["BOT_LAUNCHED"] = "1"
-    try:
-        # Launch binance_bot.py as a separate background process
-        subprocess.Popen([sys.executable, "binance_bot.py"])
-    except Exception as e:
-        pass
+# Reliable background thread to run binance_bot inside the cloud server
+def start_bot_thread():
+    if not hasattr(start_bot_thread, "_started"):
+        start_bot_thread._started = True
+        try:
+            import binance_bot
+            t = threading.Thread(target=binance_bot.run_bot_loop, daemon=True)
+            t.start()
+        except Exception as e:
+            try:
+                with open("bot_logs.txt", "a") as f:
+                    f.write(f"Bot thread start error: {e}\n")
+            except: pass
+
+start_bot_thread()
 
 import streamlit as st
 import yfinance as yf
