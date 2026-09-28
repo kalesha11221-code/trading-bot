@@ -180,8 +180,8 @@ symbol_options = {
     "USD/JPY": "JPY=X",
     
     # Commodities
-    "Gold (MCX/COMEX)": "GC=F",
-    "Crude Oil": "CL=F"
+    "Gold (MCX/COMEX)": "GLD",
+    "Crude Oil": "USO"
 }
 
 
@@ -321,12 +321,13 @@ st.sidebar.markdown("---")
 st.sidebar.info("ఈరోజు ఆదివారం కాబట్టి ఇండియన్ స్టాక్ మార్కెట్ ఆగిపోయి ఉంటుంది. కేవలం Bitcoin మాత్రమే లైవ్ లో కదులుతుంది!")
 
 @st.cache_data(ttl=30) # 30 సెకన్లకు ఒకసారి మాత్రమే ఫ్రెష్ డేటా తెస్తుంది
+@st.cache_data(ttl=10, show_spinner=False)
 def fetch_and_analyze(sym):
     try:
-        # Yahoo Finance నుండి డేటా తెచ్చుకోవడం
-        df = yf.download(sym, period="1d", interval="1m", progress=False)
+        # Yahoo Finance నుండి డేటా తెచ్చుకోవడం (Fast timeout)
+        df = yf.download(sym, period="1d", interval="1m", progress=False, timeout=5)
         if df.empty:
-            df = yf.download(sym, period="5d", interval="1m", progress=False)
+            df = yf.download(sym, period="5d", interval="1m", progress=False, timeout=5)
         
         # yfinance columns are MultiIndex sometimes, so flatten them if needed
         if isinstance(df.columns, pd.MultiIndex):
@@ -642,10 +643,14 @@ with tab1:
                         cols = st.columns(3)
                         col_idx = 0
                         for sym, data in open_pos.items():
-                            # Fetch live price quickly
+                            # Fetch live price quickly without blocking
                             try:
-                                live_df, _, live_last = fetch_and_analyze(sym)
-                                live_price = live_last['close']
+                                if sym == symbol and df is not None:
+                                    live_price = last['close']
+                                else:
+                                    t = yf.Ticker(sym)
+                                    p = getattr(t.fast_info, 'last_price', None)
+                                    live_price = float(p) if p else data['buy_price']
                             except:
                                 live_price = data['buy_price']
                                 
