@@ -492,8 +492,6 @@ def log_status(msg, voice_alert=None, color_code='\033[0m'):
         # Mac OS Voice Command is muted as per user request
         pass # os.system(f'say "{voice_alert}" &')
 
-log_status(f"[{datetime.now().strftime('%H:%M:%S')}] 🔥 Advanced AI Trading Robot is now ONLINE!", voice_alert="Advanced AI Robot is now online.", color_code='\033[95m')
-send_telegram_message("🤖 AI మల్టిపుల్ ట్రేడింగ్ బాట్ ఆన్ అయ్యింది!")
 
 
 def process_symbol(sym):
@@ -559,19 +557,25 @@ def process_symbol(sym):
         
     return None
 
-while True:
-    try:
-        actions_taken = []
-        # EXTREME FEATURE 1: Multi-Threading
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            results = list(executor.map(process_symbol, symbols_to_trade))
+def run_bot_loop():
+    log_status(f"[{datetime.now().strftime('%H:%M:%S')}] 🔥 Advanced AI Trading Robot is now ONLINE!", voice_alert="Advanced AI Robot is now online.", color_code="[95m")
+    send_telegram_message("🤖 AI మల్టిపుల్ ట్రేడింగ్ బాట్ ఆన్ అయ్యింది!")
+    while True:
+        try:
+            actions_taken = []
+            # EXTREME FEATURE 1: Multi-Threading
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                results = list(executor.map(process_symbol, symbols_to_trade))
+                
+            actions_taken = [r for r in results if r is not None]
             
-        actions_taken = [r for r in results if r is not None]
-        
-        if not actions_taken:
-            log_status(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡ (Extreme Mode) అన్నీ ఒకేసారి స్కాన్ చేశాను. సేఫ్ గా HOLD లో ఉన్నాయి.", color_code='[96m')
+            if not actions_taken:
+                log_status(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡ (Extreme Mode) అన్నీ ఒకేసారి స్కాన్ చేశాను. సేఫ్ గా HOLD లో ఉన్నాయి.", color_code='[96m')
+                
+        except Exception as e:
+            log_status(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️ ఎర్రర్: {e}")
             
-    except Exception as e:
-        log_status(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️ ఎర్రర్: {e}")
-        
-    time.sleep(10) # 10 seconds scan in Extreme mode
+        time.sleep(10) # 10 seconds scan in Extreme mode
+
+if __name__ == "__main__":
+    run_bot_loop()
