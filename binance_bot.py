@@ -247,6 +247,7 @@ def execute_live_order(action, sym, quantity=None, quote_amount=None):
 
 # Cache for Macro Trends to avoid downloading 2-year data every minute
 macro_trends = {}
+last_exit_times = {}
 
 def get_macro_trend(sym):
     global macro_trends
@@ -314,6 +315,46 @@ def get_news_sentiment(sym):
         return 0
 
 
+def get_htf_trend(df):
+    """
+    Multi-Timeframe Analysis (HTF):
+    Resamples 1m data into 15m candles to establish institutional trend direction.
+    """
+    try:
+        if df.empty or len(df) < 50:
+            return 'NEUTRAL', 50.0, "డేటా సరిపోలేదు"
+        df_c = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].copy()
+        df_c['timestamp'] = pd.to_datetime(df_c['timestamp'])
+        df_15m = df_c.set_index('timestamp').resample('15min').agg({
+            'open': 'first',
+            'high': 'max',
+            'low': 'min',
+            'close': 'last',
+            'volume': 'sum'
+        }).dropna()
+        
+        if len(df_15m) >= 15:
+            ema_20 = df_15m['close'].ewm(span=20, adjust=False).mean().iloc[-1]
+            ema_50 = df_15m['close'].ewm(span=50, adjust=False).mean().iloc[-1]
+            last_c = df_15m['close'].iloc[-1]
+            
+            delta = df_15m['close'].diff()
+            gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+            loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+            rs = gain / (loss + 1e-9)
+            rsi_15m = float(100 - (100 / (1 + rs.iloc[-1])))
+            
+            if last_c > ema_20 and ema_20 >= ema_50:
+                return 'BULLISH', rsi_15m, "15m HTF ట్రెండ్ అప్ (Bullish)"
+            elif last_c < ema_20 and ema_20 <= ema_50:
+                return 'BEARISH', rsi_15m, "15m HTF ట్రెండ్ డౌన్ (Bearish)"
+            else:
+                return 'NEUTRAL', rsi_15m, "15m HTF ట్రెండ్ కన్సాలిడేషన్ (Neutral)"
+    except Exception:
+        pass
+    return 'NEUTRAL', 50.0, "సాధారణం"
+
+
 def generate_signal(df, sym):
     # 🧠 SELF-LEARNING AI BRAIN
     import json
@@ -324,180 +365,238 @@ def generate_signal(df, sym):
         ai_brain = {"RSI_weight": 1.0, "MACD_weight": 1.0, "BOL_weight": 1.0, "ML_weight": 1.0, "learning_iterations": 0}
 
     current_price = df.iloc[-1]['close']
+    
+    # 1. EMAs (9, 21, 50, 200)
+    df['EMA_9'] = df['close'].ewm(span=9, adjust=False).mean()
+    df['EMA_21'] = df['close'].ewm(span=21, adjust=False).mean()
     df['EMA_50'] = df['close'].ewm(span=50, adjust=False).mean()
     df['EMA_200'] = df['close'].ewm(span=200, adjust=False).mean()
     
     # సపోర్ట్ అండ్ రెసిస్టెన్స్
-    df['Support'] = df['low'].rolling(window=200).min()
-    df['Resistance'] = df['high'].rolling(window=200).max()
+    df['Support'] = df['low'].rolling(window=100).min()
+    df['Resistance'] = df['high'].rolling(window=100).max()
     
-    # బోలింజర్ బ్యాండ్స్ (Bollinger Bands - Volatility కొలవడానికి)
+    # బోలింజర్ బ్యాండ్స్ & Bandwidth
     df['SMA_20'] = df['close'].rolling(window=20).mean()
     df['STD_20'] = df['close'].rolling(window=20).std()
     df['Upper_Band'] = df['SMA_20'] + (df['STD_20'] * 2)
     df['Lower_Band'] = df['SMA_20'] - (df['STD_20'] * 2)
+    df['Bandwidth'] = (df['Upper_Band'] - df['Lower_Band']) / (df['SMA_20'] + 1e-9)
     
-    # ATR (Average True Range) - ఎంత స్పీడ్ గా కదులుతుందో చూసి స్టాప్ లాస్ డిసైడ్ చేయడానికి
+    # ATR (Average True Range)
     high_low = df['high'] - df['low']
     high_close = (df['high'] - df['close'].shift()).abs()
     low_close = (df['low'] - df['close'].shift()).abs()
     true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     df['ATR'] = true_range.rolling(14).mean()
     
-    # VWAP (Volume Weighted Average Price) - ప్రో ట్రేడర్స్ వాడే అడ్వాన్స్డ్ ఇండికేటర్
+    # VWAP (Volume Weighted Average Price)
     df['Typical_Price'] = (df['high'] + df['low'] + df['close']) / 3
-    # సాధారణంగా VWAP రోజువారీ (Daily) క్యాలిక్యులేట్ చేస్తారు, కానీ మనం ఇక్కడ రీసెంట్ 50 క్యాండిల్స్ తీసుకుందాం
-    df['VWAP'] = (df['Typical_Price'] * df['volume']).rolling(window=50).sum() / df['volume'].rolling(window=50).sum()
+    df['VWAP'] = (df['Typical_Price'] * df['volume']).rolling(window=50).sum() / (df['volume'].rolling(window=50).sum() + 1e-9)
     
-    # వాల్యూమ్ అనాలసిస్ (Big players ఎంటర్ అయ్యారా అని చూడటానికి)
+    # Volume Analysis
     avg_volume = df['volume'].rolling(window=20).mean()
     
+    # RSI (14)
     delta = df['close'].diff()
     gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
     loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
-    rs = gain / loss
+    rs = gain / (loss + 1e-9)
     df['RSI'] = 100 - (100 / (1 + rs))
     
+    # MACD (12, 26, 9)
     ema_12 = df['close'].ewm(span=12, adjust=False).mean()
     ema_26 = df['close'].ewm(span=26, adjust=False).mean()
     df['MACD_Line'] = ema_12 - ema_26
     df['MACD_Signal'] = df['MACD_Line'].ewm(span=9, adjust=False).mean()
+    df['MACD_Hist'] = df['MACD_Line'] - df['MACD_Signal']
     
-    
-    # Advanced Sniper Indicator: ADX (Trend Strength)
+    # ADX (Average Directional Index) - Trend Strength
     df['+DM'] = df['high'].diff()
     df['-DM'] = -df['low'].diff()
     df['+DM'] = np.where((df['+DM'] > df['-DM']) & (df['+DM'] > 0), df['+DM'], 0.0)
     df['-DM'] = np.where((df['-DM'] > df['+DM']) & (df['-DM'] > 0), df['-DM'], 0.0)
-    
     df['TR'] = np.maximum((df['high'] - df['low']), np.maximum(abs(df['high'] - df['close'].shift(1)), abs(df['low'] - df['close'].shift(1))))
     
-    # Smooth them over 14 periods (using simple rolling mean for speed instead of Wilder's)
-    df['+DI'] = 100 * (df['+DM'].rolling(14).mean() / df['TR'].rolling(14).mean())
-    df['-DI'] = 100 * (df['-DM'].rolling(14).mean() / df['TR'].rolling(14).mean())
-    df['DX'] = 100 * abs(df['+DI'] - df['-DI']) / (df['+DI'] + df['-DI'])
+    tr_sum = df['TR'].rolling(14).mean() + 1e-9
+    df['+DI'] = 100 * (df['+DM'].rolling(14).mean() / tr_sum)
+    df['-DI'] = 100 * (df['-DM'].rolling(14).mean() / tr_sum)
+    di_sum = (df['+DI'] + df['-DI']) + 1e-9
+    df['DX'] = 100 * abs(df['+DI'] - df['-DI']) / di_sum
     df['ADX'] = df['DX'].rolling(14).mean()
     df.fillna(0, inplace=True)
 
     last = df.iloc[-1]
     prev = df.iloc[-2]
     
-    near_support = last['close'] <= (last['Support'] * 1.002)
-    near_resistance = last['close'] >= (last['Resistance'] * 0.998)
-    volume_spike = last['volume'] > (avg_volume.iloc[-1] * 2) if not pd.isna(avg_volume.iloc[-1]) else False
+    # Multi-Timeframe Check
+    htf_status, htf_rsi, htf_desc = get_htf_trend(df)
     
-    # అడ్వాన్స్డ్ AI థింకింగ్ ప్రాసెస్ (Pro Scoring System)
-    buy_score = 0
-    sell_score = 0
+    # Volume Dynamics
+    vol_mean = df['volume'].tail(20).mean()
+    vol_current = last['volume']
+    is_whale_pump = vol_current > (vol_mean * 3.5) if vol_mean > 0 else False
+    volume_strong = vol_current > (avg_volume.iloc[-1] * 1.3) if not pd.isna(avg_volume.iloc[-1]) and avg_volume.iloc[-1] > 0 else False
+    is_bullish_candle = last['close'] > last['open']
+    
+    # -------------------------------------------------------------
+    # 🛑 0. COOLDOWN RE-ENTRY GUARD (Prevents Whipsaw Churn)
+    # -------------------------------------------------------------
+    global last_exit_times
+    if sym in last_exit_times and (time.time() - last_exit_times[sym]) < 180 and not is_whale_pump:
+        rem_s = int(180 - (time.time() - last_exit_times[sym]))
+        return 'hold', f" 🧠 AI ఆలోచన (Sniper Cooldown): {sym} రీసెంట్ గా క్లోజ్ అయ్యింది. విప్‌సా రిస్క్ ని అవాయిడ్ చేయడానికి {rem_s}s వేచి చూస్తున్నాను."
+
+    # -------------------------------------------------------------
+    # 🛑 1. CHOP & SIDEWAYS NO-TRADE FILTER (Prevents Fake Whipsaws)
+    # -------------------------------------------------------------
+    is_dead_chop = (last['ADX'] < 20) and (last['Bandwidth'] < 0.012) and not is_whale_pump
+    if is_dead_chop:
+        return 'hold', f" 🧠 AI ఆలోచన (Sniper): 💤 [CHOP FILTER]: మార్కెట్ సైడ్‌వేస్ కన్సాలిడేషన్ లో ఉంది (ADX: {last['ADX']:.1f}). ఫాల్స్ బ్రేక్‌అవుట్స్ ని అవాయిడ్ చేయడానికి వెయిట్ చేస్తున్నాను."
+
+    # -------------------------------------------------------------
+    # 🛑 2. HIGHER TIMEFRAME (15m) BEARISH FILTER (No Falling Knives)
+    # -------------------------------------------------------------
+    extreme_capitulation = (last['RSI'] < 22) and (last['close'] <= last['Lower_Band']) and volume_strong
+    if htf_status == 'BEARISH' and not extreme_capitulation and not is_whale_pump:
+        return 'hold', f" 🧠 AI ఆలోచన (Sniper): 🛑 15-నిమిషాల ట్రెండ్ బేరిష్ (డౌన్‌ట్రెండ్) లో ఉంది ({htf_desc}). క్యాపిటల్ ని కాపాడుకోవడానికి ఎంట్రీ తీసుకోలేదు."
+
+    # -------------------------------------------------------------
+    # 🎯 3. INSTITUTIONAL 4-PILLAR CONFLUENCE SCORING ENGINE
+    # -------------------------------------------------------------
+    buy_score = 0.0
+    sell_score = 0.0
     thoughts = []
     
-    if last['close'] > last['EMA_200']:
-        buy_score += 1
-        thoughts.append("ట్రెండ్ పాజిటివ్ గా ఉంది.")
-    else:
-        sell_score += 1
-        thoughts.append("ట్రెండ్ నెగెటివ్ గా ఉంది.")
+    pillar_trend = False
+    pillar_momentum = False
+    pillar_volume = False
+    pillar_predictive = False
+    
+    trend_pts = 0.0
+    mom_pts = 0.0
+    vol_pts = 0.0
+    pred_pts = 0.0
+    
+    # --- PILLAR 1: TREND ALIGNMENT ---
+    if htf_status == 'BULLISH':
+        trend_pts += 2.0
+        thoughts.append("15-నిమిషాల ట్రెండ్ స్ట్రాంగ్ బుల్లిష్ గా ఉంది.")
+    elif htf_status == 'NEUTRAL':
+        trend_pts += 0.5
         
     if not pd.isna(last['VWAP']):
         if last['close'] > last['VWAP']:
-            buy_score += 1
-            thoughts.append("ప్రైస్ VWAP లైన్ కి పైన ఉంది (ప్రో ట్రేడర్స్ కొంటున్నారు).")
+            trend_pts += 1.5
+            thoughts.append("ప్రైస్ VWAP కి పైన ఉంది (ఇన్స్టిట్యూషనల్ బయ్యర్స్ ఉన్నారు).")
         else:
-            sell_score += 1
-            thoughts.append("ప్రైస్ VWAP లైన్ కి కింద ఉంది (మార్కెట్ వీక్ గా ఉంది).")
-        
-    if last['RSI'] < 35:
-        buy_score += 2
-        thoughts.append("RSI బాగా పడిపోయి ఓవర్-సోల్డ్ కి వచ్చింది (కొనడానికి బెస్ట్ టైమ్).")
-    elif last['RSI'] > 70:
-        sell_score += 2
-        thoughts.append("RSI బాగా పెరిగిపోయి ఓవర్-బాట్ కి వెళ్ళింది (అమ్మడానికి టైమ్).")
-        
-    if last['close'] <= last['Lower_Band']:
-        buy_score += 2
-        thoughts.append("ప్రైస్ బోలింజర్ బ్యాండ్ అడుగు భాగాన్ని తాకింది (ఇక్కడి నుంచి పక్కాగా బౌన్స్ అవుతుంది).")
-    elif last['close'] >= last['Upper_Band']:
-        sell_score += 2
-        thoughts.append("ప్రైస్ బోలింజర్ బ్యాండ్ పై భాగాన్ని దాటేసింది (విపరీతంగా పెరిగింది, పడిపోవచ్చు).")
-        
-    if prev['MACD_Line'] <= prev['MACD_Signal'] and last['MACD_Line'] > last['MACD_Signal']:
-        buy_score += 2
-        thoughts.append("MACD బులెట్ లాగా పైకి క్రాస్ అయ్యింది.")
-    elif prev['MACD_Line'] >= prev['MACD_Signal'] and last['MACD_Line'] < last['MACD_Signal']:
-        sell_score += 2
-        thoughts.append("MACD కిందకి క్రాస్ అయ్యింది.")
-        
-    if near_support:
-        buy_score += 2
-        thoughts.append("పాత హిస్టరీ ప్రకారం ఇక్కడే సపోర్ట్ తీసుకుంది.")
-    if near_resistance:
-        sell_score += 2
-        thoughts.append("హిస్టరీ ప్రకారం ఇది రెసిస్టెన్స్ ఏరియా.")
-        
-    if volume_spike:
-        thoughts.append("సడెన్ గా మార్కెట్ లోకి పెద్ద ప్లేయర్స్ (వాల్యూమ్) వచ్చారు!")
-        if last['close'] > prev['close']:
-            buy_score += 1
-        else:
-            sell_score += 1
+            sell_score += 1.0
             
-    # డెసిషన్ మేకింగ్ (Super Fast Scalping Mode - కేవలం 2 పాయింట్లు వచ్చినా ట్రేడ్ చేస్తుంది)
-
+    if last['EMA_9'] > last['EMA_21']:
+        trend_pts += 1.0
+        thoughts.append("EMA 9 & 21 షార్ట్-టర్మ్ గోల్డెన్ మొమెంటమ్ లో ఉంది.")
+    else:
+        sell_score += 0.5
         
+    if last['close'] > last['EMA_200']:
+        trend_pts += 1.0
+    else:
+        sell_score += 1.0
+        
+    if trend_pts >= 2.5:
+        pillar_trend = True
+    buy_score += trend_pts
+
+    # --- PILLAR 2: DEEP VALUE & MOMENTUM REVERSAL ---
+    if last['RSI'] < 28:
+        mom_pts += 3.0 * ai_brain.get('RSI_weight', 1.0)
+        thoughts.append(f"RSI ({last['RSI']:.1f}) ఎక్స్‌ట్రీమ్ ఓవర్‌సోల్డ్ జోన్ లో ఉంది (బాటమ్ బౌన్స్ ఛాన్స్)!")
+    elif 28 <= last['RSI'] <= 48 and last['RSI'] > prev['RSI']:
+        mom_pts += 2.0 * ai_brain.get('RSI_weight', 1.0)
+        thoughts.append(f"RSI ({last['RSI']:.1f}) డిప్ నుంచి పైకి టర్న్ అయ్యింది (పర్ఫెక్ట్ ఎంట్రీ).")
+    elif last['RSI'] > 72:
+        sell_score += 3.0
+        thoughts.append(f"RSI ({last['RSI']:.1f}) ఓవర్‌బాట్ జోన్ లో ఉంది (పడిపోయే ఛాన్స్).")
+
+    if last['close'] <= last['Lower_Band']:
+        mom_pts += 2.0 * ai_brain.get('BOL_weight', 1.0)
+        thoughts.append("ప్రైస్ లోయర్ బోలింజర్ బ్యాండ్ ని తాకి రివర్సల్ కి సిద్ధంగా ఉంది.")
+    elif last['close'] >= last['Upper_Band']:
+        sell_score += 2.5
+        thoughts.append("ప్రైస్ అప్పర్ బోలింజర్ బ్యాండ్ ని దాటింది (ఎగ్జాషన్).")
+
+    if prev['MACD_Line'] <= prev['MACD_Signal'] and last['MACD_Line'] > last['MACD_Signal']:
+        mom_pts += 2.5 * ai_brain.get('MACD_weight', 1.0)
+        thoughts.append("MACD బుల్లిష్ క్రాస్‌ఓవర్ కన్ఫర్మ్ అయ్యింది!")
+    elif last['MACD_Hist'] > 0 and last['MACD_Hist'] > prev['MACD_Hist']:
+        mom_pts += 1.0
+    elif prev['MACD_Line'] >= prev['MACD_Signal'] and last['MACD_Line'] < last['MACD_Signal']:
+        sell_score += 2.5
+        thoughts.append("MACD బేరిష్ క్రాస్‌ఓవర్ డౌన్ అయ్యింది.")
+
+    if mom_pts >= 2.0:
+        pillar_momentum = True
+    buy_score += mom_pts
+
+    # --- PILLAR 3: VOLUME & WHALE CONFIRMATION ---
+    if is_whale_pump:
+        vol_pts += 3.5
+        thoughts.append("🐋 [WHALE RADAR]: వేల్స్ భారీ వాల్యూమ్ తో మార్కెట్ లోకి ఎంటర్ అయ్యారు!")
+    elif volume_strong and is_bullish_candle:
+        vol_pts += 2.0
+        thoughts.append("హై వాల్యూమ్ తో బయ్యర్స్ మార్కెట్ ని గ్రీన్ లో క్లోజ్ చేస్తున్నారు.")
+    elif not is_bullish_candle and volume_strong:
+        sell_score += 1.5
+        thoughts.append("సెల్లింగ్ ప్రెజర్ తో క్యాండిల్ రెడ్ లో క్లోజ్ అయ్యింది.")
+
+    if vol_pts >= 2.0:
+        pillar_volume = True
+    buy_score += vol_pts
+
+    # --- PILLAR 4: SUPPORT & PREDICTIVE ML ---
+    near_support = last['close'] <= (last['Support'] * 1.003)
+    near_resistance = last['close'] >= (last['Resistance'] * 0.997)
     
-    # 🦸‍♂️ SUPER-HERO FEATURE 1: WHALE RADAR (Volume Anomaly Detection)
-    vol_mean = df['volume'].tail(15).mean()
-    vol_current = df['volume'].iloc[-1]
-    is_whale_pump = False
-    if vol_current > vol_mean * 4: # 400% volume spike
-        buy_score += 3
-        is_whale_pump = True
-        thoughts.append("🐋 [WHALE RADAR]: సడెన్ గా వేల్స్ (పెద్ద ప్లేయర్స్) భారీగా కొంటున్నారు! నేను కూడా వాళ్ళతో పాటు జాయిన్ అవుతున్నాను!")
+    if near_support:
+        pred_pts += 1.5
+        thoughts.append("కీలకమైన సపోర్ట్ జోన్ దగ్గర ప్రైస్ ఆగింది.")
+    if near_resistance:
+        sell_score += 2.0
+        thoughts.append("రెసిస్టెన్స్ ఏరియా దగ్గరికి చేరింది.")
 
-    # 🛡️ SUPER-HERO FEATURE 2: FLASH CRASH PROTECTOR
-    price_drop_1m = (df['close'].iloc[-2] - current_price) / df['close'].iloc[-2] * 100
-    if price_drop_1m > 1.5: # 1.5% drop in 1 minute is a crash
-        sell_score += 5
-        thoughts.append("🛑 [FLASH CRASH SHIELD]: మార్కెట్ సడెన్ గా క్రాష్ అవుతోంది! వెంటనే షీల్డ్ ఆన్ చేసి అన్నీ అమ్మేస్తున్నాను!")
-
-    # 🤖 SUPER-HERO FEATURE 3: AUTO-RECOVERY MODE
-    total_t, w = get_symbol_performance(sym)
-    win_rate = (w / total_t) if total_t > 0 else 0.50
-    # If win_rate is extremely poor (< 30%), it forces itself into safe mode
-    if total_t > 2 and win_rate < 0.30:
-        thoughts.append("⚠️ [AUTO-RECOVERY]: మార్కెట్ చాలా దారుణంగా ఉంది. నేను పూర్తి డిఫెన్స్ మోడ్ (Safe Mode) లోకి వెళుతున్నాను.")
-        if buy_score > 0: buy_score -= 2 # Extremely hard to buy
-
-    # --- EXTREME FEATURE 2 & 3: ML Predictor & Sentiment ---
     try:
-        # Machine Learning: Simple Linear Regression on last 20 periods
         x = np.arange(20)
         y = df['close'].tail(20).values
         slope, intercept = np.polyfit(x, y, 1)
         predicted_next = slope * 20 + intercept
         
-        if slope > 0 and predicted_next > current_price * 1.001:
-            buy_score += (2 * ai_brain.get('ML_weight', 1.0))
-            thoughts.append(f"[ML Bot]: నా AI మ్యాథ్స్ ప్రకారం ప్రైస్ ₹{predicted_next:.2f} కి వెళుతుంది!")
-        elif slope < 0 and predicted_next < current_price * 0.999:
-            sell_score += 2
-            thoughts.append(f"[ML Bot]: నా AI మ్యాథ్స్ ప్రకారం ప్రైస్ ₹{predicted_next:.2f} కి పడిపోతుంది!")
-            
-        # Sentiment Analysis
-        news_score = get_news_sentiment(sym)
-        if news_score >= 2:
-            buy_score += 2
-            thoughts.append(f"[News Scanner]: ఇంటర్నెట్ లో పాజిటివ్ న్యూస్ ట్రెండ్ అవుతోంది!")
-        elif news_score <= -2:
-            sell_score += 2
-            thoughts.append(f"[News Scanner]: ఇంటర్నెట్ లో నెగెటివ్ న్యూస్ ట్రెండ్ అవుతోంది (డేంజర్)!")
-    except Exception as e:
+        if slope > 0 and predicted_next > current_price * 1.0015:
+            pred_pts += 1.5 * ai_brain.get('ML_weight', 1.0)
+            thoughts.append(f"[AI ML]: అప్ ట్రెండ్ ప్రిడిక్షన్ (టార్గెట్: ₹{predicted_next:.2f}).")
+        elif slope < 0 and predicted_next < current_price * 0.9985:
+            sell_score += 1.5
+    except Exception:
         pass
-    # --------------------------------------------------------
 
-    
-    # --- CHATBOT COMMAND LISTENER ---
-    import os
+    news_score = get_news_sentiment(sym)
+    if news_score >= 2:
+        pred_pts += 1.0
+        thoughts.append("[News]: పాజిటివ్ సెంటిమెంట్ రన్ అవుతోంది.")
+    elif news_score <= -2:
+        sell_score += 1.5
+        thoughts.append("[News]: నెగెటివ్ సెంటిమెంట్ ఉంది.")
+
+    if pred_pts >= 2.0:
+        pillar_predictive = True
+    buy_score += pred_pts
+
+    # Flash Crash Shield
+    price_drop_1m = (df['close'].iloc[-2] - current_price) / df['close'].iloc[-2] * 100
+    if price_drop_1m > 1.8:
+        sell_score += 6.0
+        thoughts.append("🛑 [FLASH CRASH SHIELD]: మార్కెట్ సడెన్ గా క్రాష్ అవుతోంది! వెంటనే షీల్డ్ ఆన్ అయ్యింది!")
+
+    # Chatbot Force commands
     if os.path.exists('ai_commands.txt'):
         try:
             with open('ai_commands.txt', 'r') as f:
@@ -505,21 +604,34 @@ def generate_signal(df, sym):
             if cmd:
                 if cmd == "PANIC_SELL_ALL":
                     open('ai_commands.txt', 'w').close()
+                    return 'sell', "🚨 [PANIC SELL COMMAND]: అత్యవసర ఆదేశం ప్రకారం వెంటనే అమ్ముతున్నాను!"
                 elif cmd.startswith("FORCE_BUY"):
                     coin = cmd.split(" ")[1]
                     if sym == coin:
-                        thoughts.append(f"🤖 [CHATBOT COMMAND]: బాస్ నన్ను డైరెక్ట్ గా {coin} కొనమన్నారు! సిగ్నల్ తో పనిలేదు, వెంటనే కొంటున్నాను!")
-                        buy_score += 100 # Force it to buy immediately
-                        open('ai_commands.txt', 'w').close() # clear it
-        except:
+                        open('ai_commands.txt', 'w').close()
+                        return 'buy', f"🤖 [CHATBOT COMMAND]: యూజర్ ఆదేశం ప్రకారం {coin} ని వెంటనే కొంటున్నాను!"
+        except Exception:
             pass
 
-    if buy_score >= 4: # Increased threshold because of new features
-        return 'buy', f" 🧠 AI ఆలోచన (Scalper): " + " ".join(thoughts) + f" (Volatility: {last['ATR']:.2f}) ఫాస్ట్ సిగ్నల్ వచ్చింది కాబట్టి BUY చేస్తున్నాను!"
-    elif sell_score >= 2:
-        return 'sell', f" 🧠 AI ఆలోచన (Scalper): " + " ".join(thoughts) + f" (Volatility: {last['ATR']:.2f}) రిస్క్ ఉంది కాబట్టి వెంటనే SELL చేస్తున్నాను!"
+    # -------------------------------------------------------------
+    # 🏆 4. FINAL CONFLUENCE DECISION
+    # -------------------------------------------------------------
+    confluence_pillars = sum([1 for p in [pillar_trend, pillar_momentum, pillar_volume, pillar_predictive] if p])
     
-    return 'hold', " 🧠 AI ఆలోచన (Pro): " + " ".join(thoughts) + " సరైన కన్ఫర్మేషన్ లేదు, కాబట్టి వెయిట్ చేస్తున్నాను."
+    # BUY REQUIREMENT:
+    # 1. At least 3 out of 4 independent pillars MUST confirm (True Confluence)
+    # 2. Total buy_score >= 7.0
+    # 3. Sell score <= 2.0 (No conflicting breakdown signals)
+    if (confluence_pillars >= 3 and buy_score >= 7.0 and sell_score <= 2.0) or (is_whale_pump and buy_score >= 6.0):
+        return 'buy', f" 🧠 AI ఆలోచన (Sniper 85%+): " + " ".join(thoughts) + f" [స్కోర్: {buy_score:.1f}/14 | పిల్లర్స్: {confluence_pillars}/4] పక్కా కన్ఫర్మేషన్ తో BUY సిగ్నల్!"
+        
+    # SELL REQUIREMENT:
+    # Confirmed reversal breakdown with sell_score >= 5.0
+    elif sell_score >= 5.0:
+        return 'sell', f" 🧠 AI ఆలోచన (Sniper): " + " ".join(thoughts) + f" [రిస్క్ స్కోర్: {sell_score:.1f}] ట్రెండ్ రివర్స్ అయ్యే సూచనలు ఉన్నాయి కాబట్టి SELL సిగ్నల్!"
+
+    return 'hold', f" 🧠 AI ఆలోచన (Sniper): " + (" ".join(thoughts) if thoughts else "మార్కెట్ న్యూట్రల్ గా ఉంది.") + f" [స్కోర్: {buy_score:.1f} | పిల్లర్స్: {confluence_pillars}/4] హై-ప్రాబబిలిటీ సెటప్ కోసం వేచి చూస్తున్నాను."
+
 
 def log_status(msg, voice_alert=None, color_code='\033[0m'):
     print(f"{color_code}{msg}\033[0m")
@@ -573,13 +685,15 @@ def process_symbol(sym):
         
         # High Profit Triggers:
         # 1. Trailing Exit: Reached >= 1.5% and dipped 0.4% from peak (locks in maximum profit!)
-        # 2. Big Target: Reached >= 2.5% directly
-        # 3. Base Reversal Exit: Reached >= 1.2% with SELL reversal signal
-        is_trailing_exit = (peak_gain_pct >= 1.5 and current_price <= (peak_p * 0.996)) or (profit_pct >= 2.5)
-        is_reversal_exit = (profit_pct >= 1.2 and signal == 'sell')
+        # 2. Big Target: Reached >= 2.8% directly
+        # 3. Base Reversal Exit: Reached >= 1.5% with confirmed SELL reversal signal
+        is_trailing_exit = (peak_gain_pct >= 1.5 and current_price <= (peak_p * 0.996))
+        is_target_exit = (profit_pct >= 2.8)
+        is_reversal_exit = (profit_pct >= 1.5 and signal == 'sell')
         
-        if is_trailing_exit or is_reversal_exit:
+        if is_trailing_exit or is_target_exit or is_reversal_exit:
             profit = (current_price - avg_price) * total_qty
+            last_exit_times[sym] = time.time()
             
             # Execute real order if in Live Mode on Binance
             if live_mode and is_crypto:
@@ -600,9 +714,10 @@ def process_symbol(sym):
                 save_dca_state(dca_state)
             return sym
 
-        # Stop-Loss Emergency Protection: drops > 6% with sell signal
+        # Stop-Loss Emergency Protection: drops > 6% with confirmed sell signal
         elif profit_pct <= -6.0 and signal == 'sell':
             profit = (current_price - avg_price) * total_qty
+            last_exit_times[sym] = time.time()
             if live_mode and is_crypto:
                 execute_live_order("SELL", sym, quantity=total_qty)
             msg = f"🛑 [DCA Stop-Loss]: {sym} -6% కంటే ఎక్కువ పడిపోవడంతో నష్టాన్ని కట్ చేసి సేఫ్ గా అమ్మాను! (Loss: ₹{profit:.2f})"
@@ -617,8 +732,9 @@ def process_symbol(sym):
         # -------------------------------------------------------------
         # 2. ADDITIONAL DCA DIP BUY (AVERAGING DOWN)
         # -------------------------------------------------------------
-        # If price drops >= 1.5% below average and max slices (3) not reached
-        elif len(pos.get('entries', [])) < 3 and current_price <= (avg_price * 0.985) and signal == 'buy':
+        # If price drops >= 1.8% below average and max slices (3) not reached
+        # Requires sniper buy signal confirmation
+        elif len(pos.get('entries', [])) < 3 and current_price <= (avg_price * 0.982) and signal == 'buy':
             slice_qty = slice_cost_inr / current_price
             
             if live_mode and is_crypto:
@@ -636,12 +752,12 @@ def process_symbol(sym):
             pos['total_qty'] += slice_qty
             pos['total_cost'] += slice_cost_inr
             pos['avg_price'] = pos['total_cost'] / pos['total_qty']
-            pos['target_sell_price'] = pos['avg_price'] * 1.012
+            pos['target_sell_price'] = pos['avg_price'] * 1.015
             pos['peak_price'] = current_price
             save_dca_state(dca_state)
             
             mode_str = "💰 LIVE BINANCE" if (live_mode and is_crypto) else "📝 VIRTUAL"
-            msg = f"🧠 [{mode_str} DCA Layer {layer}/3]: {sym} @ ₹{current_price:.2f} (Qty: {slice_qty:.5f})\nకొత్త సగటు ధర: ₹{pos['avg_price']:.2f} | టార్గెట్ (+1.2%): ₹{pos['target_sell_price']:.2f}\n{thought}"
+            msg = f"🧠 [{mode_str} DCA Layer {layer}/3]: {sym} @ ₹{current_price:.2f} (Qty: {slice_qty:.5f})\nకొత్త సగటు ధర: ₹{pos['avg_price']:.2f} | టార్గెట్ (+1.5%): ₹{pos['target_sell_price']:.2f}\n{thought}"
             voice_msg = f"Alert. Averaging down on {sym.replace('-USD', '')}."
             log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[96m')
             log_trade("BUY", sym, current_price, slice_qty, 0.0)
@@ -659,7 +775,7 @@ def process_symbol(sym):
             if not success:
                 log_status(f"⚠️ Live Binance Buy Warning ({sym}): {res}")
                 
-        target_p = current_price * 1.012
+        target_p = current_price * 1.015
         dca_state[sym] = {
             "entries": [{
                 "price": current_price,
@@ -676,7 +792,7 @@ def process_symbol(sym):
         save_dca_state(dca_state)
         
         mode_str = "💰 LIVE BINANCE" if (live_mode and is_crypto) else "📝 VIRTUAL"
-        msg = f"🚀 [{mode_str} Fractional DCA]: {sym} డిప్ లో కొన్నాను @ ₹{current_price:.2f} ($10 / Qty: {slice_qty:.5f})\n🎯 టార్గెట్ (+1.2% లాభం): ₹{target_p:.2f}\n{thought}"
+        msg = f"🚀 [{mode_str} Sniper Confluence DCA]: {sym} డిప్ లో కొన్నాను @ ₹{current_price:.2f} ($10 / Qty: {slice_qty:.5f})\n🎯 టార్గెట్ (+1.5% లాభం): ₹{target_p:.2f}\n{thought}"
         voice_msg = f"Alert. Buying fractional slice of {sym.replace('-USD', '')}."
         log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
         log_trade("BUY", sym, current_price, slice_qty, 0.0)

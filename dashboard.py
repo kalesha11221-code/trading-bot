@@ -416,8 +416,10 @@ def fetch_and_analyze(sym):
             else: sell_score += 1
             
         signal = "HOLD"
-        if buy_score >= 3: signal = "BUY"
-        elif sell_score >= 3: signal = "SELL"
+        if buy_score >= 5 and last['RSI'] < 48 and last['close'] > last['EMA_50']:
+            signal = "BUY"
+        elif sell_score >= 4 and (last['RSI'] > 65 or last['close'] < last['EMA_50']):
+            signal = "SELL"
             
         return df, signal, last
     
@@ -462,7 +464,7 @@ with main_tab1:
                                     g_prof += p
                                 elif p < 0:
                                     g_loss += abs(p)
-                                taxes += 0.50
+                                taxes += abs(p) * 0.001 # 0.1% Binance spot fee
                         total_profit = (g_prof - g_loss) - taxes
                         
                     # 2. Calculate Invested Amount from Open BUY trades
@@ -724,8 +726,19 @@ with main_tab1:
                         st.success("ప్రస్తుతం ట్రేడ్స్ ఏమీ రన్ అవ్వట్లేదు. అంతా సేఫ్ గా బుక్ అయిపోయింది. కొత్త ఛాన్స్ కోసం బాట్ వెయిట్ చేస్తోంది.")
                 else:
                     st.info("ఇంకా ఎలాంటి ట్రేడ్ జరగలేదు.")
-                    
-                st.subheader("📝 పాత ఫైనాన్షియల్ రిపోర్ట్ (PnL & History)")
+                col_h1, col_h2 = st.columns([3, 1])
+                with col_h1:
+                    st.subheader("📝 పాత ఫైనాన్షియల్ రిపోర్ట్ (PnL & History)")
+                with col_h2:
+                    if st.button("🗑️ Reset Trade History", help="పాత టెస్ట్ ట్రేడ్స్ క్లియర్ చేసి కొత్తగా జీరో నుంచి మొదలుపెడుతుంది"):
+                        if os.path.exists('trades_log.csv'):
+                            with open('trades_log.csv', 'w') as f_reset:
+                                f_reset.write("Time,Symbol,Action,Price,Shares,Profit\n")
+                        if os.path.exists('dca_state.json'):
+                            with open('dca_state.json', 'w') as f_dca:
+                                f_dca.write("{}")
+                        st.toast("✅ పాత ట్రేడ్ హిస్టరీ రీసెట్ అయ్యింది!", icon="🗑️")
+                        st.rerun()
 
                 # --- ADVANCED OVERALL PERFORMANCE WIDGET ---
                 if os.path.exists('trades_log.csv'):
@@ -749,7 +762,7 @@ with main_tab1:
                         
                         gross_profit = sells[sells['CleanProfit'] > 0]['CleanProfit'].sum()
                         gross_loss = sells[sells['CleanProfit'] < 0]['CleanProfit'].sum()
-                        taxes = total_trades * 0.50 # 50 paise tax per trade
+                        taxes = round((gross_profit + abs(gross_loss)) * 0.001, 2) # 0.1% Binance spot fee
                         net_profit = gross_profit + gross_loss - taxes # loss is already negative
                         
                         st.markdown(f'''
@@ -810,7 +823,7 @@ with main_tab1:
                                         g_profit += p
                                     elif p < 0:
                                         g_loss += abs(p)
-                                    t_taxes += tax_per_trade
+                                    t_taxes += abs(p) * 0.001 # 0.1% Binance spot fee
                                 except:
                                     pass
                                     
