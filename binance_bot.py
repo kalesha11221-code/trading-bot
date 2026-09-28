@@ -187,23 +187,61 @@ try:
         'apiKey': API_KEY,
         'secret': SECRET_KEY,
         'enableRateLimit': True,
+        'timeout': 5000,
     })
 except:
     pass
 
-def execute_live_order(action, sym, quantity):
-    if not exchange: return False
-    # CCXT expects symbol like BTC/USDT. We have BTC-USD.
+DCA_FILE = 'dca_state.json'
+
+def load_dca_state():
+    if os.path.exists(DCA_FILE):
+        try:
+            with open(DCA_FILE, 'r') as f:
+                return json.load(f)
+        except: pass
+    return {}
+
+def save_dca_state(state):
+    try:
+        with file_lock:
+            with open(DCA_FILE, 'w') as f:
+                json.dump(state, f, indent=2)
+    except: pass
+
+def is_live_trading():
+    if os.path.exists('trading_mode.txt'):
+        try:
+            with open('trading_mode.txt', 'r') as f:
+                content = f.read().strip()
+            return "Live" in content or "బినాన్స్" in content
+        except: pass
+    return False
+
+def execute_live_order(action, sym, quantity=None, quote_amount=None):
+    if not exchange: return False, "No exchange initialized"
     market_sym = sym.replace("-USD", "/USDT")
     try:
         if action == "BUY":
-            exchange.create_market_buy_order(market_sym, quantity)
+            # For spot market buy, quoteOrderQty (spending USDT amount) avoids lot size precision errors
+            if quote_amount is not None and quote_amount > 0:
+                order = exchange.create_market_buy_order(market_sym, None, params={'quoteOrderQty': quote_amount})
+            else:
+                order = exchange.create_market_buy_order(market_sym, quantity)
+            return True, order
         elif action == "SELL":
-            exchange.create_market_sell_order(market_sym, quantity)
-        return True
+            sell_qty = quantity
+            try:
+                markets = exchange.load_markets()
+                if market_sym in markets:
+                    sell_qty = float(exchange.amount_to_precision(market_sym, quantity))
+            except: pass
+            order = exchange.create_market_sell_order(market_sym, sell_qty)
+            return True, order
     except Exception as e:
-        log_status(f"⚠️ Live Order Error: {e}")
-        return False
+        log_status(f"⚠️ Live Binance Error ({market_sym}): {e}")
+        return False, str(e)
+    return False, "Unknown"
 
 
 
@@ -505,72 +543,173 @@ def process_symbol(sym):
         
     signal, thought = generate_signal(df, sym)
     current_price = df.iloc[-1]['close']
-    current_pos = get_current_position(sym)
     
-    if signal == 'buy' and current_pos != 'BUY':
-        total_trades, wins = get_symbol_performance(sym)
+    # Load Fractional Micro-DCA State
+    dca_state = load_dca_state()
+    pos = dca_state.get(sym)
+    live_mode = is_live_trading()
+    is_crypto = sym.endswith("-USD")
+    
+    # Slice cost: $10 USDT (~₹845 INR) for fractional micro-buying
+    slice_cost_inr = 845.0
+    slice_cost_usd = 10.0
+    
+    # -------------------------------------------------------------
+    # 1. CHECK TAKE-PROFIT ON EXISTING DCA POSITION
+    # -------------------------------------------------------------
+    if pos is not None and pos.get('total_qty', 0) > 0:
+        avg_price = pos['avg_price']
+        total_qty = pos['total_qty']
+        profit_pct = ((current_price - avg_price) / avg_price) * 100.0
         
-        # EXTREME FEATURE 4: Kelly Criterion Auto-Compounding
-        # 1. Calculate Real Dynamic Capital (Initial + Total Profit)
-        dynamic_capital = 10000.0
-        try:
-            if os.path.exists('trades_log.csv'):
-                with open('trades_log.csv', 'r') as f_log:
-                    lines = f_log.readlines()[1:] # skip header
-                    for line in lines:
-                        parts = line.strip().split(',')
-                        if len(parts) >= 6 and parts[1] == 'SELL':
-                            dynamic_capital += float(parts[5]) # Add profit
-        except: pass
-        
-        if total_trades >= 3:
-            win_rate = wins / total_trades
-            # Kelly % = (2 * WinRate) - 1
-            kelly_pct = max(0.05, min(0.60, (2 * win_rate - 1)))
-            investment = dynamic_capital * kelly_pct
-            thought += f" 🧠 [Auto-Compounding]: క్యాపిటల్ ₹{dynamic_capital:.0f} కి పెరిగింది! కాబట్టి {kelly_pct*100:.0f}% రిస్క్ చేస్తున్నా (₹{investment:.0f})!"
-        else:
-            investment = dynamic_capital * 0.20 # 20% default
- 
+        # 🚀 Autonomous Trailing Profit Maximizer
+        peak_p = pos.get('peak_price', avg_price)
+        if current_price > peak_p:
+            pos['peak_price'] = current_price
+            peak_p = current_price
+            save_dca_state(dca_state)
             
-        actual_trade_size = investment / current_price
+        peak_gain_pct = ((peak_p - avg_price) / avg_price) * 100.0
         
-        msg = f"🚀 BUY ఆర్డర్ ({sym}) @ ₹{current_price:.2f} (Qty: {actual_trade_size:.5f})\\n{thought}"
-        voice_msg = f"Alert. Extreme AI Buying {sym.replace('-USD', ' crypto')}."
-        log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='[92m')
-        log_trade("BUY", sym, current_price, actual_trade_size, 0.0)
-        send_telegram_message(f"✅ {msg}")
-        return sym
+        # High Profit Triggers:
+        # 1. Trailing Exit: Reached >= 1.5% and dipped 0.4% from peak (locks in maximum profit!)
+        # 2. Big Target: Reached >= 2.5% directly
+        # 3. Base Reversal Exit: Reached >= 1.2% with SELL reversal signal
+        is_trailing_exit = (peak_gain_pct >= 1.5 and current_price <= (peak_p * 0.996)) or (profit_pct >= 2.5)
+        is_reversal_exit = (profit_pct >= 1.2 and signal == 'sell')
         
-    elif signal == 'sell' and current_pos == 'BUY':
-        last_buy, last_qty = get_last_buy_details(sym)
-        profit = 0.0
-        if last_buy > 0:
-            profit = (current_price - last_buy) * last_qty
+        if is_trailing_exit or is_reversal_exit:
+            profit = (current_price - avg_price) * total_qty
+            
+            # Execute real order if in Live Mode on Binance
+            if live_mode and is_crypto:
+                success, res = execute_live_order("SELL", sym, quantity=total_qty)
+                if not success:
+                    log_status(f"⚠️ Live Binance Sell Warning ({sym}): {res}")
+            
+            mode_str = "💰 LIVE BINANCE" if (live_mode and is_crypto) else "📝 VIRTUAL"
+            msg = f"🏆 [{mode_str} Auto-Profit Maximizer]: {sym} (Qty: {total_qty:.5f}) | భారీ లాభం: ₹{profit:.2f} (+{profit_pct:.2f}%)\n{thought} 🧠 [Peak: +{peak_gain_pct:.2f}% | DCA Layers: {len(pos.get('entries', []))}]"
+            voice_msg = f"Alert. Profit maximizer reached on {sym.replace('-USD', '')}. Selling for great profit."
+            log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
+            log_trade("SELL", sym, current_price, total_qty, profit)
+            send_telegram_message(f"✅ {msg}")
+            
+            # Reset DCA position
+            if sym in dca_state:
+                del dca_state[sym]
+                save_dca_state(dca_state)
+            return sym
+
+        # Stop-Loss Emergency Protection: drops > 6% with sell signal
+        elif profit_pct <= -6.0 and signal == 'sell':
+            profit = (current_price - avg_price) * total_qty
+            if live_mode and is_crypto:
+                execute_live_order("SELL", sym, quantity=total_qty)
+            msg = f"🛑 [DCA Stop-Loss]: {sym} -6% కంటే ఎక్కువ పడిపోవడంతో నష్టాన్ని కట్ చేసి సేఫ్ గా అమ్మాను! (Loss: ₹{profit:.2f})"
+            log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", color_code='\033[91m')
+            log_trade("SELL", sym, current_price, total_qty, profit)
+            send_telegram_message(f"⚠️ {msg}")
+            if sym in dca_state:
+                del dca_state[sym]
+                save_dca_state(dca_state)
+            return sym
+
+        # -------------------------------------------------------------
+        # 2. ADDITIONAL DCA DIP BUY (AVERAGING DOWN)
+        # -------------------------------------------------------------
+        # If price drops >= 1.5% below average and max slices (3) not reached
+        elif len(pos.get('entries', [])) < 3 and current_price <= (avg_price * 0.985) and signal == 'buy':
+            slice_qty = slice_cost_inr / current_price
+            
+            if live_mode and is_crypto:
+                success, res = execute_live_order("BUY", sym, quote_amount=slice_cost_usd)
+                if not success:
+                    log_status(f"⚠️ Live Binance DCA Buy Warning ({sym}): {res}")
+            
+            layer = len(pos.get('entries', [])) + 1
+            pos['entries'].append({
+                "price": current_price,
+                "qty": slice_qty,
+                "cost": slice_cost_inr,
+                "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            })
+            pos['total_qty'] += slice_qty
+            pos['total_cost'] += slice_cost_inr
+            pos['avg_price'] = pos['total_cost'] / pos['total_qty']
+            pos['target_sell_price'] = pos['avg_price'] * 1.012
+            pos['peak_price'] = current_price
+            save_dca_state(dca_state)
+            
+            mode_str = "💰 LIVE BINANCE" if (live_mode and is_crypto) else "📝 VIRTUAL"
+            msg = f"🧠 [{mode_str} DCA Layer {layer}/3]: {sym} @ ₹{current_price:.2f} (Qty: {slice_qty:.5f})\nకొత్త సగటు ధర: ₹{pos['avg_price']:.2f} | టార్గెట్ (+1.2%): ₹{pos['target_sell_price']:.2f}\n{thought}"
+            voice_msg = f"Alert. Averaging down on {sym.replace('-USD', '')}."
+            log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[96m')
+            log_trade("BUY", sym, current_price, slice_qty, 0.0)
+            send_telegram_message(f"✅ {msg}")
+            return sym
+
+    # -------------------------------------------------------------
+    # 3. FIRST DIP ENTRY (INITIAL FRACTIONAL SLICE)
+    # -------------------------------------------------------------
+    elif pos is None and signal == 'buy':
+        slice_qty = slice_cost_inr / current_price
         
-        msg = f"📉 SELL ఆర్డర్ ({sym}) (Qty: {last_qty:.5f}) | లాభం: ₹{profit:.4f}\\n{thought}"
-        voice_msg = f"Alert. Extreme AI Selling {sym.replace('-USD', ' crypto')}."
-        log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='[91m')
-        log_trade("SELL", sym, current_price, last_qty, profit)
+        if live_mode and is_crypto:
+            success, res = execute_live_order("BUY", sym, quote_amount=slice_cost_usd)
+            if not success:
+                log_status(f"⚠️ Live Binance Buy Warning ({sym}): {res}")
+                
+        target_p = current_price * 1.012
+        dca_state[sym] = {
+            "entries": [{
+                "price": current_price,
+                "qty": slice_qty,
+                "cost": slice_cost_inr,
+                "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }],
+            "avg_price": current_price,
+            "total_qty": slice_qty,
+            "total_cost": slice_cost_inr,
+            "target_sell_price": target_p,
+            "peak_price": current_price
+        }
+        save_dca_state(dca_state)
+        
+        mode_str = "💰 LIVE BINANCE" if (live_mode and is_crypto) else "📝 VIRTUAL"
+        msg = f"🚀 [{mode_str} Fractional DCA]: {sym} డిప్ లో కొన్నాను @ ₹{current_price:.2f} ($10 / Qty: {slice_qty:.5f})\n🎯 టార్గెట్ (+1.2% లాభం): ₹{target_p:.2f}\n{thought}"
+        voice_msg = f"Alert. Buying fractional slice of {sym.replace('-USD', '')}."
+        log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
+        log_trade("BUY", sym, current_price, slice_qty, 0.0)
         send_telegram_message(f"✅ {msg}")
         return sym
         
     return None
+
 
 def run_bot_loop():
     log_status(f"[{datetime.now().strftime('%H:%M:%S')}] 🔥 Advanced AI Trading Robot is now ONLINE!", voice_alert="Advanced AI Robot is now online.", color_code="[95m")
     send_telegram_message("🤖 AI మల్టిపుల్ ట్రేడింగ్ బాట్ ఆన్ అయ్యింది!")
     while True:
         try:
+            active_symbols = symbols_to_trade
+            if os.path.exists('selected_symbol.txt'):
+                try:
+                    with open('selected_symbol.txt', 'r') as f:
+                        sel = f.read().strip()
+                    if sel and sel != "ALL":
+                        active_symbols = [sel]
+                except: pass
+
             actions_taken = []
-            # EXTREME FEATURE 1: Multi-Threading
-            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-                results = list(executor.map(process_symbol, symbols_to_trade))
+            # Multi-Threading for active symbols
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(active_symbols))) as executor:
+                results = list(executor.map(process_symbol, active_symbols))
                 
             actions_taken = [r for r in results if r is not None]
             
             if not actions_taken:
-                log_status(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡ (Extreme Mode) అన్నీ ఒకేసారి స్కాన్ చేశాను. సేఫ్ గా HOLD లో ఉన్నాయి.", color_code='[96m')
+                sym_label = active_symbols[0] if len(active_symbols) == 1 else "అన్నీ"
+                log_status(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡ {sym_label} స్కాన్ చేశాను. సేఫ్ గా HOLD లో ఉంది.", color_code='[96m')
                 
         except Exception as e:
             log_status(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️ ఎర్రర్: {e}")

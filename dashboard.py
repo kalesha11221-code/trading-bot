@@ -317,9 +317,18 @@ st.sidebar.markdown("---")
 selected_name = st.sidebar.selectbox("ట్రేడింగ్ పెయిర్ (Trading Pair) ఎంచుకోండి:", list(symbol_options.keys()))
 symbol = symbol_options[selected_name]
 
+trade_scope = st.sidebar.radio(
+    "🎯 ట్రేడింగ్ ఫోకస్ (Trading Focus):",
+    [f"🎯 కేవలం {selected_name} మాత్రమే (Single Coin)", "🌐 అన్ని మార్కెట్లు (All 15 Assets)"],
+    index=0
+)
+
 # బాట్ కి కూడా ఇదే సింబల్ వెళ్ళడానికి ఫైల్ లో సేవ్ చేద్దాం
 with open('selected_symbol.txt', 'w') as f:
-    f.write(symbol)
+    if "Single" in trade_scope or "కేవలం" in trade_scope:
+        f.write(symbol)
+    else:
+        f.write("ALL")
 
 timeframe = '1m'
 auto_refresh = st.sidebar.checkbox("🟢 Auto Refresh (Live)", value=False)
@@ -482,6 +491,30 @@ with main_tab1:
             else: b4.warning(f"🤖 Action: {signal}")
 
             st.markdown("---")
+            
+            # 🎯 Live Fractional DCA Positions Monitor
+            if os.path.exists('dca_state.json'):
+                try:
+                    with open('dca_state.json', 'r') as f_dca:
+                        dca_positions = json.load(f_dca)
+                    if dca_positions:
+                        st.markdown("#### 🎯 AI Autonomous DCA Positions (స్వంత నిర్ణయాలు & లైవ్ లాభాలు)")
+                        d_cols = st.columns(min(4, len(dca_positions)))
+                        for idx, (d_sym, d_info) in enumerate(dca_positions.items()):
+                            d_cur = current_price if d_sym == symbol else d_info['avg_price']
+                            d_pnl_pct = ((d_cur - d_info['avg_price']) / d_info['avg_price']) * 100.0
+                            with d_cols[idx % len(d_cols)]:
+                                p_color = "normal" if d_pnl_pct >= 0 else "inverse"
+                                st.markdown(fancy_metric(
+                                    f"{d_sym} (Layer {len(d_info.get('entries', []))}/3)",
+                                    f"₹{d_cur:,.2f}",
+                                    f"{d_pnl_pct:+.2f}% (టార్గెట్: +1.5%)",
+                                    p_color
+                                ), unsafe_allow_html=True)
+                        st.markdown("---")
+                except:
+                    pass
+
             
             # 🌟 Professional UI Tabs
             sub_tab1, sub_tab2, sub_tab3 = st.tabs(["📊 Live Trading Chart", "🏦 PnL & History", "💬 AI తో మాట్లాడండి (Voice Chat)"])
