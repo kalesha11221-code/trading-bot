@@ -25,6 +25,32 @@ start_bot_thread()
 
 
 import streamlit as st
+import warnings
+warnings.filterwarnings("ignore", message=".*use_container_width.*")
+warnings.filterwarnings("ignore", message=".*Please replace.*use_container_width.*")
+
+def safe_button(label, is_sidebar=False, **kwargs):
+    kwargs.pop('use_container_width', None)
+    btn_fn = st.sidebar.button if is_sidebar else st.button
+    try:
+        return btn_fn(label, width='stretch', **kwargs)
+    except TypeError:
+        return btn_fn(label, use_container_width=True, **kwargs)
+
+def safe_plotly_chart(fig, **kwargs):
+    kwargs.pop('use_container_width', None)
+    try:
+        return st.plotly_chart(fig, width='stretch', **kwargs)
+    except TypeError:
+        return st.plotly_chart(fig, use_container_width=True, **kwargs)
+
+def safe_dataframe(df_data, **kwargs):
+    kwargs.pop('use_container_width', None)
+    try:
+        return st.dataframe(df_data, width='stretch', **kwargs)
+    except TypeError:
+        return st.dataframe(df_data, use_container_width=True, **kwargs)
+
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -154,7 +180,7 @@ colA, colB = st.columns([8, 2])
 with colA:
     pass # Title is already above
 with colB:
-    if st.button("🔄 Get Live Updates", use_container_width=True):
+    if safe_button("🔄 Get Live Updates"):
         st.toast("✅ లాగ్స్ అప్‌డేట్ అయ్యాయి!", icon="🔄")
 
 
@@ -267,7 +293,7 @@ new_risk = st.sidebar.select_slider(
 
 # 3. Panic Button (Emergency Stop)
 st.sidebar.markdown("<br>", unsafe_allow_html=True)
-panic = st.sidebar.button("🛑 EMERGENCY PANIC STOP", help="కొన్న కాయిన్స్ అన్నీ వెంటనే అమ్మేసి బాట్ ని ఆపేస్తుంది!", use_container_width=True)
+panic = safe_button("🛑 EMERGENCY PANIC STOP", is_sidebar=True, help="కొన్న కాయిన్స్ అన్నీ వెంటనే అమ్మేసి బాట్ ని ఆపేస్తుంది!")
 
 # Update settings if changed
 if new_style != bot_settings.get("trading_style") or new_risk != bot_settings.get("risk_level") or panic:
@@ -550,7 +576,7 @@ with main_tab1:
                 
                 col_g1, col_g2 = st.columns([1, 2])
                 with col_g1:
-                    st.plotly_chart(fig_gauge, use_container_width=True)
+                    safe_plotly_chart(fig_gauge)
                 with col_g2:
                     st.markdown("<br><br>", unsafe_allow_html=True)
                     
@@ -665,7 +691,7 @@ with main_tab1:
                 fig.add_hline(y=30, line_dash="dash", line_color="green", row=3, col=1)
 
                 fig.update_layout(template='plotly_dark', height=800, xaxis_rangeslider_visible=False, margin=dict(l=0, r=0, t=30, b=0))
-                st.plotly_chart(fig, use_container_width=True)
+                safe_plotly_chart(fig)
                 
 
             with sub_tab2:
@@ -887,7 +913,7 @@ with main_tab1:
                             return ''
                             
                         styled_summary = summary_df.style.map(style_net_pnl, subset=['మిగిలింది (Net PnL)'])
-                        st.dataframe(styled_summary, use_container_width=True, hide_index=True)
+                        safe_dataframe(styled_summary, hide_index=True)
                     else:
                         st.info("ఇంకా కాయిన్ల వారీగా కంప్లీట్ అయిన ట్రేడ్స్ ఏమీ లేవు.")
                     
@@ -917,7 +943,7 @@ with main_tab1:
                             pass
                             
                     styled_df = display_df.iloc[::-1].style.map(highlight_action, subset=['Action']).map(highlight_profit, subset=['Profit'])
-                    st.dataframe(styled_df, use_container_width=True, hide_index=True)
+                    safe_dataframe(styled_df, hide_index=True)
                 else:
                     st.info("ఇంకా ఎలాంటి ట్రేడ్ జరగలేదు. బాట్ ఎదురుచూస్తోంది...")
 
@@ -955,7 +981,6 @@ with main_tab1:
                         language='te-IN', 
                         start_prompt="🎙️ వాయిస్ మెసేజ్ పంపడానికి ఇక్కడ నొక్కండి",
                         stop_prompt="🛑 ఆపడానికి ఇక్కడ నొక్కండి (రికార్డింగ్ ఆగుతుంది)",
-                        use_container_width=False, 
                         just_once=True, 
                         key='STT'
                     )
