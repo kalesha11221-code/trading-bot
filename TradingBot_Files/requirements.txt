@@ -1,0 +1,10 @@
+streamlit
+pandas
+numpy
+plotly
+yfinance
+ccxt
+requests
+gtts
+streamlit-mic-recorder
+google-generativeai
