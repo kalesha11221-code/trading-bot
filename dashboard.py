@@ -1,5 +1,7 @@
 import os
 import sys
+import time
+import json
 import threading
 from datetime import datetime
 
@@ -15,13 +17,48 @@ def _run_background_bot():
                 f.write(f"Bot thread start error: {e}\n")
         except: pass
 
-def start_bot_thread():
-    if not hasattr(start_bot_thread, "_started"):
+def start_bot_thread(force=False):
+    if force or not getattr(start_bot_thread, "_started", False):
         start_bot_thread._started = True
         t = threading.Thread(target=_run_background_bot, daemon=True)
         t.start()
+        return True
+    return False
 
 start_bot_thread()
+
+def get_bot_heartbeat():
+    hb_file = 'bot_heartbeat.json'
+    if os.path.exists(hb_file):
+        try:
+            with open(hb_file, 'r') as f:
+                data = json.load(f)
+            last_ping = data.get('last_ping', 0)
+            diff = time.time() - last_ping
+            if diff <= 30:
+                return "RUNNING", int(diff), data
+            elif diff <= 70:
+                return "DELAYED", int(diff), data
+            else:
+                return "STOPPED", int(diff), data
+        except Exception:
+            pass
+
+    # Secondary fallback to bot_logs.txt timestamp/mtime
+    if os.path.exists('bot_logs.txt'):
+        try:
+            mtime = os.path.getmtime('bot_logs.txt')
+            diff = time.time() - mtime
+            if diff <= 35:
+                return "RUNNING", int(diff), {"loop_count": "-", "last_action": "లైవ్ స్కానింగ్ జరుగుతోంది"}
+            elif diff <= 90:
+                return "DELAYED", int(diff), {"loop_count": "-", "last_action": "ఆలస్యం"}
+            else:
+                return "STOPPED", int(diff), {"loop_count": "-", "last_action": "ఆగిపోయింది"}
+        except Exception:
+            pass
+            
+    return "STOPPED", 999, {"loop_count": 0, "last_action": "బాట్ ఇంకా స్టార్ట్ కాలేదు"}
 
 
 import streamlit as st
@@ -165,11 +202,61 @@ if os.path.exists('bot_logs.txt'):
 
 st.title("📈 AI Trading Master - Live Dashboard")
 
+# --- 💓 LIVE BOT STATUS INDICATOR (ఆన్ లో ఉందా / ఆగిపోయిందా) ---
+bot_status, bot_diff, bot_meta = get_bot_heartbeat()
+loop_num = bot_meta.get('loop_count', '-')
+last_act = bot_meta.get('last_action', 'స్కానింగ్')
+
+if bot_status == "RUNNING":
+    st.markdown(f'''
+    <div style="background: linear-gradient(90deg, #0d381e 0%, #164e2a 100%); border: 1.5px solid #00e676; border-radius: 12px; padding: 12px 20px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 4px 15px rgba(0, 230, 118, 0.15);">
+        <div style="display: flex; align-items: center; gap: 14px;">
+            <span style="height: 16px; width: 16px; background-color: #00e676; border-radius: 50%; display: inline-block; box-shadow: 0 0 12px #00e676;"></span>
+            <div>
+                <div style="color: #ffffff; font-size: 16px; font-weight: bold;">🟢 బాట్ ఆన్ లో ఉంది (BOT IS ONLINE & RUNNING)</div>
+                <div style="color: #b9f6ca; font-size: 13px; margin-top: 2px;">చివరి స్కాన్: <b>{bot_diff} సెకన్ల క్రితం</b> | లూప్: <b>#{loop_num}</b> | స్టేటస్: <b>{last_act}</b></div>
+            </div>
+        </div>
+        <span style="background-color: rgba(0, 230, 118, 0.25); color: #00e676; border: 1px solid #00e676; padding: 5px 14px; border-radius: 8px; font-size: 13px; font-weight: bold;">● LIVE ACTIVE</span>
+    </div>
+    ''', unsafe_allow_html=True)
+elif bot_status == "DELAYED":
+    st.markdown(f'''
+    <div style="background: linear-gradient(90deg, #3d2f09 0%, #57420c 100%); border: 1.5px solid #ffd600; border-radius: 12px; padding: 12px 20px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 4px 15px rgba(255, 214, 0, 0.15);">
+        <div style="display: flex; align-items: center; gap: 14px;">
+            <span style="height: 16px; width: 16px; background-color: #ffd600; border-radius: 50%; display: inline-block; box-shadow: 0 0 12px #ffd600;"></span>
+            <div>
+                <div style="color: #ffffff; font-size: 16px; font-weight: bold;">🟡 బాట్ రెస్పాన్స్ ఆలస్యం (BOT SLOW / WAITING)</div>
+                <div style="color: #fff9c4; font-size: 13px; margin-top: 2px;">చివరి స్కాన్: <b>{bot_diff} సెకన్ల క్రితం</b> (డేటా లేదా తదుపరి లూప్ కోసం వేచి చూస్తోంది)</div>
+            </div>
+        </div>
+        <span style="background-color: rgba(255, 214, 0, 0.25); color: #ffd600; border: 1px solid #ffd600; padding: 5px 14px; border-radius: 8px; font-size: 13px; font-weight: bold;">WAITING</span>
+    </div>
+    ''', unsafe_allow_html=True)
+else:
+    st.markdown(f'''
+    <div style="background: linear-gradient(90deg, #421313 0%, #5c1b1b 100%); border: 1.5px solid #ff5252; border-radius: 12px; padding: 12px 20px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 4px 15px rgba(255, 82, 82, 0.15);">
+        <div style="display: flex; align-items: center; gap: 14px;">
+            <span style="height: 16px; width: 16px; background-color: #ff5252; border-radius: 50%; display: inline-block; box-shadow: 0 0 12px #ff5252;"></span>
+            <div>
+                <div style="color: #ffffff; font-size: 16px; font-weight: bold;">🔴 బాట్ ఆగిపోయింది (BOT STOPPED / OFFLINE)</div>
+                <div style="color: #ffcdd2; font-size: 13px; margin-top: 2px;">బాట్ ప్రస్తుతం బ్యాక్‌గ్రౌండ్‌లో రన్ అవ్వడం లేదు ({bot_diff}s క్రితం చివరి పింగ్). వెంటనే స్టార్ట్ చేయడానికి కింద బటన్ నొక్కండి.</div>
+            </div>
+        </div>
+        <span style="background-color: rgba(255, 82, 82, 0.25); color: #ff5252; border: 1px solid #ff5252; padding: 5px 14px; border-radius: 8px; font-size: 13px; font-weight: bold;">OFFLINE</span>
+    </div>
+    ''', unsafe_allow_html=True)
+    if st.button("▶️ బాట్ ని వెంటనే ఆన్ చేయండి (Restart Bot Now)"):
+        start_bot_thread(force=True)
+        st.toast("🚀 బాట్ ఆన్ అయ్యింది!", icon="🟢")
+        time.sleep(1)
+        st.rerun()
+
 # Display Market Segment Badge
 st.markdown('''
-<div style="display: flex; gap: 10px; margin-bottom: 20px;">
-    <span style="background-color: #2e7d32; color: white; padding: 5px 15px; border-radius: 20px; font-weight: bold; font-size: 14px;">📈 Market: SPOT TRADING</span>
-    <span style="background-color: #1565c0; color: white; padding: 5px 15px; border-radius: 20px; font-weight: bold; font-size: 14px;">🤖 AI Engine: Active</span>
+<div style="display: flex; gap: 10px; margin-bottom: 15px;">
+    <span style="background-color: #2e7d32; color: white; padding: 4px 14px; border-radius: 20px; font-weight: bold; font-size: 13px;">📈 Market: SPOT TRADING</span>
+    <span style="background-color: #1565c0; color: white; padding: 4px 14px; border-radius: 20px; font-weight: bold; font-size: 13px;">🤖 AI Engine: Active</span>
 </div>
 ''', unsafe_allow_html=True)
 
@@ -184,7 +271,19 @@ with colB:
         st.toast("✅ లాగ్స్ అప్‌డేట్ అయ్యాయి!", icon="🔄")
 
 
-# Sidebar options
+# Sidebar options & Bot Status Widget
+if bot_status == "RUNNING":
+    st.sidebar.success(f"🟢 బాట్ ఆన్ లో ఉంది (లైవ్: {bot_diff}s క్రితం)")
+elif bot_status == "DELAYED":
+    st.sidebar.warning(f"🟡 బాట్ ఆలస్యం ({bot_diff}s)")
+else:
+    st.sidebar.error("🔴 బాట్ ఆగిపోయింది (Offline)")
+    if st.sidebar.button("▶️ Start Trading Bot"):
+        start_bot_thread(force=True)
+        st.toast("🚀 బాట్ స్టార్ట్ అయ్యింది!", icon="🟢")
+        time.sleep(1)
+        st.rerun()
+
 st.sidebar.header("⚙️ Settings")
 symbol_options = {
     # Crypto

@@ -921,7 +921,9 @@ def process_symbol(sym):
 def run_bot_loop():
     log_status(f"[{datetime.now().strftime('%H:%M:%S')}] 🔥 Advanced AI Trading Robot is now ONLINE!", voice_alert="Advanced AI Robot is now online.", color_code="[95m")
     send_telegram_message("🤖 AI మల్టిపుల్ ట్రేడింగ్ బాట్ ఆన్ అయ్యింది!")
+    loop_count = 0
     while True:
+        loop_count += 1
         try:
             active_symbols = symbols_to_trade
             if os.path.exists('selected_symbol.txt'):
@@ -939,12 +941,44 @@ def run_bot_loop():
                 
             actions_taken = [r for r in results if r is not None]
             
+            sym_label = active_symbols[0] if len(active_symbols) == 1 else "అన్నీ"
+            last_act_text = ("ట్రేడ్ జరిగింది: " + ", ".join(actions_taken)) if actions_taken else f"{sym_label} సేఫ్ గా HOLD లో ఉంది"
+            
             if not actions_taken:
-                sym_label = active_symbols[0] if len(active_symbols) == 1 else "అన్నీ"
                 log_status(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡ {sym_label} స్కాన్ చేశాను. సేఫ్ గా HOLD లో ఉంది.", color_code='[96m')
+
+            # 💓 Write Live Heartbeat for Website Indicator
+            heartbeat_data = {
+                "last_ping": time.time(),
+                "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                "status": "RUNNING",
+                "active_symbols": active_symbols,
+                "loop_count": loop_count,
+                "last_action": last_act_text
+            }
+            try:
+                import json
+                with file_lock:
+                    with open('bot_heartbeat.json', 'w') as f_hb:
+                        json.dump(heartbeat_data, f_hb)
+            except Exception:
+                pass
                 
         except Exception as e:
             log_status(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️ ఎర్రర్: {e}")
+            try:
+                import json
+                with file_lock:
+                    with open('bot_heartbeat.json', 'w') as f_hb:
+                        json.dump({
+                            "last_ping": time.time(),
+                            "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                            "status": "ERROR",
+                            "error": str(e),
+                            "loop_count": loop_count
+                        }, f_hb)
+            except Exception:
+                pass
             
         time.sleep(10) # 10 seconds scan in Extreme mode
 
