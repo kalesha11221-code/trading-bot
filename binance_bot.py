@@ -49,18 +49,16 @@ import requests
 import yfinance as yf
 
 symbols_to_trade = [
-    # 🪙 Crypto (24/7)
+    # 🪙 High-Liquidity 24/7 Crypto (Tier-1 Binance Spot)
     "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD",
-    # 🇮🇳 Indian Stocks & Indices
-    "^NSEI", "^NSEBANK", "RELIANCE.NS", "INFY.NS", "SBIN.NS",
-    # 🇺🇸 US Stocks
-    "AAPL", "TSLA", "NVDA", "AMZN",
-    # 💱 Forex (Currencies)
-    "EURUSD=X", "GBPUSD=X", "JPY=X",
-    # 🛢️ Commodities
-    "GLD", # Gold
-    "USO"  # Crude Oil
+    # 🇺🇸 High-Momentum Tech Stocks
+    "TSLA", "NVDA"
 ]
+
+# 🎯 హంతకుడు (Assassin Sniper) Portfolio & Risk Guards
+MAX_ACTIVE_POSITIONS = 3
+MAX_PORTFOLIO_CAPITAL = 10000.0
+COOLDOWN_SECONDS = 300  # 5-minute cooldown after closing trade on a symbol
 
 timeframe = '1m'
 trade_size = 1
@@ -443,9 +441,9 @@ def generate_signal(df, sym):
     # 🛑 0. COOLDOWN RE-ENTRY GUARD (Prevents Whipsaw Churn)
     # -------------------------------------------------------------
     global last_exit_times
-    if sym in last_exit_times and (time.time() - last_exit_times[sym]) < 180 and not is_whale_pump:
-        rem_s = int(180 - (time.time() - last_exit_times[sym]))
-        return 'hold', f" 🧠 AI ఆలోచన (Sniper Cooldown): {sym} రీసెంట్ గా క్లోజ్ అయ్యింది. విప్‌సా రిస్క్ ని అవాయిడ్ చేయడానికి {rem_s}s వేచి చూస్తున్నాను."
+    if sym in last_exit_times and (time.time() - last_exit_times[sym]) < COOLDOWN_SECONDS and not is_whale_pump:
+        rem_s = int(COOLDOWN_SECONDS - (time.time() - last_exit_times[sym]))
+        return 'hold', f" 🧠 AI ఆలోచన (హంతకుడు కూల్‌డౌన్): {sym} రీసెంట్ గా క్లోజ్ అయ్యింది. రిస్క్ ని అవాయిడ్ చేయడానికి {rem_s}s వేచి చూస్తున్నాను."
 
     # -------------------------------------------------------------
     # 🛑 1. CHOP & SIDEWAYS NO-TRADE FILTER (Prevents Fake Whipsaws)
@@ -618,19 +616,20 @@ def generate_signal(df, sym):
     # -------------------------------------------------------------
     confluence_pillars = sum([1 for p in [pillar_trend, pillar_momentum, pillar_volume, pillar_predictive] if p])
     
-    # BUY REQUIREMENT:
+    # 🎯 హంతకుడు (ASSASSIN SNIPER) BUY REQUIREMENT:
     # 1. At least 3 out of 4 independent pillars MUST confirm (True Confluence)
-    # 2. Total buy_score >= 7.0
-    # 3. Sell score <= 2.0 (No conflicting breakdown signals)
-    if (confluence_pillars >= 3 and buy_score >= 7.0 and sell_score <= 2.0) or (is_whale_pump and buy_score >= 6.0):
-        return 'buy', f" 🧠 AI ఆలోచన (Sniper 85%+): " + " ".join(thoughts) + f" [స్కోర్: {buy_score:.1f}/14 | పిల్లర్స్: {confluence_pillars}/4] పక్కా కన్ఫర్మేషన్ తో BUY సిగ్నల్!"
+    # 2. Total buy_score >= 7.5 / 14 (High-conviction sniper entry)
+    # 3. Sell score <= 1.5 (Zero conflicting breakdown risk)
+    # 4. HTF (15m) MUST NOT BE BEARISH (Never fight the macro trend)
+    if (confluence_pillars >= 3 and buy_score >= 7.5 and sell_score <= 1.5 and htf_status != 'BEARISH') or (is_whale_pump and buy_score >= 6.5 and htf_status != 'BEARISH'):
+        return 'buy', f" 🎯 AI ఆలోచన [హంతకుడు (Assassin Sniper)]: " + " ".join(thoughts) + f" [స్కోర్: {buy_score:.1f}/14 | పిల్లర్స్: {confluence_pillars}/4 | HTF: {htf_status}] పక్కా కన్ఫర్మేషన్ తో BUY సిగ్నల్!"
         
     # SELL REQUIREMENT:
     # Confirmed reversal breakdown with sell_score >= 5.0
     elif sell_score >= 5.0:
-        return 'sell', f" 🧠 AI ఆలోచన (Sniper): " + " ".join(thoughts) + f" [రిస్క్ స్కోర్: {sell_score:.1f}] ట్రెండ్ రివర్స్ అయ్యే సూచనలు ఉన్నాయి కాబట్టి SELL సిగ్నల్!"
+        return 'sell', f" 🎯 AI ఆలోచన [హంతకుడు (Risk Shield)]: " + " ".join(thoughts) + f" [రిస్క్ స్కోర్: {sell_score:.1f}] ట్రెండ్ రివర్స్ అయ్యే సూచనలు ఉన్నాయి కాబట్టి SELL సిగ్నల్!"
 
-    return 'hold', f" 🧠 AI ఆలోచన (Sniper): " + (" ".join(thoughts) if thoughts else "మార్కెట్ న్యూట్రల్ గా ఉంది.") + f" [స్కోర్: {buy_score:.1f} | పిల్లర్స్: {confluence_pillars}/4] హై-ప్రాబబిలిటీ సెటప్ కోసం వేచి చూస్తున్నాను."
+    return 'hold', f" 🎯 AI ఆలోచన [హంతకుడు (Hunting)]: " + (" ".join(thoughts) if thoughts else "మార్కెట్ న్యూట్రల్ గా ఉంది.") + f" [స్కోర్: {buy_score:.1f} | పిల్లర్స్: {confluence_pillars}/4] ఖచ్చితమైన ప్రాఫిట్ ఎంట్రీ కోసం వేచి చూస్తున్నాను."
 
 
 def log_status(msg, voice_alert=None, color_code='\033[0m'):
@@ -702,7 +701,7 @@ def process_symbol(sym):
                     log_status(f"⚠️ Live Binance Sell Warning ({sym}): {res}")
             
             mode_str = "💰 LIVE BINANCE" if (live_mode and is_crypto) else "📝 VIRTUAL"
-            msg = f"🏆 [{mode_str} Auto-Profit Maximizer]: {sym} (Qty: {total_qty:.5f}) | భారీ లాభం: ₹{profit:.2f} (+{profit_pct:.2f}%)\n{thought} 🧠 [Peak: +{peak_gain_pct:.2f}% | DCA Layers: {len(pos.get('entries', []))}]"
+            msg = f"🎯 [{mode_str} హంతకుడు ప్రాఫిట్ మాక్సిమైజర్]: {sym} (Qty: {total_qty:.5f}) | భారీ లాభం: ₹{profit:.2f} (+{profit_pct:.2f}%)\n{thought} 🧠 [Peak: +{peak_gain_pct:.2f}% | DCA Layers: {len(pos.get('entries', []))}]"
             voice_msg = f"Alert. Profit maximizer reached on {sym.replace('-USD', '')}. Selling for great profit."
             log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
             log_trade("SELL", sym, current_price, total_qty, profit)
@@ -733,8 +732,13 @@ def process_symbol(sym):
         # 2. ADDITIONAL DCA DIP BUY (AVERAGING DOWN)
         # -------------------------------------------------------------
         # If price drops >= 1.8% below average and max slices (3) not reached
-        # Requires sniper buy signal confirmation
+        # Requires sniper buy signal confirmation and capital check
         elif len(pos.get('entries', [])) < 3 and current_price <= (avg_price * 0.982) and signal == 'buy':
+            # Capital Protection Guard
+            current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
+            if (current_invested + slice_cost_inr) > MAX_PORTFOLIO_CAPITAL:
+                return None
+
             slice_qty = slice_cost_inr / current_price
             
             if live_mode and is_crypto:
@@ -757,7 +761,7 @@ def process_symbol(sym):
             save_dca_state(dca_state)
             
             mode_str = "💰 LIVE BINANCE" if (live_mode and is_crypto) else "📝 VIRTUAL"
-            msg = f"🧠 [{mode_str} DCA Layer {layer}/3]: {sym} @ ₹{current_price:.2f} (Qty: {slice_qty:.5f})\nకొత్త సగటు ధర: ₹{pos['avg_price']:.2f} | టార్గెట్ (+1.5%): ₹{pos['target_sell_price']:.2f}\n{thought}"
+            msg = f"🎯 [{mode_str} హంతకుడు DCA Layer {layer}/3]: {sym} @ ₹{current_price:.2f} (Qty: {slice_qty:.5f})\nకొత్త సగటు ధర: ₹{pos['avg_price']:.2f} | టార్గెట్ (+1.5%): ₹{pos['target_sell_price']:.2f}\n{thought}"
             voice_msg = f"Alert. Averaging down on {sym.replace('-USD', '')}."
             log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[96m')
             log_trade("BUY", sym, current_price, slice_qty, 0.0)
@@ -768,6 +772,15 @@ def process_symbol(sym):
     # 3. FIRST DIP ENTRY (INITIAL FRACTIONAL SLICE)
     # -------------------------------------------------------------
     elif pos is None and signal == 'buy':
+        # 1. Check max active positions (Max 3 concurrent positions)
+        if len(dca_state) >= MAX_ACTIVE_POSITIONS:
+            return None
+
+        # 2. Capital Protection Guard (Max ₹10,000)
+        current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
+        if (current_invested + slice_cost_inr) > MAX_PORTFOLIO_CAPITAL:
+            return None
+
         slice_qty = slice_cost_inr / current_price
         
         if live_mode and is_crypto:
@@ -792,7 +805,7 @@ def process_symbol(sym):
         save_dca_state(dca_state)
         
         mode_str = "💰 LIVE BINANCE" if (live_mode and is_crypto) else "📝 VIRTUAL"
-        msg = f"🚀 [{mode_str} Sniper Confluence DCA]: {sym} డిప్ లో కొన్నాను @ ₹{current_price:.2f} ($10 / Qty: {slice_qty:.5f})\n🎯 టార్గెట్ (+1.5% లాభం): ₹{target_p:.2f}\n{thought}"
+        msg = f"🎯 [{mode_str} హంతకుడు స్నైపర్ DCA]: {sym} డిప్ లో కొన్నాను @ ₹{current_price:.2f} ($10 / Qty: {slice_qty:.5f})\n🎯 టార్గెట్ (+1.5% లాభం): ₹{target_p:.2f}\n{thought}"
         voice_msg = f"Alert. Buying fractional slice of {sym.replace('-USD', '')}."
         log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
         log_trade("BUY", sym, current_price, slice_qty, 0.0)

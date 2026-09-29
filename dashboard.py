@@ -345,7 +345,7 @@ symbol = symbol_options[selected_name]
 
 trade_scope = st.sidebar.radio(
     "🎯 ట్రేడింగ్ ఫోకస్ (Trading Focus):",
-    [f"🎯 కేవలం {selected_name} మాత్రమే (Single Coin)", "🌐 అన్ని మార్కెట్లు (All 15 Assets)"],
+    [f"🎯 కేవలం {selected_name} మాత్రమే (Single Asset)", "🌐 ప్రధాన అసెట్లు (Tier-1 Crypto & Tech Stocks)"],
     index=0
 )
 
@@ -493,19 +493,24 @@ with main_tab1:
                                 taxes += abs(p) * 0.001 # 0.1% Binance spot fee
                         total_profit = (g_prof - g_loss) - taxes
                         
-                    # 2. Calculate Invested Amount from Open BUY trades
-                    for sym, group in hist_df.groupby('Symbol'):
-                        last_trade = group.iloc[-1]
-                        if last_trade['Action'] == 'BUY':
-                            price = float(str(last_trade['Price']).replace('₹', '').replace(',', ''))
-                            qty = float(last_trade['Shares'])
-                            invested_amount += (price * qty)
+                    # 2. Calculate Invested Amount strictly from active DCA positions (dca_state.json)
+                    invested_amount = 0.0
+                    if os.path.exists('dca_state.json'):
+                        try:
+                            with open('dca_state.json', 'r') as f_dca:
+                                dca_active = json.load(f_dca)
+                                for d_sym, d_info in dca_active.items():
+                                    invested_amount += float(d_info.get('total_cost', 0.0))
+                        except Exception:
+                            pass
                             
                 except:
                     pass
 
             portfolio_value = initial_capital + total_profit
-            available_cash = portfolio_value - invested_amount
+            # Strict safety bounds: Invested amount cannot exceed portfolio value, available cash cannot be negative
+            invested_amount = min(portfolio_value, max(0.0, invested_amount))
+            available_cash = max(0.0, portfolio_value - invested_amount)
             roi = (total_profit / initial_capital) * 100 if initial_capital > 0 else 0.0
             
             title_str = "Virtual: ₹10,000" if trading_mode == "📝 Paper Trading (Virtual)" else "Live Binance USDT"
