@@ -50,7 +50,7 @@ import yfinance as yf
 
 symbols_to_trade = [
     # 🪙 High-Liquidity 24/7 Crypto (Tier-1 Binance Spot)
-    "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD",
+    "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "DOGE-USD", "XRP-USD",
     # 🇺🇸 High-Momentum Tech Stocks
     "TSLA", "NVDA"
 ]
@@ -918,7 +918,16 @@ def process_symbol(sym):
     return None
 
 
+_bot_loop_active = False
+_bot_loop_lock = threading.Lock()
+
 def run_bot_loop():
+    global _bot_loop_active
+    with _bot_loop_lock:
+        if _bot_loop_active:
+            print("Bot loop is already running in this process.")
+            return
+        _bot_loop_active = True
     log_status(f"[{datetime.now().strftime('%H:%M:%S')}] 🔥 Advanced AI Trading Robot is now ONLINE!", voice_alert="Advanced AI Robot is now online.", color_code="[95m")
     send_telegram_message("🤖 AI మల్టిపుల్ ట్రేడింగ్ బాట్ ఆన్ అయ్యింది!")
     loop_count = 0
@@ -941,11 +950,18 @@ def run_bot_loop():
                 
             actions_taken = [r for r in results if r is not None]
             
-            sym_label = active_symbols[0] if len(active_symbols) == 1 else "అన్నీ"
-            last_act_text = ("ట్రేడ్ జరిగింది: " + ", ".join(actions_taken)) if actions_taken else f"{sym_label} సేఫ్ గా HOLD లో ఉంది"
+            if len(active_symbols) > 1:
+                short_names = [s.replace('-USD', '') for s in active_symbols if '-USD' in s]
+                sym_label = f"మల్టీ-కాయిన్స్ ({len(active_symbols)})"
+                hold_label = f"మల్టీ-కాయిన్స్ ({', '.join(short_names)}) సేఫ్ గా HOLD లో ఉన్నాయి"
+            else:
+                sym_label = active_symbols[0]
+                hold_label = f"{sym_label} సేఫ్ గా HOLD లో ఉంది"
+                
+            last_act_text = ("ట్రేడ్ జరిగింది: " + ", ".join(actions_taken)) if actions_taken else hold_label
             
             if not actions_taken:
-                log_status(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡ {sym_label} స్కాన్ చేశాను. సేఫ్ గా HOLD లో ఉంది.", color_code='[96m')
+                log_status(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡ {hold_label}.", color_code='[96m')
 
             # 💓 Write Live Heartbeat for Website Indicator
             heartbeat_data = {
