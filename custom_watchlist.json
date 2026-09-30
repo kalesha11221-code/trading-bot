@@ -1,0 +1,17 @@
+{
+  "ZOMATO.NS": {
+    "name": "Zomato Limited",
+    "type": "NSE",
+    "added_at": "2026-10-01 00:00:00"
+  },
+  "SUZLON.NS": {
+    "name": "Suzlon Energy Limited",
+    "type": "NSE",
+    "added_at": "2026-10-01 00:00:00"
+  },
+  "PEPE-USD": {
+    "name": "Pepe",
+    "type": "CRYPTO",
+    "added_at": "2026-10-01 00:00:00"
+  }
+}

@@ -266,19 +266,32 @@ def save_dca_state(state):
                 json.dump(state, f, indent=2)
     except: pass
 
+def load_custom_watchlist():
+    if os.path.exists('custom_watchlist.json'):
+        try:
+            with open('custom_watchlist.json', 'r') as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+        except Exception:
+            pass
+    return {}
+
 def get_current_trading_mode():
     if os.path.exists('trading_mode.txt'):
         try:
             with open('trading_mode.txt', 'r') as f:
                 content = f.read().strip()
-            if "Zerodha" in content or "Indian" in content or "NSE" in content:
+            if "Dual" in content:
+                return "DUAL_TRADING"
+            elif "Zerodha" in content or "Indian" in content or "NSE" in content:
                 return "ZERODHA_PAPER"
             elif "Live" in content and "Binance" in content:
                 return "BINANCE_LIVE"
             else:
                 return "BINANCE_PAPER"
         except: pass
-    return "BINANCE_PAPER"
+    return "DUAL_TRADING"
 
 def is_live_trading():
     return get_current_trading_mode() == "BINANCE_LIVE"
@@ -797,12 +810,14 @@ def process_symbol(sym):
             slice_qty = 1.0  # 1 share for Reliance/TCS
         elif current_price > 700:
             slice_qty = 2.0  # 2 shares for Tata Motors, SBI, Infosys, HDFC Bank
+        elif current_price > 100:
+            slice_qty = 5.0  # 5 shares for ITC, Zomato etc.
         else:
-            slice_qty = 5.0  # 5 shares for ITC etc.
+            slice_qty = 10.0 # 10 shares for penny/small stocks (Suzlon etc.)
         slice_cost_inr = round(slice_qty * current_price, 2)
         slice_cost_usd = round(slice_cost_inr / 84.5, 2)
         portfolio_cap = 50000.0  # ₹50,000 virtual capital for Zerodha
-        clean_name = sym.replace('.NS', '')
+        clean_name = sym.replace('.NS', '').replace('.BO', '')
         mode_str = "🇮🇳 ZERODHA VIRTUAL"
     else:
         slice_cost_usd = round(10.0 * brain_conf, 1)
@@ -986,14 +1001,21 @@ def run_bot_loop():
         loop_count += 1
         try:
             mode = get_current_trading_mode()
-            if mode == "ZERODHA_PAPER":
-                default_symbols = NSE_SYMBOLS
+            custom_wl = load_custom_watchlist()
+            custom_crypto = [s for s, d in custom_wl.items() if d.get('type') == 'CRYPTO' or s.endswith('-USD')]
+            custom_nse = [s for s, d in custom_wl.items() if d.get('type') == 'NSE' or s.endswith('.NS') or s.endswith('.BO')]
+
+            if mode == "DUAL_TRADING":
+                default_symbols = list(dict.fromkeys(CRYPTO_SYMBOLS + NSE_SYMBOLS + list(custom_wl.keys())))
+                broker_name = "Dual Hybrid (Crypto 24/7 + Zerodha NSE)"
+            elif mode == "ZERODHA_PAPER":
+                default_symbols = list(dict.fromkeys(NSE_SYMBOLS + custom_nse))
                 broker_name = "Zerodha Kite (Paper)"
             elif mode == "BINANCE_LIVE":
-                default_symbols = CRYPTO_SYMBOLS
+                default_symbols = list(dict.fromkeys(CRYPTO_SYMBOLS + custom_crypto))
                 broker_name = "Binance Spot (Live)"
             else:
-                default_symbols = CRYPTO_SYMBOLS
+                default_symbols = list(dict.fromkeys(CRYPTO_SYMBOLS + custom_crypto))
                 broker_name = "Binance Virtual"
 
             active_symbols = default_symbols
@@ -1001,11 +1023,13 @@ def run_bot_loop():
                 try:
                     with open('selected_symbol.txt', 'r') as f:
                         sel = f.read().strip()
-                    if sel and sel not in ["ALL", "ALL_CRYPTO", "ALL_NSE"]:
+                    if sel and sel not in ["ALL", "ALL_CRYPTO", "ALL_NSE", "ALL_DUAL"]:
                         active_symbols = [sel]
                     elif sel == "ALL_NSE":
-                        active_symbols = NSE_SYMBOLS
-                    elif sel in ["ALL_CRYPTO", "ALL"]:
+                        active_symbols = list(dict.fromkeys(NSE_SYMBOLS + custom_nse))
+                    elif sel == "ALL_CRYPTO":
+                        active_symbols = list(dict.fromkeys(CRYPTO_SYMBOLS + custom_crypto))
+                    elif sel in ["ALL_DUAL", "ALL"]:
                         active_symbols = default_symbols
                 except: pass
 
@@ -1017,8 +1041,15 @@ def run_bot_loop():
             actions_taken = [r for r in results if r is not None]
             
             if len(active_symbols) > 1:
-                if any('.NS' in s for s in active_symbols):
-                    short_names = [s.replace('.NS', '') for s in active_symbols]
+                has_nse = any('.NS' in s or '.BO' in s for s in active_symbols)
+                has_crypto = any('-USD' in s for s in active_symbols)
+                if has_nse and has_crypto:
+                    crypto_count = len([s for s in active_symbols if '-USD' in s])
+                    stock_count = len([s for s in active_symbols if '.NS' in s or '.BO' in s])
+                    sym_label = f"Dual Hybrid ({len(active_symbols)} Assets)"
+                    hold_label = f"Dual Hybrid ({crypto_count} క్రిప్టో + {stock_count} స్టాక్స్) సేఫ్ గా HOLD లో ఉన్నాయి"
+                elif has_nse:
+                    short_names = [s.replace('.NS', '').replace('.BO', '') for s in active_symbols]
                     sym_label = f"Zerodha NSE ({len(active_symbols)})"
                     hold_label = f"Zerodha స్టాక్స్ ({', '.join(short_names[:4])}...) సేఫ్ గా HOLD లో ఉన్నాయి"
                 else:
@@ -1026,7 +1057,7 @@ def run_bot_loop():
                     sym_label = f"మల్టీ-కాయిన్స్ ({len(active_symbols)})"
                     hold_label = f"మల్టీ-కాయిన్స్ ({', '.join(short_names)}) సేఫ్ గా HOLD లో ఉన్నాయి"
             else:
-                sym_label = active_symbols[0].replace('.NS', '').replace('-USD', '')
+                sym_label = active_symbols[0].replace('.NS', '').replace('.BO', '').replace('-USD', '')
                 hold_label = f"{sym_label} సేఫ్ గా HOLD లో ఉంది"
                 
             last_act_text = ("ట్రేడ్ జరిగింది: " + ", ".join(actions_taken)) if actions_taken else hold_label

@@ -212,14 +212,18 @@ active_syms = bot_meta.get('active_symbols', [])
 
 broker_badge = bot_meta.get('broker', 'Binance Spot')
 if len(active_syms) > 1:
-    if any('.NS' in s for s in active_syms):
-        clean_syms = [s.replace('.NS', '') for s in active_syms]
+    has_nse = any('.NS' in s or '.BO' in s for s in active_syms)
+    has_crypto = any('-USD' in s for s in active_syms)
+    if has_nse and has_crypto:
+        syms_display = f"🌐🇮🇳 Dual Hybrid ({len(active_syms)} Assets: Crypto + NSE)"
+    elif has_nse:
+        clean_syms = [s.replace('.NS', '').replace('.BO', '') for s in active_syms]
         syms_display = f"🇮🇳 Zerodha NSE ({', '.join(clean_syms[:4])}{'...' if len(clean_syms) > 4 else ''})"
     else:
         clean_syms = [s.replace('-USD', '') for s in active_syms]
         syms_display = f"🌐 మల్టీ-కాయిన్ ({', '.join(clean_syms)})"
 elif len(active_syms) == 1:
-    syms_display = f"🎯 {active_syms[0].replace('.NS', '').replace('-USD', '')}"
+    syms_display = f"🎯 {active_syms[0].replace('.NS', '').replace('.BO', '').replace('-USD', '')}"
 else:
     syms_display = "⚡ స్కానింగ్"
 
@@ -338,22 +342,51 @@ symbol_options = {
     "Crude Oil": "USO"
 }
 
+def load_custom_watchlist():
+    if os.path.exists('custom_watchlist.json'):
+        try:
+            with open('custom_watchlist.json', 'r') as f:
+                d = json.load(f)
+                if isinstance(d, dict):
+                    return d
+        except Exception:
+            pass
+    return {}
+
+def save_custom_watchlist(wl):
+    try:
+        with open('custom_watchlist.json', 'w') as f:
+            json.dump(wl, f, indent=2)
+        return True
+    except Exception:
+        return False
+
+# Dynamically merge custom watchlist into symbol_options
+custom_wl_items = load_custom_watchlist()
+for c_sym, c_info in custom_wl_items.items():
+    c_name = c_info.get('name', c_sym)
+    c_type = c_info.get('type', 'NSE' if ('.NS' in c_sym or '.BO' in c_sym) else 'CRYPTO')
+    icon = "🇮🇳" if c_type == "NSE" else "🪙"
+    symbol_options[f"{icon} {c_name} ({c_sym})"] = c_sym
 
 st.sidebar.title("🤖 AI Trading Mode")
 
 # Trading Mode Switch
 mode_options = [
+    "🌐🇮🇳 Dual Trading (Crypto 24/7 + Indian Stocks NSE)",
     "🇮🇳 Paper Trading (Indian Stocks - Zerodha Virtual)",
     "📝 Paper Trading (Crypto - Binance Virtual)",
     "💰 Live Trading (Binance Real Money)"
 ]
 
-saved_mode = "🇮🇳 Paper Trading (Indian Stocks - Zerodha Virtual)"
+saved_mode = "🌐🇮🇳 Dual Trading (Crypto 24/7 + Indian Stocks NSE)"
 if os.path.exists('trading_mode.txt'):
     try:
         with open('trading_mode.txt', 'r') as f:
             c = f.read().strip()
-            if "Zerodha" in c or "Indian" in c:
+            if "Dual" in c:
+                saved_mode = "🌐🇮🇳 Dual Trading (Crypto 24/7 + Indian Stocks NSE)"
+            elif "Zerodha" in c or "Indian" in c:
                 saved_mode = "🇮🇳 Paper Trading (Indian Stocks - Zerodha Virtual)"
             elif "Live" in c:
                 saved_mode = "💰 Live Trading (Binance Real Money)"
@@ -365,31 +398,40 @@ mode_idx = mode_options.index(saved_mode) if saved_mode in mode_options else 0
 trading_mode = st.sidebar.radio("స్విచ్ (Mode Switch)", mode_options, index=mode_idx)
 st.sidebar.markdown("---")
 
+is_dual_mode = "Dual" in trading_mode
+is_zerodha_mode = ("Zerodha" in trading_mode or is_dual_mode)
+
 live_usdt_balance = 0.0
-if "Zerodha" in trading_mode:
+try:
+    import ccxt
+    API_KEY = "guVp9OI7eoqXeNvKy1DlalCwwcP2W2CHRm6FWRy1mxY3AwZCdW7hIk9ubEVPrIoN"
+    SECRET_KEY = "sdpe9Q3BVdmzTnhhDY7zraFH2SDIBPWt6UTuY70n6ycLHPueEpYuHviS7imsHzNf"
+    exchange = ccxt.binance({
+        'apiKey': API_KEY,
+        'secret': SECRET_KEY,
+        'enableRateLimit': True,
+        'timeout': 3000,
+    })
+    balance = exchange.fetch_balance()
+    live_usdt_balance = balance['free'].get('USDT', 0.0)
+except Exception:
+    pass
+
+if is_dual_mode:
+    st.sidebar.success("🌐🇮🇳 **Dual Trading Active!**")
+    st.sidebar.info("🚀 క్రిప్టో 24/7 నాన్-స్టాప్ & ఇండియన్ స్టాక్స్ (NSE) సైమల్టేనియస్ గా ఒకేసారి రన్ అవుతాయి.")
+    st.sidebar.markdown(f"**💰 క్యాపిటల్:** ₹50,000 (NSE) + " + (f"${live_usdt_balance:.2f} (Binance Live)" if live_usdt_balance > 0 else "$10,000 (Crypto Virtual)"))
+elif "Zerodha" in trading_mode:
     st.sidebar.success("🇮🇳 **Zerodha Kite Virtual:** ₹50,000.00 క్యాపిటల్")
     st.sidebar.info("భారతీయ స్టాక్స్ (NSE - Reliance, Tata Motors, HDFC Bank, Infosys, SBI, etc.) పై వర్చువల్ మనీతో రిస్క్ లేకుండా ట్రేడింగ్ జరుగుతుంది.")
 else:
-    try:
-        import ccxt
-        API_KEY = "guVp9OI7eoqXeNvKy1DlalCwwcP2W2CHRm6FWRy1mxY3AwZCdW7hIk9ubEVPrIoN"
-        SECRET_KEY = "sdpe9Q3BVdmzTnhhDY7zraFH2SDIBPWt6UTuY70n6ycLHPueEpYuHviS7imsHzNf"
-        exchange = ccxt.binance({
-            'apiKey': API_KEY,
-            'secret': SECRET_KEY,
-            'enableRateLimit': True,
-            'timeout': 3000,
-        })
-        balance = exchange.fetch_balance()
-        live_usdt_balance = balance['free'].get('USDT', 0.0)
-        st.sidebar.success(f"✅ Real Binance Balance: **${live_usdt_balance:.2f}**")
-    except Exception as e:
-        if "Live" in trading_mode:
+    if "Live" in trading_mode:
+        if live_usdt_balance > 0:
+            st.sidebar.success(f"✅ Real Binance Balance: **${live_usdt_balance:.2f}**")
+            st.sidebar.warning("⚠️ Live Trading On! బాట్ బైనాన్స్ లో నిజమైన ట్రేడ్స్ చేస్తుంది.")
+        else:
             st.sidebar.error("⚠️ బినాన్స్ కనెక్ట్ అవ్వలేదు. (Keys Check చేయండి)")
             trading_mode = "📝 Paper Trading (Crypto - Binance Virtual)"
-
-    if "Live" in trading_mode:
-        st.sidebar.warning("⚠️ Live Trading On! బాట్ బైనాన్స్ లో నిజమైన ట్రేడ్స్ చేస్తుంది.")
     else:
         st.sidebar.info("ప్రస్తుతం Crypto ప్రాక్టీస్ (Virtual) మోడ్ లో ఉంది. మీ రియల్ బినాన్స్ మనీ కట్ అవ్వదు.")
 
@@ -522,9 +564,15 @@ if os.path.exists('selected_symbol.txt'):
     except Exception:
         pass
 
-is_zerodha_mode = "Zerodha" in trading_mode
+is_dual_mode = "Dual" in trading_mode
+is_zerodha_mode = ("Zerodha" in trading_mode and not is_dual_mode)
 
-if is_zerodha_mode:
+if is_dual_mode:
+    focus_options = [
+        "🌐🇮🇳 ఆల్-ఇన్-వన్ డ్యూయల్ ట్రేడింగ్ (Dual Multi-Asset - All Crypto + NSE Stocks)",
+        "🎯 సింగిల్ అసెట్ ఫోకస్ (Single Asset Focus)"
+    ]
+elif is_zerodha_mode:
     focus_options = [
         "🇮🇳 మల్టీ-స్టాక్స్ ట్రేడింగ్ (Multi-Stock NSE - Reliance, Tata Motors, HDFC, Infosys, SBI, TCS, ICICI, ITC)",
         "🎯 సింగిల్ స్టాక్ ఫోకస్ (Single Stock Focus)"
@@ -536,7 +584,7 @@ else:
     ]
 
 # If saved_scope is a specific symbol, default to Single mode
-is_single_mode = (saved_scope not in ["ALL", "ALL_CRYPTO", "ALL_NSE"] and saved_scope in symbol_options.values())
+is_single_mode = (saved_scope not in ["ALL", "ALL_CRYPTO", "ALL_NSE", "ALL_DUAL"] and saved_scope in symbol_options.values())
 default_focus_idx = 1 if is_single_mode else 0
 
 trade_scope = st.sidebar.radio(
@@ -547,8 +595,10 @@ trade_scope = st.sidebar.radio(
 )
 
 # Filter sym_keys for selectbox based on mode
-if is_zerodha_mode:
-    sym_keys = [k for k in symbol_options.keys() if ".NS" in symbol_options[k] or "^NSE" in symbol_options[k]]
+if is_dual_mode:
+    sym_keys = list(symbol_options.keys())
+elif is_zerodha_mode:
+    sym_keys = [k for k in symbol_options.keys() if ".NS" in symbol_options[k] or "^NSE" in symbol_options[k] or ".BO" in symbol_options[k]]
 else:
     sym_keys = [k for k in symbol_options.keys() if "-USD" in symbol_options[k]]
 
@@ -561,19 +611,23 @@ if "సింగిల్" in trade_scope or "Single" in trade_scope:
         if symbol_options[k] == saved_scope:
             default_sym_idx = idx_k
             break
-    label_text = "స్టాక్ (Stock) ఎంచుకోండి:" if is_zerodha_mode else "కాయిన్ (Coin) ఎంచుకోండి:"
+    label_text = "అసెట్ (Stock/Coin) ఎంచుకోండి:" if is_dual_mode else ("స్టాక్ (Stock) ఎంచుకోండి:" if is_zerodha_mode else "కాయిన్ (Coin) ఎంచుకోండి:")
     selected_name = st.sidebar.selectbox(label_text, sym_keys, index=default_sym_idx, key="app_single_pair")
     symbol = symbol_options[selected_name]
     active_bot_symbol = symbol
     st.sidebar.info(f"🎯 బాట్ కేవలం **{selected_name}** పై మాత్రమే ట్రేడ్స్ చేస్తుంది.")
 else:
-    active_bot_symbol = "ALL_NSE" if is_zerodha_mode else "ALL_CRYPTO"
-    if is_zerodha_mode:
+    if is_dual_mode:
+        active_bot_symbol = "ALL_DUAL"
+        st.sidebar.success("🚀 **Dual Multi-Asset యాక్టివ్!** బాట్ ఒకేసారి అన్ని క్రిప్టో కాయిన్స్ (24/7) మరియు ఇండియన్ స్టాక్స్ (NSE) ని స్కాన్ చేస్తూ ట్రేడ్స్ చేస్తుంది.")
+    elif is_zerodha_mode:
+        active_bot_symbol = "ALL_NSE"
         st.sidebar.success("🚀 **Zerodha మల్టీ-స్టాక్స్ యాక్టివ్!** బాట్ ఒకేసారి Reliance, Tata Motors, HDFC Bank, Infosys, SBI, TCS అన్నింటినీ స్కాన్ చేస్తూ ట్రేడ్స్ చేస్తుంది.")
     else:
+        active_bot_symbol = "ALL_CRYPTO"
         st.sidebar.success("🚀 **మల్టీ-కాయిన్ ట్రేడింగ్ యాక్టివ్!** బాట్ ఒకేసారి BTC, ETH, SOL, BNB, DOGE, XRP అన్నింటినీ స్కాన్ చేస్తూ ట్రేడ్స్ చేస్తుంది.")
     default_chart_idx = 0
-    chart_label = "📊 లైవ్ చార్ట్ కోసం స్టాక్ ఎంచుకోండి:" if is_zerodha_mode else "📊 లైవ్ చార్ట్ కోసం కాయిన్ ఎంచుకోండి:"
+    chart_label = "📊 లైవ్ చార్ట్ కోసం అసెట్ ఎంచుకోండి:" if is_dual_mode else ("📊 లైవ్ చార్ట్ కోసం స్టాక్ ఎంచుకోండి:" if is_zerodha_mode else "📊 లైవ్ చార్ట్ కోసం కాయిన్ ఎంచుకోండి:")
     selected_name = st.sidebar.selectbox(chart_label, sym_keys, index=default_chart_idx, key="app_chart_pair")
     symbol = symbol_options[selected_name]
 
@@ -587,6 +641,43 @@ except Exception:
 timeframe = '1m'
 auto_refresh = st.sidebar.checkbox("🟢 Auto Refresh (Live)", value=False)
 enable_voice = st.sidebar.checkbox("🔊 బాట్ వాయిస్ (Voice Output)", value=True)
+st.sidebar.markdown("---")
+
+with st.sidebar.expander("🔍 త్వరిత అసెట్ సెర్చ్ & యాడ్ (Quick Add)", expanded=False):
+    st.caption("ఏదైనా స్టాక్ (ఉదా: ZOMATO) లేదా కాయిన్ (ఉదా: PEPE) టైప్ చేసి యాడ్ చేయండి:")
+    quick_q = st.text_input("సింబల్ / టిక్కర్:", key="sb_quick_sym", placeholder="e.g. ZOMATO or PEPE")
+    quick_market = st.selectbox("మార్కెట్:", ["🇮🇳 NSE Stock", "🪙 Crypto (USD)"], key="sb_quick_mkt")
+    if st.button("➕ వాచ్‌లిస్ట్‌కి యాడ్ చేయి", key="sb_btn_quick_add"):
+        if quick_q.strip():
+            raw_sym = quick_q.strip().upper()
+            if "NSE" in quick_market:
+                c_clean = raw_sym.replace('.NS', '').replace('.BO', '')
+                final_sym = f"{c_clean}.NS"
+                asset_t = "NSE"
+            else:
+                c_clean = raw_sym.replace('-USD', '').replace('USDT', '').replace('/', '')
+                final_sym = f"{c_clean}-USD"
+                asset_t = "CRYPTO"
+            
+            c_n = c_clean
+            try:
+                t_obj = yf.Ticker(final_sym)
+                c_n = t_obj.info.get('shortName') or t_obj.info.get('name') or c_clean
+            except:
+                pass
+            
+            curr_wl = load_custom_watchlist()
+            curr_wl[final_sym] = {
+                "name": c_n,
+                "ticker": final_sym,
+                "type": asset_t,
+                "added_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            save_custom_watchlist(curr_wl)
+            st.success(f"✅ {c_n} ({final_sym}) యాడ్ అయ్యింది!")
+            time.sleep(1)
+            st.rerun()
+
 st.sidebar.markdown("---")
 
 @st.cache_data(ttl=15, show_spinner=False)
@@ -684,7 +775,11 @@ def fetch_and_analyze(sym):
 
 # placeholder removed for direct render
 
-main_tab1, main_tab2 = st.tabs(["🔴 Live Trading Dashboard", "🔥 Pro Market Screener (All Stocks)"])
+main_tab1, main_tab2, main_tab3 = st.tabs([
+    "🔴 Live Trading Dashboard", 
+    "🔍 Smart Asset Search Engine (క్రిప్టో & ఇండియన్ స్టాక్స్)", 
+    "🔥 Pro Market Screener (All Stocks)"
+])
 
 with main_tab1:
     def draw_dashboard():
@@ -692,7 +787,10 @@ with main_tab1:
         current_price = last['close'] if last is not None else 65000.0
         signal = signal if signal else "HOLD"
         with st.container():
-            if "Zerodha" in trading_mode:
+            if "Dual" in trading_mode:
+                initial_capital = 50000.00 + (10000.00 * 84.5 if live_usdt_balance == 0 else live_usdt_balance * 84.5)
+                title_str = "Dual Hybrid: ₹50,000 (NSE) + Crypto"
+            elif "Zerodha" in trading_mode:
                 initial_capital = 50000.00
                 title_str = "Zerodha Virtual: ₹50,000"
             elif "Live" in trading_mode:
@@ -1489,6 +1587,139 @@ with main_tab1:
     draw_dashboard()
 
 with main_tab2:
+    st.header("🔍 Smart Asset Search Engine (యూనివర్సల్ అసెట్ సెర్చ్ & వాచ్‌లిస్ట్)")
+    st.markdown("""
+    ఇక్కడ మీరు **భారతీయ స్టాక్ మార్కెట్ (NSE)** లోని ఏ స్టాక్ అయినా (ఉదా: `ZOMATO`, `SUZLON`, `TATASTEEL`, `ADANIENT`, `WIPRO`) 
+    లేదా **క్రిప్టో మార్కెట్ (Binance)** లోని ఏ కాయిన్ అయినా (ఉదా: `PEPE`, `DOGE`, `SHIB`, `ADA`, `AVAX`, `SOL`) సెర్చ్ చేసి, 
+    లైవ్ ధర చూసి, ఒకే క్లిక్ తో బాట్ ట్రేడింగ్ లిస్ట్‌కి యాడ్ చేయవచ్చు!
+    """)
+    
+    col_s1, col_s2 = st.columns([3, 1])
+    with col_s1:
+        search_query = st.text_input(
+            "🔎 స్టాక్ లేదా కాయిన్ పేరు / టిక్కర్ టైప్ చేయండి:", 
+            placeholder="ఉదాహరణ: ZOMATO, SUZLON, TATASTEEL, PEPE, ADA, DOGE",
+            key="universal_search_input"
+        )
+    with col_s2:
+        market_choice = st.radio(
+            "మార్కెట్ రకం:", 
+            ["🇮🇳 Indian Stock (NSE)", "🪙 Crypto (USD)"],
+            horizontal=False,
+            key="universal_market_choice"
+        )
+        
+    col_btn1, col_btn2 = st.columns([1, 4])
+    with col_btn1:
+        do_search = st.button("🔍 లైవ్ డేటా వెరిఫై చేయి", use_container_width=True)
+        
+    if do_search and search_query.strip():
+        raw_q = search_query.strip().upper()
+        if "Indian" in market_choice or "NSE" in market_choice:
+            clean_sym = raw_q.replace('.NS', '').replace('.BO', '')
+            final_sym = f"{clean_sym}.NS"
+            asset_category = "NSE"
+            curr_symbol = "₹"
+        else:
+            clean_sym = raw_q.replace('-USD', '').replace('USDT', '').replace('/', '')
+            final_sym = f"{clean_sym}-USD"
+            asset_category = "CRYPTO"
+            curr_symbol = "$"
+            
+        with st.spinner(f"మార్కెట్ నుండి {final_sym} డేటా తెస్తున్నాము..."):
+            found_data = None
+            try:
+                t_obj = yf.Ticker(final_sym)
+                hist = t_obj.history(period="5d", interval="1d")
+                if not hist.empty:
+                    last_row = hist.iloc[-1]
+                    l_price = float(last_row['Close'])
+                    prev_close = float(hist.iloc[-2]['Close']) if len(hist) > 1 else l_price
+                    chg_pct = ((l_price - prev_close) / prev_close) * 100.0 if prev_close > 0 else 0.0
+                    vol = int(last_row['Volume'])
+                    hi = float(last_row['High'])
+                    lo = float(last_row['Low'])
+                    
+                    c_name = clean_sym
+                    try:
+                        c_name = t_obj.info.get('shortName') or t_obj.info.get('name') or clean_sym
+                    except:
+                        pass
+                        
+                    found_data = {
+                        "symbol": final_sym,
+                        "clean": clean_sym,
+                        "name": c_name,
+                        "price": l_price,
+                        "change_pct": chg_pct,
+                        "high": hi,
+                        "low": lo,
+                        "volume": vol,
+                        "type": asset_category,
+                        "curr": curr_symbol
+                    }
+            except Exception as ex:
+                pass
+                
+        if found_data:
+            st.success(f"✅ **{found_data['name']} ({found_data['symbol']})** మార్కెట్ లో లభించింది!")
+            
+            m_c1, m_c2, m_c3, m_c4 = st.columns(4)
+            m_c1.metric("🏢 కంపెనీ / కాయిన్", found_data['name'])
+            m_c2.metric("💰 ప్రస్తుత లైవ్ ప్రైస్", f"{found_data['curr']}{found_data['price']:,.2f}", f"{found_data['change_pct']:+.2f}%")
+            m_c3.metric("📈 24h హై / లో", f"{found_data['curr']}{found_data['high']:,.2f} / {found_data['curr']}{found_data['low']:,.2f}")
+            m_c4.metric("📊 వాల్యూమ్", f"{found_data['volume']:,}")
+            
+            wl_now = load_custom_watchlist()
+            is_already_added = found_data['symbol'] in wl_now
+            
+            if is_already_added:
+                st.info(f"ℹ️ **{found_data['symbol']}** ఇప్పటికే బాట్ ట్రేడింగ్ వాచ్‌లిస్ట్‌లో ఉంది.")
+            else:
+                if st.button(f"➕ {found_data['name']} ని బాట్ ట్రేడింగ్ లోకి యాడ్ చేయి", type="primary", use_container_width=True, key="btn_add_to_wl"):
+                    wl_now[found_data['symbol']] = {
+                        "name": found_data['name'],
+                        "ticker": found_data['symbol'],
+                        "type": found_data['type'],
+                        "added_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                    save_custom_watchlist(wl_now)
+                    st.success(f"🎉 **{found_data['name']} ({found_data['symbol']})** విజయవంతంగా యాడ్ అయ్యింది! బాట్ వెంటనే దీనిపై ట్రేడ్స్ చేస్తుంది.")
+                    if enable_voice:
+                        play_voice_response(f"{found_data['name']} has been added to bot trading watchlist.")
+                    time.sleep(1)
+                    st.rerun()
+        else:
+            st.error(f"❌ '{search_query}' అనే సింబల్ మార్కెట్ లో దొరకలేదు. దయచేసి సరైన టిక్కర్ (ఉదా: ZOMATO, SUZLON, TATASTEEL, PEPE, ADA) సరిచూసి మళ్ళీ ప్రయత్నించండి.")
+    elif do_search:
+        st.warning("దయచేసి సెర్చ్ చేయడానికి ఏదైనా స్టాక్ లేదా కాయిన్ పేరు టైప్ చేయండి.")
+        
+    st.markdown("---")
+    st.subheader("📋 ప్రస్తుత బాట్ కస్టమ్ వాచ్‌లిస్ట్ (Active Custom Assets)")
+    
+    current_wl = load_custom_watchlist()
+    if not current_wl:
+        st.info("ప్రస్తుతం కస్టమ్ అసెట్స్ ఏవీ లేవు. పైన ఉన్న సెర్చ్ బాక్స్ ద్వారా మీ ఫేవరెట్ స్టాక్స్ లేదా క్రిప్టోలను యాడ్ చేయండి.")
+    else:
+        st.caption(f"మొత్తం కస్టమ్ అసెట్స్: **{len(current_wl)}** | బాట్ వీటిని ఆటోమేటిక్ గా స్కాన్ చేస్తూ ట్రేడ్స్ చేస్తుంది.")
+        for wl_sym, wl_info in list(current_wl.items()):
+            w_col1, w_col2, w_col3, w_col4 = st.columns([3, 2, 2, 1])
+            with w_col1:
+                icon_flag = "🇮🇳" if wl_info.get('type') == 'NSE' else "🪙"
+                st.markdown(f"**{icon_flag} {wl_info.get('name', wl_sym)}** (`{wl_sym}`)")
+            with w_col2:
+                st.caption(f"మార్కెట్: {wl_info.get('type', 'NSE')}")
+            with w_col3:
+                st.caption(f"యాడ్ చేసిన తేదీ: {wl_info.get('added_at', '-')}")
+            with w_col4:
+                if st.button("🗑️ తీసివేయి", key=f"del_wl_{wl_sym}"):
+                    del current_wl[wl_sym]
+                    save_custom_watchlist(current_wl)
+                    st.warning(f"⚠️ {wl_sym} వాచ్‌లిస్ట్ నుండి తొలగించబడింది.")
+                    time.sleep(0.5)
+                    st.rerun()
+
+with main_tab3:
     st.header("🔥 Pro Market Analyzer")
     st.write("ప్రపంచంలోని బెస్ట్ స్టాక్స్/కాయిన్స్ ని ఒకేసారి స్కాన్ చేసి, ఎందులో ట్రేడ్ చేస్తే బాగుంటుందో ఒక ప్రొఫెషనల్ లాగా బాట్ మీకు చెబుతుంది.")
     
