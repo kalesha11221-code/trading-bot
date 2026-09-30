@@ -468,9 +468,28 @@ new_style = st.sidebar.selectbox(
     index=["Scalping (Fast)", "Swing (Hold for Targets)"].index(bot_settings.get("trading_style", "Scalping (Fast)"))
 )
 
-# 2. Risk Management
+# 2. Capital Sizing Engine (భారీ లాభాల కోసం పెద్ద క్యాపిటల్)
+cap_options = [
+    "🚀 High Profit (పెద్ద క్యాపిటల్ & భారీ లాభాలు - ₹5,000-₹10,000 / $35-$50)",
+    "⚖️ Smart Dynamic (AI కాన్ఫిడెన్స్ స్కేలింగ్ - $20 / 2-5 షేర్లు)",
+    "🛡️ Micro Safe (చిన్న రిస్క్ - $10 / 1-2 షేర్లు)"
+]
+current_cap = bot_settings.get("capital_mode", "High Profit")
+cap_idx = 0
+if "Dynamic" in current_cap: cap_idx = 1
+elif "Micro" in current_cap: cap_idx = 2
 
-# 4. Market Segment
+new_cap_label = st.sidebar.selectbox(
+    "💰 క్యాపిటల్ సైజ్ (Capital Sizing)",
+    cap_options,
+    index=cap_idx,
+    help="లాభాలు వేగంగా మరియు భారీగా రావడానికి బాట్ పెద్ద సైజ్ తో ట్రేడ్ చేస్తుంది!"
+)
+if "High" in new_cap_label: selected_cap_mode = "High Profit"
+elif "Dynamic" in new_cap_label: selected_cap_mode = "Smart Dynamic"
+else: selected_cap_mode = "Micro Safe"
+
+# 3. Market Segment
 st.sidebar.markdown("<br>", unsafe_allow_html=True)
 market_segment = st.sidebar.selectbox(
     "📊 Market Segment", 
@@ -478,20 +497,25 @@ market_segment = st.sidebar.selectbox(
     index=0
 )
 
+# 4. Risk Management
 new_risk = st.sidebar.select_slider(
     "🔥 Risk Aggression",
     options=["Safe (Low Risk)", "Moderate (Smart AI)", "Extreme (High Profit)"],
     value=bot_settings.get("risk_level", "Moderate (Smart AI)")
 )
 
-# 3. Panic Button (Emergency Stop)
+# 5. Panic Button (Emergency Stop)
 st.sidebar.markdown("<br>", unsafe_allow_html=True)
 panic = safe_button("🛑 EMERGENCY PANIC STOP", is_sidebar=True, help="కొన్న కాయిన్స్ అన్నీ వెంటనే అమ్మేసి బాట్ ని ఆపేస్తుంది!")
 
 # Update settings if changed
-if new_style != bot_settings.get("trading_style") or new_risk != bot_settings.get("risk_level") or panic:
+if (new_style != bot_settings.get("trading_style") or 
+    new_risk != bot_settings.get("risk_level") or 
+    selected_cap_mode != bot_settings.get("capital_mode") or 
+    panic):
     bot_settings["trading_style"] = new_style
     bot_settings["risk_level"] = new_risk
+    bot_settings["capital_mode"] = selected_cap_mode
     if panic:
         bot_settings["panic_mode"] = True
         st.sidebar.error("🚨 Panic Mode Activated! అన్నీ అమ్మేస్తోంది...")
@@ -648,7 +672,7 @@ except Exception:
     pass
 
 timeframe = '1m'
-auto_refresh = st.sidebar.checkbox("🟢 Auto Refresh (Live)", value=False)
+auto_refresh = st.sidebar.checkbox("🟢 లైవ్ ఆటో-అప్‌డేట్ (Live Stream 5s)", value=True, help="ఆటోమేటిక్ గా ప్రతి 5 సెకన్లకు రిఫ్రెష్ అవుతూ లైవ్ ప్రైసెస్, సిగ్నల్స్ & లాభాలు అప్‌డేట్ చేస్తుంది")
 enable_voice = st.sidebar.checkbox("🔊 బాట్ వాయిస్ (Voice Output)", value=True)
 st.sidebar.markdown("---")
 
@@ -769,7 +793,7 @@ def robust_fetch_candles(sym):
 
     return pd.DataFrame()
 
-@st.cache_data(ttl=15, show_spinner=False)
+@st.cache_data(ttl=5, show_spinner=False)
 def fetch_and_analyze(sym):
     try:
         sym = SYMBOL_ALIASES.get(sym.upper(), sym.upper())
@@ -928,31 +952,160 @@ with main_tab1:
             else: b4.warning(f"🤖 Action: {signal}")
 
             st.markdown("---")
-            
-            # 🎯 Live Fractional DCA Positions Monitor
+
+            # -------------------------------------------------------------
+            # 🎯 1. ACTIVE POSITIONS WAR-ROOM (లైవ్ ఓపెన్ పొజిషన్లు & ట్రైలింగ్ టార్గెట్లు)
+            # -------------------------------------------------------------
+            live_scan_data = {}
+            if os.path.exists('live_scan_status.json'):
+                try:
+                    with open('live_scan_status.json', 'r') as f_sc:
+                        live_scan_data = json.load(f_sc)
+                except Exception:
+                    pass
+            scanned_assets = live_scan_data.get('assets', {})
+
             if os.path.exists('dca_state.json'):
                 try:
                     with open('dca_state.json', 'r') as f_dca:
                         dca_positions = json.load(f_dca)
                     if dca_positions:
-                        st.markdown("#### 🎯 AI Autonomous DCA Positions (స్వంత నిర్ణయాలు & లైవ్ లాభాలు)")
+                        st.markdown('''
+                        <div style="background: linear-gradient(135deg, #0b1a2e 0%, #162a45 100%); border: 1.5px solid #00bcd4; border-radius: 12px; padding: 12px 18px; margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <span style="font-size: 20px;">🎯</span>
+                                <div>
+                                    <div style="color: #ffffff; font-size: 16px; font-weight: bold;">యాక్టివ్ పొజిషన్ల వార్-రూమ్ (Active Trading War-Room)</div>
+                                    <div style="color: #80deea; font-size: 12px;">స్వయంప్రతిపత్త లాభాల మాక్సిమైజర్ | Trailing Profit Lock Active</div>
+                                </div>
+                            </div>
+                            <span style="background-color: rgba(0, 188, 212, 0.2); color: #00bcd4; border: 1px solid #00bcd4; padding: 4px 12px; border-radius: 8px; font-size: 12px; font-weight: bold;">''' + f"{len(dca_positions)} OPEN TRADES" + '''</span>
+                        </div>
+                        ''', unsafe_allow_html=True)
+
                         d_cols = st.columns(min(4, len(dca_positions)))
                         for idx, (d_sym, d_info) in enumerate(dca_positions.items()):
-                            d_cur = current_price if d_sym == symbol else d_info['avg_price']
-                            d_pnl_pct = ((d_cur - d_info['avg_price']) / d_info['avg_price']) * 100.0
+                            d_asset = scanned_assets.get(d_sym, {})
+                            d_cur = d_asset.get('price', (current_price if d_sym == symbol else d_info['avg_price']))
+                            if d_cur == 0.0: d_cur = d_info['avg_price']
+                            d_pnl_pct = ((d_cur - d_info['avg_price']) / d_info['avg_price']) * 100.0 if d_info['avg_price'] > 0 else 0.0
+                            d_pnl_val = (d_cur - d_info['avg_price']) * d_info['total_qty']
+                            peak_p = d_info.get('peak_price', d_cur)
+                            peak_gain = ((peak_p - d_info['avg_price']) / d_info['avg_price']) * 100.0 if d_info['avg_price'] > 0 else 0.0
+                            
                             with d_cols[idx % len(d_cols)]:
-                                strat_tag = f" • {d_info.get('strategy', '').replace('_', ' ').title()}" if d_info.get('strategy') else ""
-                                p_color = "green" if d_pnl_pct >= 0 else "red"
-                                cur_sym_disp = f"₹{d_cur:,.2f}" if (".NS" in d_sym or not "-USD" in d_sym) else f"${d_cur:,.2f}"
-                                st.markdown(fancy_metric(
-                                    f"{d_sym} (L{len(d_info.get('entries', []))}/3){strat_tag}",
-                                    cur_sym_disp,
-                                    f"{d_pnl_pct:+.2f}% (టార్గెట్: +1.5%)",
-                                    p_color
-                                ), unsafe_allow_html=True)
+                                is_ind = (".NS" in d_sym or ".BO" in d_sym)
+                                cur_disp = f"₹{d_cur:,.2f}" if is_ind else f"${d_cur:,.2f}"
+                                avg_disp = f"₹{d_info['avg_price']:,.2f}" if is_ind else f"${d_info['avg_price']:,.2f}"
+                                target_disp = f"₹{d_info.get('target_sell_price', d_cur*1.015):,.2f}" if is_ind else f"${d_info.get('target_sell_price', d_cur*1.015):,.2f}"
+                                pnl_color = "#00e676" if d_pnl_pct >= 0 else "#ff5252"
+                                badge_bg = "rgba(0, 230, 118, 0.15)" if d_pnl_pct >= 0 else "rgba(255, 82, 82, 0.15)"
+                                
+                                st.markdown(f'''
+                                <div style="background: rgba(19, 23, 34, 0.95); border: 1px solid {pnl_color}; border-radius: 10px; padding: 14px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                        <b style="color: #ffffff; font-size: 15px;">{d_sym.replace('.NS', '').replace('-USD', '')}</b>
+                                        <span style="background: {badge_bg}; color: {pnl_color}; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: bold;">L{len(d_info.get('entries', []))}/3 Entry</span>
+                                    </div>
+                                    <div style="font-size: 20px; font-weight: bold; color: {pnl_color}; margin-bottom: 6px;">
+                                        {cur_disp} <span style="font-size: 13px;">({d_pnl_pct:+.2f}%)</span>
+                                    </div>
+                                    <div style="font-size: 11px; color: #9e9e9e; line-height: 1.6;">
+                                        💵 సగటు కొన్న ధర: <b style="color: #e0e0e0;">{avg_disp}</b><br>
+                                        🎯 టార్గెట్ (+1.5%): <b style="color: #00e676;">{target_disp}</b><br>
+                                        🚀 Peak Trailing: <b style="color: #ffd600;">+{peak_gain:.2f}%</b> | పెట్టుబడి: <b style="color: #ffffff;">₹{d_info.get('total_cost', 0):,.0f}</b>
+                                    </div>
+                                </div>
+                                ''', unsafe_allow_html=True)
                         st.markdown("---")
-                except:
+                except Exception:
                     pass
+
+            # -------------------------------------------------------------
+            # 📡 2. INSTITUTIONAL AI LIVE MARKET RADAR & MULTI-ASSET SCANNER
+            # -------------------------------------------------------------
+            st.markdown('''
+            <div style="background: linear-gradient(135deg, #131722 0%, #1e222d 100%); border: 1.5px solid #2e7bcf; border-radius: 12px; padding: 14px 20px; margin-bottom: 18px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);">
+                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span style="height: 14px; width: 14px; background-color: #00e676; border-radius: 50%; display: inline-block; box-shadow: 0 0 10px #00e676;"></span>
+                        <div>
+                            <div style="color: #ffffff; font-size: 17px; font-weight: bold; letter-spacing: 0.5px;">📡 AI LIVE MARKET RADAR (అన్ని అసెట్స్ లైవ్ స్కాన్ రాడార్ & విశ్లేషణ)</div>
+                            <div style="color: #90caf9; font-size: 12px;">బాట్ అన్ని క్రిప్టో కాయిన్స్ & ఇండియన్ స్టాక్స్ ని సమాంతరంగా స్కాన్ చేస్తూ ప్రతీ క్షణం తీసుకుంటున్న నిర్ణయాలు</div>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <span style="background-color: rgba(46, 123, 207, 0.2); color: #64b5f6; border: 1px solid #2e7bcf; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: bold;">⚡ 17+ Assets Monitored</span>
+                        <span style="background-color: rgba(0, 230, 118, 0.2); color: #00e676; border: 1px solid #00e676; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: bold;">🚀 High Profit Capital Engine</span>
+                    </div>
+                </div>
+            </div>
+            ''', unsafe_allow_html=True)
+
+            if scanned_assets:
+                radar_rows = []
+                for s_sym, s_data in scanned_assets.items():
+                    s_price = s_data.get('price', 0.0)
+                    s_is_ind = s_data.get('is_indian', False) or ('.NS' in s_sym or '.BO' in s_sym)
+                    pr_fmt = f"₹{s_price:,.2f}" if s_is_ind else f"${s_price:,.2f}"
+                    if s_price == 0.0: pr_fmt = "డేటా లోడింగ్..."
+                    
+                    sig = s_data.get('signal', 'HOLD').upper()
+                    act = s_data.get('action_taken', 'HOLD')
+                    rsi_v = s_data.get('rsi', 50.0)
+                    trend_v = s_data.get('trend', 'NEUTRAL')
+                    has_pos = s_data.get('has_position', False)
+                    pnl_v = s_data.get('pnl_pct', 0.0)
+                    
+                    # Status Badge
+                    if act == "BUY":
+                        sig_badge = "🟢 స్నైపర్ BUY ఎంట్రీ!"
+                    elif act == "SELL":
+                        sig_badge = "🎯 ప్రాఫిట్ బుకింగ్!"
+                    elif act == "DCA_BUY":
+                        sig_badge = "⚡ డిప్ ఆవరేజ్ BUY"
+                    elif has_pos:
+                        sig_badge = f"🎯 ACTIVE HOLD ({pnl_v:+.2f}%)"
+                    elif sig == "BUY":
+                        sig_badge = "🟢 BUY జోన్ లో ఉంది"
+                    elif sig == "SELL":
+                        sig_badge = "🔴 SELL రెసిస్టెన్స్"
+                    else:
+                        sig_badge = "⚪ స్కానింగ్ & సేఫ్"
+
+                    market_type = "🇮🇳 NSE Stock" if s_is_ind else "🪙 Crypto (USD)"
+                    rsi_desc = f"{rsi_v:.1f}" + (" (Dip 🟢)" if rsi_v < 40 else (" (Overbought 🔴)" if rsi_v > 70 else " (Neutral ⚪)"))
+                    trend_desc = "Bullish 🟢" if trend_v == "BULLISH" else ("Bearish 🔴" if trend_v == "BEARISH" else "Neutral ⚪")
+                    
+                    thought_clean = s_data.get('thought', 'మార్కెట్ కదలికలను గమనిస్తోంది...').split('🧠')[0].replace('\n', ' ').strip()
+                    if len(thought_clean) > 85:
+                        thought_clean = thought_clean[:85] + "..."
+
+                    radar_rows.append({
+                        "🪙 అసెట్ (Asset)": s_data.get('clean_name', s_sym),
+                        "🌐 మార్కెట్": market_type,
+                        "💵 లైవ్ ధర": pr_fmt,
+                        "⚡ RSI (14)": rsi_desc,
+                        "📈 ట్రెండ్": trend_desc,
+                        "🤖 AI సిగ్నల్ & స్టేటస్": sig_badge,
+                        "🧠 AI విశ్లేషణ & రీజనింగ్": thought_clean,
+                        "⏱️ సమయం": s_data.get('timestamp', '-')
+                    })
+                
+                if radar_rows:
+                    radar_df = pd.DataFrame(radar_rows)
+                    def highlight_radar_sig(val):
+                        if "🟢" in str(val): return 'background-color: rgba(0, 230, 118, 0.15); color: #00e676; font-weight: bold;'
+                        elif "🎯" in str(val): return 'background-color: rgba(0, 188, 212, 0.15); color: #00e676; font-weight: bold;'
+                        elif "🔴" in str(val): return 'background-color: rgba(255, 82, 82, 0.15); color: #ff5252; font-weight: bold;'
+                        return 'color: #b0bec5;'
+                    
+                    styled_radar = radar_df.style.map(highlight_radar_sig, subset=['🤖 AI సిగ్నల్ & స్టేటస్'])
+                    safe_dataframe(styled_radar, hide_index=True)
+            else:
+                st.info("🔄 బాట్ ప్రస్తుతం అన్ని అసెట్స్ ని స్కాన్ చేస్తోంది... తదుపరి 5-10 సెకన్లలో ఇక్కడ లైవ్ రాడార్ టేబుల్ ప్రత్యక్షమవుతుంది.")
+
+            st.markdown("---")
 
             
             # 🌟 Professional UI Tabs
@@ -1424,7 +1577,9 @@ with main_tab1:
                                     entries = d_info.get('entries', [])
                                     e_time = entries[0].get('time', '-') if entries else '-'
                                     
-                                    cur_p = current_price if d_sym == symbol else d_avg
+                                    # Enrich with live price from live scan
+                                    live_asset_p = scanned_assets.get(d_sym, {}).get('price', 0.0) if 'scanned_assets' in locals() else 0.0
+                                    cur_p = current_price if d_sym == symbol else (live_asset_p if live_asset_p > 0 else d_avg)
                                     gain_pct = ((cur_p - d_avg) / d_avg * 100.0) if d_avg > 0 else 0.0
                                     
                                     open_list.append({

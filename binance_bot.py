@@ -839,14 +839,60 @@ def process_symbol(sym):
     now = datetime.now()
     is_crypto = sym.endswith("-USD")
     is_indian = sym.endswith(".NS") or sym.endswith(".BO") or sym in ["^NSEI", "^NSEBANK"]
+    clean_name = sym.replace('.NS', '').replace('.BO', '').replace('-USD', '')
+    
+    # Load Fractional Micro-DCA State & Live Trading Mode
+    dca_state = load_dca_state()
+    pos = dca_state.get(sym)
+    live_mode = is_live_trading()
     
     if not is_crypto and now.weekday() >= 5:
         # Weekend: stock markets closed
-        return None
+        return {
+            "symbol": sym,
+            "clean_name": clean_name,
+            "price": pos['avg_price'] if pos else 0.0,
+            "signal": "HOLD",
+            "thought": "భారతీయ స్టాక్ మార్కెట్ (NSE) వీకెండ్ సెలవులో ఉంది. పొజిషన్లు సేఫ్ గా ఉన్నాయి.",
+            "strategy": "weekend_hold",
+            "rsi": 50.0,
+            "trend": "CLOSED",
+            "action_taken": "HOLD",
+            "has_position": pos is not None,
+            "pnl_pct": 0.0,
+            "avg_price": pos['avg_price'] if pos else 0.0,
+            "total_qty": pos['total_qty'] if pos else 0.0,
+            "target_price": pos.get('target_sell_price', 0.0) if pos else 0.0,
+            "peak_price": pos.get('peak_price', 0.0) if pos else 0.0,
+            "invested": pos.get('total_cost', 0.0) if pos else 0.0,
+            "dca_layer": len(pos.get('entries', [])) if pos else 0,
+            "timestamp": now.strftime('%H:%M:%S'),
+            "is_indian": is_indian
+        }
         
     df = fetch_data(sym)
     if df.empty:
-        return None
+        return {
+            "symbol": sym,
+            "clean_name": clean_name,
+            "price": pos['avg_price'] if pos else 0.0,
+            "signal": "WAIT",
+            "thought": f"{clean_name} లైవ్ డేటా కోసం వేచి చూస్తోంది...",
+            "strategy": "data_fetch",
+            "rsi": 50.0,
+            "trend": "WAIT",
+            "action_taken": "WAIT",
+            "has_position": pos is not None,
+            "pnl_pct": 0.0,
+            "avg_price": pos['avg_price'] if pos else 0.0,
+            "total_qty": pos['total_qty'] if pos else 0.0,
+            "target_price": pos.get('target_sell_price', 0.0) if pos else 0.0,
+            "peak_price": pos.get('peak_price', 0.0) if pos else 0.0,
+            "invested": pos.get('total_cost', 0.0) if pos else 0.0,
+            "dca_layer": len(pos.get('entries', [])) if pos else 0,
+            "timestamp": now.strftime('%H:%M:%S'),
+            "is_indian": is_indian
+        }
         
     sig_res = generate_signal(df, sym)
     if isinstance(sig_res, (list, tuple)) and len(sig_res) >= 3:
@@ -856,44 +902,70 @@ def process_symbol(sym):
         strat_used = 'rsi_vwap_confluence'
 
     current_price = df.iloc[-1]['close']
+    last = df.iloc[-1]
+    rsi_val = float(last['RSI']) if 'RSI' in last and not pd.isna(last['RSI']) else 50.0
+    ema_200 = float(last['EMA_200']) if 'EMA_200' in last and not pd.isna(last['EMA_200']) else current_price
+    htf_trend = "BULLISH" if current_price >= ema_200 else "BEARISH"
     
-    # Load Fractional Micro-DCA State & Small Capital Compounding Engine
-    dca_state = load_dca_state()
-    pos = dca_state.get(sym)
-    live_mode = is_live_trading()
+    # Capital Sizing Engine (High Profit vs Dynamic vs Micro Safe)
+    cap_mode = "High Profit"
+    if os.path.exists('settings.json'):
+        try:
+            with open('settings.json', 'r') as f_s:
+                cap_mode = json.load(f_s).get('capital_mode', 'High Profit')
+        except: pass
     
-    # Small Capital Compounding Engine: Scale slice size dynamically with AI confidence
     brain_conf = 1.0
     if os.path.exists('ai_brain.json'):
         try:
             with open('ai_brain.json', 'r') as f_b:
-                b_data = json.load(f_b)
-                brain_conf = b_data.get('small_capital_compounding', {}).get('confidence_multiplier', 1.0)
+                brain_conf = json.load(f_b).get('small_capital_compounding', {}).get('confidence_multiplier', 1.0)
         except: pass
         
     # Indian Stocks (Zerodha Paper) vs Crypto (Binance) sizing
     if is_indian:
-        if current_price > 2500:
-            slice_qty = 1.0  # 1 share for Reliance/TCS
-        elif current_price > 700:
-            slice_qty = 2.0  # 2 shares for Tata Motors, SBI, Infosys, HDFC Bank
-        elif current_price > 100:
-            slice_qty = 5.0  # 5 shares for ITC, Zomato etc.
-        else:
-            slice_qty = 10.0 # 10 shares for penny/small stocks (Suzlon etc.)
+        mode_str = "🇮🇳 ZERODHA VIRTUAL"
+        if cap_mode == "High Profit":
+            portfolio_cap = 200000.0  # ₹2,00,000 for heavy profit scalability
+            if current_price > 2500:
+                slice_qty = 3.0   # 3 shares for Reliance/TCS (~₹9,000) -> +2.5% = ₹225 profit
+            elif current_price > 700:
+                slice_qty = 6.0   # 6 shares for TMCV, SBI, Infosys, HDFC Bank (~₹5,500-₹11,000)
+            elif current_price > 100:
+                slice_qty = 20.0  # 20 shares for ITC, Zomato/Eternal (~₹5,600-₹10,000)
+            else:
+                slice_qty = 100.0 # 100 shares for Suzlon (~₹5,000-₹8,000)
+        elif cap_mode == "Smart Dynamic":
+            portfolio_cap = 100000.0
+            if current_price > 2500: slice_qty = 2.0
+            elif current_price > 700: slice_qty = 4.0
+            elif current_price > 100: slice_qty = 10.0
+            else: slice_qty = 50.0
+        else: # Micro Safe
+            portfolio_cap = 50000.0
+            if current_price > 2500: slice_qty = 1.0
+            elif current_price > 700: slice_qty = 2.0
+            elif current_price > 100: slice_qty = 5.0
+            else: slice_qty = 10.0
         slice_cost_inr = round(slice_qty * current_price, 2)
         slice_cost_usd = round(slice_cost_inr / 84.5, 2)
-        portfolio_cap = 50000.0  # ₹50,000 virtual capital for Zerodha
-        clean_name = sym.replace('.NS', '').replace('.BO', '')
-        mode_str = "🇮🇳 ZERODHA VIRTUAL"
     else:
-        slice_cost_usd = round(10.0 * brain_conf, 1)
+        mode_str = "💰 LIVE BINANCE" if (live_mode and is_crypto) else "📝 VIRTUAL"
+        if cap_mode == "High Profit":
+            slice_cost_usd = round(35.0 * brain_conf, 1) # $35 per entry (~₹3,000) -> +2.5% = $0.88 (~₹75)
+            portfolio_cap = 150000.0
+        elif cap_mode == "Smart Dynamic":
+            slice_cost_usd = round(20.0 * brain_conf, 1)
+            portfolio_cap = 100000.0
+        else:
+            slice_cost_usd = round(10.0 * brain_conf, 1)
+            portfolio_cap = 50000.0
         slice_cost_inr = round(slice_cost_usd * 84.5, 2)
         slice_qty = slice_cost_usd / current_price
-        portfolio_cap = MAX_PORTFOLIO_CAPITAL
-        clean_name = sym.replace('-USD', '')
-        mode_str = "💰 LIVE BINANCE" if (live_mode and is_crypto) else "📝 VIRTUAL"
-    
+
+    action_taken = "HOLD"
+    profit_pct = 0.0
+
     # -------------------------------------------------------------
     # 1. CHECK TAKE-PROFIT ON EXISTING DCA POSITION
     # -------------------------------------------------------------
@@ -944,7 +1016,8 @@ def process_symbol(sym):
             if sym in dca_state:
                 del dca_state[sym]
                 save_dca_state(dca_state)
-            return sym
+            action_taken = "SELL"
+            pos = None
 
         # Stop-Loss Emergency Protection: drops > 6% with confirmed sell signal
         elif profit_pct <= -6.0 and signal == 'sell':
@@ -961,7 +1034,8 @@ def process_symbol(sym):
             if sym in dca_state:
                 del dca_state[sym]
                 save_dca_state(dca_state)
-            return sym
+            action_taken = "SELL"
+            pos = None
 
         # -------------------------------------------------------------
         # 2. ADDITIONAL DCA DIP BUY (AVERAGING DOWN)
@@ -969,87 +1043,102 @@ def process_symbol(sym):
         elif len(pos.get('entries', [])) < 3 and current_price <= (avg_price * 0.982) and signal == 'buy':
             # Capital Protection Guard
             current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
-            if (current_invested + slice_cost_inr) > portfolio_cap:
-                return None
-
-            if live_mode and is_crypto:
-                success, res = execute_live_order("BUY", sym, quote_amount=slice_cost_usd)
-                if not success:
-                    log_status(f"⚠️ Live Binance DCA Buy Warning ({sym}): {res}")
-            
-            layer = len(pos.get('entries', [])) + 1
-            pos['entries'].append({
-                "price": current_price,
-                "qty": slice_qty,
-                "cost": slice_cost_inr,
-                "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            })
-            pos['total_qty'] += slice_qty
-            pos['total_cost'] += slice_cost_inr
-            pos['avg_price'] = pos['total_cost'] / pos['total_qty']
-            pos['target_sell_price'] = pos['avg_price'] * 1.015
-            pos['peak_price'] = current_price
-            save_dca_state(dca_state)
-            
-            qty_label = f"{int(slice_qty)} షేర్లు" if (is_indian and slice_qty == int(slice_qty)) else f"Qty: {slice_qty:.5f}"
-            price_disp = f"₹{current_price:,.2f}" if is_indian else f"${current_price:,.2f}"
-            avg_disp = f"₹{pos['avg_price']:,.2f}" if is_indian else f"${pos['avg_price']:,.2f}"
-            target_disp = f"₹{pos['target_sell_price']:,.2f}" if is_indian else f"${pos['target_sell_price']:,.2f}"
-            
-            msg = f"🎯 [{mode_str} హంతకుడు DCA Layer {layer}/3]: {sym} @ {price_disp} ({qty_label})\nకొత్త సగటు ధర: {avg_disp} | టార్గెట్ (+1.5%): {target_disp}\n{thought}"
-            voice_msg = f"Alert. Averaging down on {clean_name}."
-            log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[96m')
-            log_trade("BUY", sym, current_price, slice_qty, 0.0)
-            send_telegram_message(f"✅ {msg}")
-            return sym
+            if (current_invested + slice_cost_inr) <= portfolio_cap:
+                if live_mode and is_crypto:
+                    success, res = execute_live_order("BUY", sym, quote_amount=slice_cost_usd)
+                    if not success:
+                        log_status(f"⚠️ Live Binance DCA Buy Warning ({sym}): {res}")
+                
+                layer = len(pos.get('entries', [])) + 1
+                pos['entries'].append({
+                    "price": current_price,
+                    "qty": slice_qty,
+                    "cost": slice_cost_inr,
+                    "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                })
+                pos['total_qty'] += slice_qty
+                pos['total_cost'] += slice_cost_inr
+                pos['avg_price'] = pos['total_cost'] / pos['total_qty']
+                pos['target_sell_price'] = pos['avg_price'] * 1.015
+                pos['peak_price'] = current_price
+                save_dca_state(dca_state)
+                
+                qty_label = f"{int(slice_qty)} షేర్లు" if (is_indian and slice_qty == int(slice_qty)) else f"Qty: {slice_qty:.5f}"
+                price_disp = f"₹{current_price:,.2f}" if is_indian else f"${current_price:,.2f}"
+                avg_disp = f"₹{pos['avg_price']:,.2f}" if is_indian else f"${pos['avg_price']:,.2f}"
+                target_disp = f"₹{pos['target_sell_price']:,.2f}" if is_indian else f"${pos['target_sell_price']:,.2f}"
+                
+                msg = f"🎯 [{mode_str} హంతకుడు DCA Layer {layer}/3]: {sym} @ {price_disp} ({qty_label})\nకొత్త సగటు ధర: {avg_disp} | టార్గెట్ (+1.5%): {target_disp}\n{thought}"
+                voice_msg = f"Alert. Averaging down on {clean_name}."
+                log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[96m')
+                log_trade("BUY", sym, current_price, slice_qty, 0.0)
+                send_telegram_message(f"✅ {msg}")
+                action_taken = "DCA_BUY"
 
     # -------------------------------------------------------------
     # 3. FIRST DIP ENTRY (INITIAL FRACTIONAL SLICE)
     # -------------------------------------------------------------
     elif pos is None and signal == 'buy':
-        if len(dca_state) >= MAX_ACTIVE_POSITIONS:
-            return None
-
-        current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
-        if (current_invested + slice_cost_inr) > portfolio_cap:
-            return None
-
-        if live_mode and is_crypto:
-            success, res = execute_live_order("BUY", sym, quote_amount=slice_cost_usd)
-            if not success:
-                log_status(f"⚠️ Live Binance Buy Warning ({sym}): {res}")
+        if len(dca_state) < MAX_ACTIVE_POSITIONS:
+            current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
+            if (current_invested + slice_cost_inr) <= portfolio_cap:
+                if live_mode and is_crypto:
+                    success, res = execute_live_order("BUY", sym, quote_amount=slice_cost_usd)
+                    if not success:
+                        log_status(f"⚠️ Live Binance Buy Warning ({sym}): {res}")
+                        
+                target_p = current_price * 1.015
+                dca_state[sym] = {
+                    "entries": [{
+                        "price": current_price,
+                        "qty": slice_qty,
+                        "cost": slice_cost_inr,
+                        "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    }],
+                    "avg_price": current_price,
+                    "total_qty": slice_qty,
+                    "total_cost": slice_cost_inr,
+                    "target_sell_price": target_p,
+                    "peak_price": current_price,
+                    "strategy": strat_used
+                }
+                save_dca_state(dca_state)
+                pos = dca_state[sym]
                 
-        target_p = current_price * 1.015
-        dca_state[sym] = {
-            "entries": [{
-                "price": current_price,
-                "qty": slice_qty,
-                "cost": slice_cost_inr,
-                "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            }],
-            "avg_price": current_price,
-            "total_qty": slice_qty,
-            "total_cost": slice_cost_inr,
-            "target_sell_price": target_p,
-            "peak_price": current_price,
-            "strategy": strat_used
-        }
-        save_dca_state(dca_state)
-        
-        qty_label = f"{int(slice_qty)} షేర్లు" if (is_indian and slice_qty == int(slice_qty)) else f"Qty: {slice_qty:.5f}"
-        price_disp = f"₹{current_price:,.2f}" if is_indian else f"${current_price:,.2f}"
-        cost_disp = f"₹{slice_cost_inr:,.2f}" if is_indian else f"${slice_cost_usd} / ₹{slice_cost_inr:,.2f}"
-        target_disp = f"₹{target_p:,.2f}" if is_indian else f"${target_p:,.2f}"
-        
-        msg = f"🎯 [{mode_str} హంతకుడు స్నైపర్ DCA]: {sym} డిప్ లో కొన్నాను @ {price_disp} ({cost_disp} | {qty_label})\n🎯 టార్గెట్ (+1.5% లాభం): {target_disp} | టెక్నిక్: {strat_used}\n{thought}"
-        voice_msg = f"Alert. Buying fractional slice of {clean_name}."
-        log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
-        log_trade("BUY", sym, current_price, slice_qty, 0.0)
-        send_telegram_message(f"✅ {msg}")
-        return sym
-        
-    return None
+                qty_label = f"{int(slice_qty)} షేర్లు" if (is_indian and slice_qty == int(slice_qty)) else f"Qty: {slice_qty:.5f}"
+                price_disp = f"₹{current_price:,.2f}" if is_indian else f"${current_price:,.2f}"
+                cost_disp = f"₹{slice_cost_inr:,.2f}" if is_indian else f"${slice_cost_usd} / ₹{slice_cost_inr:,.2f}"
+                target_disp = f"₹{target_p:,.2f}" if is_indian else f"${target_p:,.2f}"
+                
+                msg = f"🎯 [{mode_str} హంతకుడు స్నైపర్ DCA]: {sym} డిప్ లో కొన్నాను @ {price_disp} ({cost_disp} | {qty_label})\n🎯 టార్గెట్ (+1.5% లాభం): {target_disp} | టెక్నిక్: {strat_used}\n{thought}"
+                voice_msg = f"Alert. Buying fractional slice of {clean_name}."
+                log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
+                log_trade("BUY", sym, current_price, slice_qty, 0.0)
+                send_telegram_message(f"✅ {msg}")
+                action_taken = "BUY"
 
+    # Return full diagnostic radar status
+    return {
+        "symbol": sym,
+        "clean_name": clean_name,
+        "price": round(current_price, 2),
+        "signal": signal.upper(),
+        "thought": thought,
+        "strategy": strat_used,
+        "rsi": round(rsi_val, 1),
+        "trend": htf_trend,
+        "action_taken": action_taken,
+        "has_position": pos is not None,
+        "pnl_pct": round(profit_pct, 2) if pos is not None else 0.0,
+        "avg_price": round(pos['avg_price'], 2) if pos is not None else 0.0,
+        "total_qty": pos['total_qty'] if pos is not None else 0.0,
+        "target_price": round(pos.get('target_sell_price', current_price * 1.015), 2) if pos is not None else 0.0,
+        "peak_price": round(pos.get('peak_price', current_price), 2) if pos is not None else 0.0,
+        "invested": round(pos.get('total_cost', 0.0), 2) if pos is not None else 0.0,
+        "dca_layer": len(pos.get('entries', [])) if pos is not None else 0,
+        "timestamp": now.strftime('%H:%M:%S'),
+        "is_indian": is_indian
+    }
 
 _bot_loop_active = False
 _bot_loop_lock = threading.Lock()
@@ -1105,7 +1194,30 @@ def run_bot_loop():
             with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(active_symbols))) as executor:
                 results = list(executor.map(process_symbol, active_symbols))
                 
-            actions_taken = [r for r in results if r is not None]
+            actions_taken = [r['symbol'] for r in results if r and isinstance(r, dict) and r.get('action_taken') in ['BUY', 'SELL', 'DCA_BUY']]
+            
+            # 📡 Save Live Scan Status for AI Market Radar
+            cap_mode_saved = "High Profit"
+            if os.path.exists('settings.json'):
+                try:
+                    with open('settings.json', 'r') as f_s:
+                        cap_mode_saved = json.load(f_s).get('capital_mode', 'High Profit')
+                except: pass
+
+            live_scan_data = {
+                "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                "broker": broker_name,
+                "mode": mode,
+                "capital_mode": cap_mode_saved,
+                "active_symbols": active_symbols,
+                "assets": {r['symbol']: r for r in results if r and isinstance(r, dict) and 'symbol' in r}
+            }
+            try:
+                with file_lock:
+                    with open('live_scan_status.json', 'w') as f_scan:
+                        json.dump(live_scan_data, f_scan, indent=2)
+            except Exception:
+                pass
             
             if len(active_symbols) > 1:
                 has_nse = any('.NS' in s or '.BO' in s for s in active_symbols)
