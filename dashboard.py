@@ -17,11 +17,13 @@ def _run_background_bot():
                 f.write(f"Bot thread start error: {e}\n")
         except: pass
 
+_bg_bot_thread = None
+
 def start_bot_thread(force=False):
-    if force or not getattr(start_bot_thread, "_started", False):
-        start_bot_thread._started = True
-        t = threading.Thread(target=_run_background_bot, daemon=True)
-        t.start()
+    global _bg_bot_thread
+    if force or _bg_bot_thread is None or not _bg_bot_thread.is_alive():
+        _bg_bot_thread = threading.Thread(target=_run_background_bot, daemon=True)
+        _bg_bot_thread.start()
         return True
     return False
 
@@ -206,6 +208,15 @@ st.title("📈 AI Trading Master - Live Dashboard")
 bot_status, bot_diff, bot_meta = get_bot_heartbeat()
 loop_num = bot_meta.get('loop_count', '-')
 last_act = bot_meta.get('last_action', 'స్కానింగ్')
+active_syms = bot_meta.get('active_symbols', [])
+
+if len(active_syms) > 1:
+    short_syms = [s.replace('-USD', '') for s in active_syms if '-USD' in s]
+    syms_display = f"🌐 మల్టీ-కాయిన్ ({', '.join(short_syms)})"
+elif len(active_syms) == 1:
+    syms_display = f"🎯 {active_syms[0]}"
+else:
+    syms_display = "⚡ స్కానింగ్"
 
 if bot_status == "RUNNING":
     st.markdown(f'''
@@ -214,7 +225,7 @@ if bot_status == "RUNNING":
             <span style="height: 16px; width: 16px; background-color: #00e676; border-radius: 50%; display: inline-block; box-shadow: 0 0 12px #00e676;"></span>
             <div>
                 <div style="color: #ffffff; font-size: 16px; font-weight: bold;">🟢 బాట్ ఆన్ లో ఉంది (BOT IS ONLINE & RUNNING)</div>
-                <div style="color: #b9f6ca; font-size: 13px; margin-top: 2px;">చివరి స్కాన్: <b>{bot_diff} సెకన్ల క్రితం</b> | లూప్: <b>#{loop_num}</b> | స్టేటస్: <b>{last_act}</b></div>
+                <div style="color: #b9f6ca; font-size: 13px; margin-top: 2px;">చివరి స్కాన్: <b>{bot_diff}s క్రితం</b> | ఫోకస్: <b>{syms_display}</b> | లూప్: <b>#{loop_num}</b><br>స్టేటస్: <b>{last_act}</b></div>
             </div>
         </div>
         <span style="background-color: rgba(0, 230, 118, 0.25); color: #00e676; border: 1px solid #00e676; padding: 5px 14px; border-radius: 8px; font-size: 13px; font-weight: bold;">● LIVE ACTIVE</span>
@@ -291,6 +302,8 @@ symbol_options = {
     "Ethereum (ETH)": "ETH-USD",
     "Solana (SOL)": "SOL-USD",
     "Binance Coin (BNB)": "BNB-USD",
+    "Dogecoin (DOGE)": "DOGE-USD",
+    "Ripple (XRP)": "XRP-USD",
     
     # Indian Stocks
     "Nifty 50 (Index)": "^NSEI",
@@ -468,27 +481,63 @@ available_cash = portfolio_value
 
 st.sidebar.markdown("---")
 
-selected_name = st.sidebar.selectbox("ట్రేడింగ్ పెయిర్ (Trading Pair) ఎంచుకోండి:", list(symbol_options.keys()))
-symbol = symbol_options[selected_name]
+# Read previously saved focus from file to prevent unwanted reset on page rerun
+saved_scope = "ALL"
+if os.path.exists('selected_symbol.txt'):
+    try:
+        with open('selected_symbol.txt', 'r') as f:
+            content = f.read().strip()
+            if content:
+                saved_scope = content
+    except Exception:
+        pass
+
+focus_options = [
+    "🌐 మల్టీ-కాయిన్ ట్రేడింగ్ (Multi-Coin 24/7 - BTC, ETH, SOL, BNB, DOGE, XRP)",
+    "🎯 సింగిల్ అసెట్ ఫోకస్ (Single Selected Asset Only)"
+]
+
+# If saved_scope is a specific symbol, default to Single Asset mode; otherwise Multi-Coin (ALL)
+is_single_mode = (saved_scope != "ALL" and saved_scope in symbol_options.values())
+default_focus_idx = 1 if is_single_mode else 0
 
 trade_scope = st.sidebar.radio(
     "🎯 ట్రేడింగ్ ఫోకస్ (Trading Focus):",
-    [f"🎯 కేవలం {selected_name} మాత్రమే (Single Asset)", "🌐 ప్రధాన అసెట్లు (Tier-1 Crypto & Tech Stocks)"],
-    index=0
+    focus_options,
+    index=default_focus_idx,
+    key="app_trading_focus"
 )
 
-# బాట్ కి కూడా ఇదే సింబల్ వెళ్ళడానికి ఫైల్ లో సేవ్ చేద్దాం
-with open('selected_symbol.txt', 'w') as f:
-    if "Single" in trade_scope or "కేవలం" in trade_scope:
-        f.write(symbol)
-    else:
-        f.write("ALL")
+sym_keys = list(symbol_options.keys())
+
+if "సింగిల్" in trade_scope or "Single" in trade_scope:
+    default_sym_idx = 0
+    for idx_k, k in enumerate(sym_keys):
+        if symbol_options[k] == saved_scope:
+            default_sym_idx = idx_k
+            break
+    selected_name = st.sidebar.selectbox("ట్రేడింగ్ పెయిర్ (Trading Pair) ఎంచుకోండి:", sym_keys, index=default_sym_idx, key="app_single_pair")
+    symbol = symbol_options[selected_name]
+    active_bot_symbol = symbol
+    st.sidebar.info(f"🎯 బాట్ కేవలం **{selected_name}** పై మాత్రమే ట్రేడ్స్ చేస్తుంది.")
+else:
+    active_bot_symbol = "ALL"
+    st.sidebar.success("🚀 **మల్టీ-కాయిన్ ట్రేడింగ్ యాక్టివ్!** బాట్ ఒకేసారి BTC, ETH, SOL, BNB, DOGE, XRP అన్నింటినీ స్కాన్ చేస్తూ ట్రేడ్స్ చేస్తుంది.")
+    default_chart_idx = 0
+    selected_name = st.sidebar.selectbox("📊 లైవ్ చార్ట్ కోసం కాయిన్ ఎంచుకోండి:", sym_keys, index=default_chart_idx, key="app_chart_pair")
+    symbol = symbol_options[selected_name]
+
+# Save active choice to selected_symbol.txt so bot immediately reads it
+try:
+    with open('selected_symbol.txt', 'w') as f:
+        f.write(active_bot_symbol)
+except Exception:
+    pass
 
 timeframe = '1m'
 auto_refresh = st.sidebar.checkbox("🟢 Auto Refresh (Live)", value=False)
 enable_voice = st.sidebar.checkbox("🔊 బాట్ వాయిస్ (Voice Output)", value=True)
 st.sidebar.markdown("---")
-st.sidebar.info("ఈరోజు ఆదివారం కాబట్టి ఇండియన్ స్టాక్ మార్కెట్ ఆగిపోయి ఉంటుంది. కేవలం Bitcoin మాత్రమే లైవ్ లో కదులుతుంది!")
 
 @st.cache_data(ttl=15, show_spinner=False)
 def fetch_and_analyze(sym):
