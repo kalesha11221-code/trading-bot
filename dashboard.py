@@ -1100,12 +1100,35 @@ with main_tab1:
                         st.info("ఇంకా కాయిన్ల వారీగా కంప్లీట్ అయిన ట్రేడ్స్ ఏమీ లేవు.")
                     
                     st.markdown("---")
-                    st.subheader("📋 హిస్టరీ (All Trades)")
-                    # 🎨 Dataframe Styling (Neat and Clean UI)
-                    def highlight_profit(val):
-                        if str(val) == '-': return ''
+                    st.subheader("📋 ట్రేడింగ్ రికార్డ్స్ (Trading Activity & History)")
+                    
+                    # 1. Deduplicate consecutive identical orders written within seconds
+                    clean_rows = []
+                    last_seen_key = None
+                    for _, r in history_df.iterrows():
+                        row_sym = str(r.get('Symbol', ''))
+                        row_act = str(r.get('Action', ''))
+                        row_price = str(r.get('Price', ''))
+                        dedup_key = f"{row_sym}_{row_act}_{row_price}"
+                        if dedup_key == last_seen_key:
+                            continue
+                        clean_rows.append(r)
+                        last_seen_key = dedup_key
+                        
+                    dedup_df = pd.DataFrame(clean_rows) if clean_rows else history_df.copy()
+                    
+                    # Format Time column safely
+                    if 'Time' in dedup_df.columns:
                         try:
-                            v = float(str(val).replace('₹','').replace(',',''))
+                            dedup_df['Time'] = pd.to_datetime(dedup_df['Time'], errors='coerce').dt.strftime('%Y-%m-%d %I:%M:%S %p').fillna(dedup_df['Time'])
+                        except:
+                            pass
+
+                    # 🎨 Dataframe Styling Helpers
+                    def highlight_profit(val):
+                        if str(val) == '-' or pd.isna(val): return ''
+                        try:
+                            v = float(str(val).replace('₹','').replace('$','').replace(',','').replace('+',''))
                             if v > 0: return 'color: #00ff00; font-weight: bold;'
                             elif v < 0: return 'color: #ff3333; font-weight: bold;'
                         except: pass
@@ -1115,17 +1138,91 @@ with main_tab1:
                         if val == 'BUY': return 'background-color: rgba(0,255,0,0.1); color: #00ff00; font-weight: bold;'
                         elif val == 'SELL': return 'background-color: rgba(255,0,0,0.1); color: #ff3333; font-weight: bold;'
                         return ''
-                        
-                    # Format Time column to 12-hour AM/PM format
-                    display_df = history_df.copy()
-                    if 'Time' in display_df.columns:
-                        try:
-                            display_df['Time'] = pd.to_datetime(display_df['Time']).dt.strftime('%Y-%m-%d %I:%M:%S %p')
-                        except:
-                            pass
-                            
-                    styled_df = display_df.iloc[::-1].style.map(highlight_action, subset=['Action']).map(highlight_profit, subset=['Profit'])
-                    safe_dataframe(styled_df, hide_index=True)
+
+                    h_tab1, h_tab2, h_tab3 = st.tabs([
+                        "✅ పూర్తయిన ట్రేడ్లు (Completed Trades)",
+                        "⏳ లైవ్ ఓపెన్ పొజిషన్లు (Active Positions)",
+                        "📋 పూర్తి ఆర్డర్ హిస్టరీ (All Orders Log)"
+                    ])
+
+                    with h_tab1:
+                        # Only show SELL orders with realized profit/loss
+                        sells_df = dedup_df[dedup_df['Action'] == 'SELL'].copy()
+                        if not sells_df.empty:
+                            completed_list = []
+                            for _, s_row in sells_df.iloc[::-1].iterrows():
+                                p_raw = str(s_row.get('Profit', '0.0')).replace('₹','').replace('$','').replace(',','')
+                                try:
+                                    p_val = float(p_raw)
+                                    status_badge = "🟢 లాభం (WIN)" if p_val > 0 else ("🔴 నష్టం (LOSS)" if p_val < 0 else "⚪ బ్రేక్-ఈవెన్")
+                                    profit_formatted = f"₹{p_val:+.4f}" if p_val != 0 else "₹0.00"
+                                except:
+                                    status_badge = "⚪ సాధారణం"
+                                    profit_formatted = str(s_row.get('Profit', '-'))
+
+                                pr_val = str(s_row.get('Price', '')).replace('₹','').replace('$','').replace(',','')
+                                try:
+                                    price_disp = f"${float(pr_val):,.2f}" if "-USD" in str(s_row.get('Symbol','')) else f"₹{float(pr_val):,.2f}"
+                                except:
+                                    price_disp = str(s_row.get('Price', ''))
+
+                                completed_list.append({
+                                    "📅 సమయం (Exit Time)": s_row.get('Time', '-'),
+                                    "🪙 కాయిన్ (Coin)": s_row.get('Symbol', '-'),
+                                    "💰 అమ్మిన ధర (Exit Price)": price_disp,
+                                    "📦 పరిమాణం (Qty)": s_row.get('Shares', '-'),
+                                    "📈 లాభం / నష్టం (PnL)": profit_formatted,
+                                    "🏷️ ఫలితం (Result)": status_badge
+                                })
+                            c_df = pd.DataFrame(completed_list)
+                            styled_c_df = c_df.style.map(highlight_profit, subset=['📈 లాభం / నష్టం (PnL)'])
+                            safe_dataframe(styled_c_df, hide_index=True)
+                        else:
+                            st.info("ఇంకా కంప్లీట్ అయిన SELL ట్రేడ్స్ లేవు. ప్రస్తుతం కొన్న కాయిన్స్ 'లైవ్ ఓపెన్ పొజిషన్లు' ట్యాబ్ లో సేఫ్ గా ఉన్నాయి.")
+
+                    with h_tab2:
+                        # Show current holding positions from dca_state.json
+                        open_list = []
+                        if os.path.exists('dca_state.json'):
+                            try:
+                                with open('dca_state.json', 'r') as f_dca:
+                                    dca_positions = json.load(f_dca)
+                                for d_sym, d_info in dca_positions.items():
+                                    d_avg = d_info.get('avg_price', 0.0)
+                                    d_qty = d_info.get('total_qty', 0.0)
+                                    d_cost = d_info.get('total_cost', 0.0)
+                                    d_target = d_info.get('target_sell_price', d_avg * 1.015)
+                                    entries = d_info.get('entries', [])
+                                    e_time = entries[0].get('time', '-') if entries else '-'
+                                    
+                                    cur_p = current_price if d_sym == symbol else d_avg
+                                    gain_pct = ((cur_p - d_avg) / d_avg * 100.0) if d_avg > 0 else 0.0
+                                    
+                                    open_list.append({
+                                        "📅 ఎంట్రీ సమయం": e_time,
+                                        "🪙 కాయిన్ (Coin)": d_sym,
+                                        "💵 కొన్న సగటు ధర": f"${d_avg:,.2f}" if "-USD" in d_sym else f"₹{d_avg:,.2f}",
+                                        "📊 లైవ్ మార్కెట్ ధర": f"${cur_p:,.2f}" if "-USD" in d_sym else f"₹{cur_p:,.2f}",
+                                        "📦 పరిమాణం (Qty)": f"{d_qty:.5f}",
+                                        "💰 ఇన్వెస్ట్‌మెంట్": f"₹{d_cost:,.2f}",
+                                        "🚀 లైవ్ లాభం %": f"{gain_pct:+.2f}%",
+                                        "🎯 టార్గెట్ ప్రైస్ (+1.5%)": f"${d_target:,.2f}" if "-USD" in d_sym else f"₹{d_target:,.2f}",
+                                        "🛡️ స్టేటస్": "⏳ HOLD (టార్గెట్ కోసం ఎదురుచూస్తోంది)"
+                                    })
+                            except Exception:
+                                pass
+                                
+                        if open_list:
+                            o_df = pd.DataFrame(open_list)
+                            styled_o = o_df.style.map(highlight_profit, subset=['🚀 లైవ్ లాభం %'])
+                            safe_dataframe(styled_o, hide_index=True)
+                        else:
+                            st.info("ప్రస్తుతం ఎలాంటి ఓపెన్ ట్రేడ్స్ లేవు. బాట్ కొత్త సిగ్నల్ కోసం మార్కెట్ ని స్కాన్ చేస్తోంది.")
+
+                    with h_tab3:
+                        # Full deduplicated orders log
+                        styled_df = dedup_df.iloc[::-1].style.map(highlight_action, subset=['Action']).map(highlight_profit, subset=['Profit'])
+                        safe_dataframe(styled_df, hide_index=True)
                 else:
                     st.info("ఇంకా ఎలాంటి ట్రేడ్ జరగలేదు. బాట్ ఎదురుచూస్తోంది...")
 
