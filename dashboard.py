@@ -308,7 +308,7 @@ st.sidebar.header("⚙️ Settings")
 symbol_options = {
     # 🇮🇳 Indian Stocks (Zerodha NSE)
     "Reliance Industries": "RELIANCE.NS",
-    "Tata Motors": "TATAMOTORS.NS",
+    "Tata Motors (TMCV)": "TMCV.NS",
     "HDFC Bank": "HDFCBANK.NS",
     "Infosys": "INFY.NS",
     "State Bank of India (SBI)": "SBIN.NS",
@@ -340,6 +340,15 @@ symbol_options = {
     # Commodities
     "Gold (MCX/COMEX)": "GLD",
     "Crude Oil": "USO"
+}
+
+SYMBOL_ALIASES = {
+    'TATAMOTORS.NS': 'TMCV.NS',
+    'TATAMOTORS': 'TMCV.NS',
+    'TATA.NS': 'TMCV.NS',
+    'TATA': 'TMCV.NS',
+    'ZOMATO.NS': 'ETERNAL.NS',
+    'ZOMATO': 'ETERNAL.NS'
 }
 
 def load_custom_watchlist():
@@ -680,29 +689,91 @@ with st.sidebar.expander("🔍 త్వరిత అసెట్ సెర్�
 
 st.sidebar.markdown("---")
 
+def robust_fetch_candles(sym):
+    sym = SYMBOL_ALIASES.get(sym.upper(), sym.upper())
+    
+    # 1. Binance Direct API for Crypto (Lightning fast, 0 rate limit, no crumb error)
+    if sym.endswith('-USD'):
+        coin = sym.replace('-USD', '')
+        binance_pair = f'{coin}USDT'
+        try:
+            url = f'https://api.binance.com/api/v3/klines?symbol={binance_pair}&interval=1m&limit=100'
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                data = json.loads(resp.read().decode())
+                rows = []
+                for k in data:
+                    rows.append({
+                        'timestamp': datetime.fromtimestamp(k[0] / 1000.0),
+                        'open': float(k[1]),
+                        'high': float(k[2]),
+                        'low': float(k[3]),
+                        'close': float(k[4]),
+                        'volume': float(k[5])
+                    })
+                df = pd.DataFrame(rows)
+                if not df.empty:
+                    return df
+        except Exception:
+            pass
+
+    # 2. Direct Yahoo v8 Chart API (Bypasses crumb requirement on Cloud IP addresses)
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'application/json'
+    }
+    for interval, rng in [('1m', '1d'), ('5m', '5d'), ('1d', '1mo')]:
+        try:
+            url = f'https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval={interval}&range={rng}'
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                res = json.loads(resp.read().decode())
+                chart = res['chart']['result'][0]
+                timestamps = chart.get('timestamp', [])
+                if not timestamps:
+                    continue
+                quote = chart['indicators']['quote'][0]
+                rows = []
+                for i in range(len(timestamps)):
+                    c = quote['close'][i]
+                    if c is not None:
+                        rows.append({
+                            'timestamp': datetime.fromtimestamp(timestamps[i]),
+                            'open': quote['open'][i] or c,
+                            'high': quote['high'][i] or c,
+                            'low': quote['low'][i] or c,
+                            'close': c,
+                            'volume': quote['volume'][i] or 0.0
+                        })
+                df = pd.DataFrame(rows)
+                if not df.empty:
+                    return df
+        except Exception:
+            pass
+
+    # 3. yfinance Fallback
+    try:
+        df = yf.download(sym, period="1d", interval="1m", progress=False, timeout=5)
+        if df.empty:
+            df = yf.download(sym, period="5d", interval="5m", progress=False, timeout=5)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        df = df.reset_index()
+        if 'Date' in df.columns: df.rename(columns={'Date': 'timestamp'}, inplace=True)
+        if 'Datetime' in df.columns: df.rename(columns={'Datetime': 'timestamp'}, inplace=True)
+        df.rename(columns={'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close', 'Volume': 'volume'}, inplace=True)
+        if 'close' in df.columns and not isinstance(df['close'], pd.DataFrame):
+            return df
+    except Exception:
+        pass
+
+    return pd.DataFrame()
+
 @st.cache_data(ttl=15, show_spinner=False)
 def fetch_and_analyze(sym):
     try:
-        # Yahoo Finance నుండి డేటా తెచ్చుకోవడం (Fast timeout)
-        df = yf.download(sym, period="1d", interval="1m", progress=False, timeout=5)
-        if df.empty:
-            df = yf.download(sym, period="5d", interval="1m", progress=False, timeout=5)
-        
-        # yfinance columns are MultiIndex sometimes, so flatten them if needed
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-            
-        df = df.reset_index()
-        df.rename(columns={'Datetime': 'timestamp', 'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close', 'Volume': 'volume'}, inplace=True)
-        
-        if df.empty:
-            # Fallback to 5m or 15m
-            try:
-                df = yf.download(sym, period="5d", interval="5m", progress=False, timeout=5)
-                if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-                df = df.reset_index().rename(columns={'Datetime': 'timestamp', 'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close', 'Volume': 'volume'})
-            except: pass
-            
+        sym = SYMBOL_ALIASES.get(sym.upper(), sym.upper())
+        df = robust_fetch_candles(sym)
         if df.empty:
             # Ultimate safety fallback so the UI NEVER renders blank!
             dates = pd.date_range(end=datetime.now(), periods=50, freq='1min')
@@ -1468,8 +1539,8 @@ with main_tab1:
                                 with open('ai_commands.txt', 'w') as f: f.write("FORCE_BUY RELIANCE.NS")
                                 response = "👍 ఓకే బాస్! రిలయన్స్ (RELIANCE.NS) కొనమని Zerodha కమాండ్ పంపించాను."
                             elif "tata" in cmd_lower:
-                                with open('ai_commands.txt', 'w') as f: f.write("FORCE_BUY TATAMOTORS.NS")
-                                response = "👍 ఓకే బాస్! టాటా మోటార్స్ (TATAMOTORS.NS) కొనమని Zerodha కమాండ్ పంపించాను."
+                                with open('ai_commands.txt', 'w') as f: f.write("FORCE_BUY TMCV.NS")
+                                response = "👍 ఓకే బాస్! టాటా మోటార్స్ (TMCV.NS) కొనమని Zerodha కమాండ్ పంపించాను."
                             elif "sbi" in cmd_lower:
                                 with open('ai_commands.txt', 'w') as f: f.write("FORCE_BUY SBIN.NS")
                                 response = "👍 ఓకే బాస్! స్టేట్ బ్యాంక్ (SBIN.NS) కొనమని Zerodha కమాండ్ పంపించాను."

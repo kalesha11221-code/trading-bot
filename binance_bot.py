@@ -55,9 +55,18 @@ CRYPTO_SYMBOLS = [
 
 NSE_SYMBOLS = [
     # 🇮🇳 Top High-Volume Indian Stocks (NSE Zerodha)
-    "RELIANCE.NS", "TATAMOTORS.NS", "HDFCBANK.NS", "INFY.NS", 
+    "RELIANCE.NS", "TMCV.NS", "HDFCBANK.NS", "INFY.NS", 
     "SBIN.NS", "TCS.NS", "ICICIBANK.NS", "ITC.NS"
 ]
+
+SYMBOL_ALIASES = {
+    'TATAMOTORS.NS': 'TMCV.NS',
+    'TATAMOTORS': 'TMCV.NS',
+    'TATA.NS': 'TMCV.NS',
+    'TATA': 'TMCV.NS',
+    'ZOMATO.NS': 'ETERNAL.NS',
+    'ZOMATO': 'ETERNAL.NS'
+}
 
 symbols_to_trade = CRYPTO_SYMBOLS
 
@@ -353,27 +362,85 @@ def get_macro_trend(sym):
 
 
 def fetch_data(sym):
+    sym = SYMBOL_ALIASES.get(sym.upper(), sym.upper())
+    
+    # 1. Binance Direct API for Crypto (Lightning fast, 0 rate limit, no crumb error)
+    if sym.endswith('-USD'):
+        coin = sym.replace('-USD', '')
+        binance_pair = f'{coin}USDT'
+        try:
+            url = f'https://api.binance.com/api/v3/klines?symbol={binance_pair}&interval=1m&limit=100'
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                data = json.loads(resp.read().decode())
+                rows = []
+                for k in data:
+                    rows.append({
+                        'timestamp': datetime.fromtimestamp(k[0] / 1000.0),
+                        'open': float(k[1]),
+                        'high': float(k[2]),
+                        'low': float(k[3]),
+                        'close': float(k[4]),
+                        'volume': float(k[5])
+                    })
+                df = pd.DataFrame(rows)
+                if not df.empty:
+                    return df
+        except Exception:
+            pass
+
+    # 2. Direct Yahoo v8 Chart API (Bypasses crumb requirement on Cloud IP addresses)
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'application/json'
+    }
+    for interval, rng in [('1m', '1d'), ('5m', '5d'), ('1d', '1mo')]:
+        try:
+            url = f'https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval={interval}&range={rng}'
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                res = json.loads(resp.read().decode())
+                chart = res['chart']['result'][0]
+                timestamps = chart.get('timestamp', [])
+                if not timestamps:
+                    continue
+                quote = chart['indicators']['quote'][0]
+                rows = []
+                for i in range(len(timestamps)):
+                    c = quote['close'][i]
+                    if c is not None:
+                        rows.append({
+                            'timestamp': datetime.fromtimestamp(timestamps[i]),
+                            'open': quote['open'][i] or c,
+                            'high': quote['high'][i] or c,
+                            'low': quote['low'][i] or c,
+                            'close': c,
+                            'volume': quote['volume'][i] or 0.0
+                        })
+                df = pd.DataFrame(rows)
+                if not df.empty:
+                    return df
+        except Exception:
+            pass
+
+    # 3. yfinance Fallback with lock
     with yf_lock:
         try:
             df = yf.download(sym, period="5d", interval="1m", progress=False)
             if df.empty:
                 df = yf.download(sym, period="5d", interval="5m", progress=False)
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            df = df.reset_index()
+            if 'Date' in df.columns: df.rename(columns={'Date': 'timestamp'}, inplace=True)
+            if 'Datetime' in df.columns: df.rename(columns={'Datetime': 'timestamp'}, inplace=True)
+            df.rename(columns={'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close', 'Volume': 'volume'}, inplace=True)
+            if 'close' in df.columns and not isinstance(df['close'], pd.DataFrame):
+                return df
         except Exception:
-            return pd.DataFrame()
-        
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    df = df.reset_index()
-    if 'Date' in df.columns:
-        df.rename(columns={'Date': 'timestamp'}, inplace=True)
-    if 'Datetime' in df.columns:
-        df.rename(columns={'Datetime': 'timestamp'}, inplace=True)
-    df.rename(columns={'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close', 'Volume': 'volume'}, inplace=True)
-    
-    # Anti-Corruption check
-    if 'close' in df.columns and isinstance(df['close'], pd.DataFrame):
-        return pd.DataFrame() 
-    return df
+            pass
+
+    return pd.DataFrame()
 
 import numpy as np
     
