@@ -48,12 +48,18 @@ file_lock = threading.Lock()
 import requests
 import yfinance as yf
 
-symbols_to_trade = [
+CRYPTO_SYMBOLS = [
     # 🪙 High-Liquidity 24/7 Crypto (Tier-1 Binance Spot)
-    "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "DOGE-USD", "XRP-USD",
-    # 🇺🇸 High-Momentum Tech Stocks
-    "TSLA", "NVDA"
+    "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "DOGE-USD", "XRP-USD"
 ]
+
+NSE_SYMBOLS = [
+    # 🇮🇳 Top High-Volume Indian Stocks (NSE Zerodha)
+    "RELIANCE.NS", "TATAMOTORS.NS", "HDFCBANK.NS", "INFY.NS", 
+    "SBIN.NS", "TCS.NS", "ICICIBANK.NS", "ITC.NS"
+]
+
+symbols_to_trade = CRYPTO_SYMBOLS
 
 # 🎯 హంతకుడు (Assassin Sniper) Portfolio & Risk Guards
 MAX_ACTIVE_POSITIONS = 3
@@ -260,14 +266,22 @@ def save_dca_state(state):
                 json.dump(state, f, indent=2)
     except: pass
 
-def is_live_trading():
+def get_current_trading_mode():
     if os.path.exists('trading_mode.txt'):
         try:
             with open('trading_mode.txt', 'r') as f:
                 content = f.read().strip()
-            return "Live" in content or "బినాన్స్" in content
+            if "Zerodha" in content or "Indian" in content or "NSE" in content:
+                return "ZERODHA_PAPER"
+            elif "Live" in content and "Binance" in content:
+                return "BINANCE_LIVE"
+            else:
+                return "BINANCE_PAPER"
         except: pass
-    return False
+    return "BINANCE_PAPER"
+
+def is_live_trading():
+    return get_current_trading_mode() == "BINANCE_LIVE"
 
 def execute_live_order(action, sym, quantity=None, quote_amount=None):
     if not exchange: return False, "No exchange initialized"
@@ -327,12 +341,21 @@ def get_macro_trend(sym):
 
 def fetch_data(sym):
     with yf_lock:
-        df = yf.download(sym, period="7d", interval="1m", progress=False)
+        try:
+            df = yf.download(sym, period="5d", interval="1m", progress=False)
+            if df.empty:
+                df = yf.download(sym, period="5d", interval="5m", progress=False)
+        except Exception:
+            return pd.DataFrame()
         
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     df = df.reset_index()
-    df.rename(columns={'Datetime': 'timestamp', 'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close', 'Volume': 'volume'}, inplace=True)
+    if 'Date' in df.columns:
+        df.rename(columns={'Date': 'timestamp'}, inplace=True)
+    if 'Datetime' in df.columns:
+        df.rename(columns={'Datetime': 'timestamp'}, inplace=True)
+    df.rename(columns={'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close', 'Volume': 'volume'}, inplace=True)
     
     # Anti-Corruption check
     if 'close' in df.columns and isinstance(df['close'], pd.DataFrame):
@@ -344,7 +367,11 @@ import numpy as np
 
 def get_news_sentiment(sym):
     try:
-        search_term = sym.replace('-USD', '') + " market news crypto"
+        if ".NS" in sym or ".BO" in sym or sym.startswith("^"):
+            clean_name = sym.replace('.NS', '').replace('.BO', '')
+            search_term = f"{clean_name} share stock news India"
+        else:
+            search_term = sym.replace('-USD', '') + " market news crypto"
         url = f"https://news.google.com/rss/search?q={search_term.replace(' ', '+')}&hl=en-US&gl=US&ceid=US:en"
         req = Request(url, headers={'User-Agent': 'Mozilla/5.0'})
         with urlopen(req) as response:
@@ -730,7 +757,11 @@ def log_status(msg, voice_alert=None, color_code='\033[0m'):
 
 def process_symbol(sym):
     now = datetime.now()
-    if not sym.endswith("-USD") and now.weekday() >= 5:
+    is_crypto = sym.endswith("-USD")
+    is_indian = sym.endswith(".NS") or sym.endswith(".BO") or sym in ["^NSEI", "^NSEBANK"]
+    
+    if not is_crypto and now.weekday() >= 5:
+        # Weekend: stock markets closed
         return None
         
     df = fetch_data(sym)
@@ -750,7 +781,6 @@ def process_symbol(sym):
     dca_state = load_dca_state()
     pos = dca_state.get(sym)
     live_mode = is_live_trading()
-    is_crypto = sym.endswith("-USD")
     
     # Small Capital Compounding Engine: Scale slice size dynamically with AI confidence
     brain_conf = 1.0
@@ -761,9 +791,26 @@ def process_symbol(sym):
                 brain_conf = b_data.get('small_capital_compounding', {}).get('confidence_multiplier', 1.0)
         except: pass
         
-    # Dynamic Micro-DCA slice: Base $10 USDT scaled up to $15 USDT during winning streaks
-    slice_cost_usd = round(10.0 * brain_conf, 1)
-    slice_cost_inr = round(845.0 * brain_conf, 1)
+    # Indian Stocks (Zerodha Paper) vs Crypto (Binance) sizing
+    if is_indian:
+        if current_price > 2500:
+            slice_qty = 1.0  # 1 share for Reliance/TCS
+        elif current_price > 700:
+            slice_qty = 2.0  # 2 shares for Tata Motors, SBI, Infosys, HDFC Bank
+        else:
+            slice_qty = 5.0  # 5 shares for ITC etc.
+        slice_cost_inr = round(slice_qty * current_price, 2)
+        slice_cost_usd = round(slice_cost_inr / 84.5, 2)
+        portfolio_cap = 50000.0  # ₹50,000 virtual capital for Zerodha
+        clean_name = sym.replace('.NS', '')
+        mode_str = "🇮🇳 ZERODHA VIRTUAL"
+    else:
+        slice_cost_usd = round(10.0 * brain_conf, 1)
+        slice_cost_inr = round(slice_cost_usd * 84.5, 2)
+        slice_qty = slice_cost_usd / current_price
+        portfolio_cap = MAX_PORTFOLIO_CAPITAL
+        clean_name = sym.replace('-USD', '')
+        mode_str = "💰 LIVE BINANCE" if (live_mode and is_crypto) else "📝 VIRTUAL"
     
     # -------------------------------------------------------------
     # 1. CHECK TAKE-PROFIT ON EXISTING DCA POSITION
@@ -800,9 +847,12 @@ def process_symbol(sym):
                 if not success:
                     log_status(f"⚠️ Live Binance Sell Warning ({sym}): {res}")
             
-            mode_str = "💰 LIVE BINANCE" if (live_mode and is_crypto) else "📝 VIRTUAL"
-            msg = f"🎯 [{mode_str} హంతకుడు ప్రాఫిట్ మాక్సిమైజర్]: {sym} (Qty: {total_qty:.5f}) | భారీ లాభం: ₹{profit:.2f} (+{profit_pct:.2f}%)\n{thought} 🧠 [Peak: +{peak_gain_pct:.2f}% | DCA Layers: {len(pos.get('entries', []))}]"
-            voice_msg = f"Alert. Profit maximizer reached on {sym.replace('-USD', '')}. Selling for great profit."
+            qty_label = f"{int(total_qty)} షేర్లు" if (is_indian and total_qty == int(total_qty)) else f"Qty: {total_qty:.5f}"
+            price_disp = f"₹{current_price:,.2f}" if is_indian else f"${current_price:,.2f}"
+            profit_disp = f"₹{profit:,.2f}"
+            
+            msg = f"🎯 [{mode_str} హంతకుడు ప్రాఫిట్ మాక్సిమైజర్]: {sym} ({qty_label}) | భారీ లాభం: {profit_disp} (+{profit_pct:.2f}%)\n{thought} 🧠 [Peak: +{peak_gain_pct:.2f}% | DCA Layers: {len(pos.get('entries', []))}]"
+            voice_msg = f"Alert. Profit maximizer reached on {clean_name}. Selling for great profit."
             log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
             strat_key = pos.get('strategy', 'rsi_vwap_confluence')
             log_trade("SELL", sym, current_price, total_qty, profit, strategy_key=strat_key)
@@ -820,7 +870,8 @@ def process_symbol(sym):
             last_exit_times[sym] = time.time()
             if live_mode and is_crypto:
                 execute_live_order("SELL", sym, quantity=total_qty)
-            msg = f"🛑 [DCA Stop-Loss]: {sym} -6% కంటే ఎక్కువ పడిపోవడంతో నష్టాన్ని కట్ చేసి సేఫ్ గా అమ్మాను! (Loss: ₹{profit:.2f})"
+            loss_disp = f"₹{profit:,.2f}"
+            msg = f"🛑 [{mode_str} Stop-Loss]: {sym} -6% కంటే ఎక్కువ పడిపోవడంతో నష్టాన్ని కట్ చేసి సేఫ్ గా అమ్మాను! (Loss: {loss_disp})"
             log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", color_code='\033[91m')
             strat_key = pos.get('strategy', 'rsi_vwap_confluence')
             log_trade("SELL", sym, current_price, total_qty, profit, strategy_key=strat_key)
@@ -833,16 +884,12 @@ def process_symbol(sym):
         # -------------------------------------------------------------
         # 2. ADDITIONAL DCA DIP BUY (AVERAGING DOWN)
         # -------------------------------------------------------------
-        # If price drops >= 1.8% below average and max slices (3) not reached
-        # Requires sniper buy signal confirmation and capital check
         elif len(pos.get('entries', [])) < 3 and current_price <= (avg_price * 0.982) and signal == 'buy':
             # Capital Protection Guard
             current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
-            if (current_invested + slice_cost_inr) > MAX_PORTFOLIO_CAPITAL:
+            if (current_invested + slice_cost_inr) > portfolio_cap:
                 return None
 
-            slice_qty = slice_cost_inr / current_price
-            
             if live_mode and is_crypto:
                 success, res = execute_live_order("BUY", sym, quote_amount=slice_cost_usd)
                 if not success:
@@ -862,9 +909,13 @@ def process_symbol(sym):
             pos['peak_price'] = current_price
             save_dca_state(dca_state)
             
-            mode_str = "💰 LIVE BINANCE" if (live_mode and is_crypto) else "📝 VIRTUAL"
-            msg = f"🎯 [{mode_str} హంతకుడు DCA Layer {layer}/3]: {sym} @ ₹{current_price:.2f} (Qty: {slice_qty:.5f})\nకొత్త సగటు ధర: ₹{pos['avg_price']:.2f} | టార్గెట్ (+1.5%): ₹{pos['target_sell_price']:.2f}\n{thought}"
-            voice_msg = f"Alert. Averaging down on {sym.replace('-USD', '')}."
+            qty_label = f"{int(slice_qty)} షేర్లు" if (is_indian and slice_qty == int(slice_qty)) else f"Qty: {slice_qty:.5f}"
+            price_disp = f"₹{current_price:,.2f}" if is_indian else f"${current_price:,.2f}"
+            avg_disp = f"₹{pos['avg_price']:,.2f}" if is_indian else f"${pos['avg_price']:,.2f}"
+            target_disp = f"₹{pos['target_sell_price']:,.2f}" if is_indian else f"${pos['target_sell_price']:,.2f}"
+            
+            msg = f"🎯 [{mode_str} హంతకుడు DCA Layer {layer}/3]: {sym} @ {price_disp} ({qty_label})\nకొత్త సగటు ధర: {avg_disp} | టార్గెట్ (+1.5%): {target_disp}\n{thought}"
+            voice_msg = f"Alert. Averaging down on {clean_name}."
             log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[96m')
             log_trade("BUY", sym, current_price, slice_qty, 0.0)
             send_telegram_message(f"✅ {msg}")
@@ -874,17 +925,13 @@ def process_symbol(sym):
     # 3. FIRST DIP ENTRY (INITIAL FRACTIONAL SLICE)
     # -------------------------------------------------------------
     elif pos is None and signal == 'buy':
-        # 1. Check max active positions (Max 3 concurrent positions)
         if len(dca_state) >= MAX_ACTIVE_POSITIONS:
             return None
 
-        # 2. Capital Protection Guard (Max ₹10,000)
         current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
-        if (current_invested + slice_cost_inr) > MAX_PORTFOLIO_CAPITAL:
+        if (current_invested + slice_cost_inr) > portfolio_cap:
             return None
 
-        slice_qty = slice_cost_inr / current_price
-        
         if live_mode and is_crypto:
             success, res = execute_live_order("BUY", sym, quote_amount=slice_cost_usd)
             if not success:
@@ -907,9 +954,13 @@ def process_symbol(sym):
         }
         save_dca_state(dca_state)
         
-        mode_str = "💰 LIVE BINANCE" if (live_mode and is_crypto) else "📝 VIRTUAL"
-        msg = f"🎯 [{mode_str} హంతకుడు స్నైపర్ DCA]: {sym} డిప్ లో కొన్నాను @ ₹{current_price:.2f} (${slice_cost_usd} / Qty: {slice_qty:.5f})\n🎯 టార్గెట్ (+1.5% లాభం): ₹{target_p:.2f} | టెక్నిక్: {strat_used}\n{thought}"
-        voice_msg = f"Alert. Buying fractional slice of {sym.replace('-USD', '')}."
+        qty_label = f"{int(slice_qty)} షేర్లు" if (is_indian and slice_qty == int(slice_qty)) else f"Qty: {slice_qty:.5f}"
+        price_disp = f"₹{current_price:,.2f}" if is_indian else f"${current_price:,.2f}"
+        cost_disp = f"₹{slice_cost_inr:,.2f}" if is_indian else f"${slice_cost_usd} / ₹{slice_cost_inr:,.2f}"
+        target_disp = f"₹{target_p:,.2f}" if is_indian else f"${target_p:,.2f}"
+        
+        msg = f"🎯 [{mode_str} హంతకుడు స్నైపర్ DCA]: {sym} డిప్ లో కొన్నాను @ {price_disp} ({cost_disp} | {qty_label})\n🎯 టార్గెట్ (+1.5% లాభం): {target_disp} | టెక్నిక్: {strat_used}\n{thought}"
+        voice_msg = f"Alert. Buying fractional slice of {clean_name}."
         log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
         log_trade("BUY", sym, current_price, slice_qty, 0.0)
         send_telegram_message(f"✅ {msg}")
@@ -934,13 +985,28 @@ def run_bot_loop():
     while True:
         loop_count += 1
         try:
-            active_symbols = symbols_to_trade
+            mode = get_current_trading_mode()
+            if mode == "ZERODHA_PAPER":
+                default_symbols = NSE_SYMBOLS
+                broker_name = "Zerodha Kite (Paper)"
+            elif mode == "BINANCE_LIVE":
+                default_symbols = CRYPTO_SYMBOLS
+                broker_name = "Binance Spot (Live)"
+            else:
+                default_symbols = CRYPTO_SYMBOLS
+                broker_name = "Binance Virtual"
+
+            active_symbols = default_symbols
             if os.path.exists('selected_symbol.txt'):
                 try:
                     with open('selected_symbol.txt', 'r') as f:
                         sel = f.read().strip()
-                    if sel and sel != "ALL":
+                    if sel and sel not in ["ALL", "ALL_CRYPTO", "ALL_NSE"]:
                         active_symbols = [sel]
+                    elif sel == "ALL_NSE":
+                        active_symbols = NSE_SYMBOLS
+                    elif sel in ["ALL_CRYPTO", "ALL"]:
+                        active_symbols = default_symbols
                 except: pass
 
             actions_taken = []
@@ -951,23 +1017,30 @@ def run_bot_loop():
             actions_taken = [r for r in results if r is not None]
             
             if len(active_symbols) > 1:
-                short_names = [s.replace('-USD', '') for s in active_symbols if '-USD' in s]
-                sym_label = f"మల్టీ-కాయిన్స్ ({len(active_symbols)})"
-                hold_label = f"మల్టీ-కాయిన్స్ ({', '.join(short_names)}) సేఫ్ గా HOLD లో ఉన్నాయి"
+                if any('.NS' in s for s in active_symbols):
+                    short_names = [s.replace('.NS', '') for s in active_symbols]
+                    sym_label = f"Zerodha NSE ({len(active_symbols)})"
+                    hold_label = f"Zerodha స్టాక్స్ ({', '.join(short_names[:4])}...) సేఫ్ గా HOLD లో ఉన్నాయి"
+                else:
+                    short_names = [s.replace('-USD', '') for s in active_symbols if '-USD' in s]
+                    sym_label = f"మల్టీ-కాయిన్స్ ({len(active_symbols)})"
+                    hold_label = f"మల్టీ-కాయిన్స్ ({', '.join(short_names)}) సేఫ్ గా HOLD లో ఉన్నాయి"
             else:
-                sym_label = active_symbols[0]
+                sym_label = active_symbols[0].replace('.NS', '').replace('-USD', '')
                 hold_label = f"{sym_label} సేఫ్ గా HOLD లో ఉంది"
                 
             last_act_text = ("ట్రేడ్ జరిగింది: " + ", ".join(actions_taken)) if actions_taken else hold_label
             
             if not actions_taken:
-                log_status(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡ {hold_label}.", color_code='[96m')
+                log_status(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡ [{broker_name}] {hold_label}.", color_code='\033[96m')
 
             # 💓 Write Live Heartbeat for Website Indicator
             heartbeat_data = {
                 "last_ping": time.time(),
                 "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 "status": "RUNNING",
+                "broker": broker_name,
+                "mode": mode,
                 "active_symbols": active_symbols,
                 "loop_count": loop_count,
                 "last_action": last_act_text

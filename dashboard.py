@@ -210,11 +210,16 @@ loop_num = bot_meta.get('loop_count', '-')
 last_act = bot_meta.get('last_action', 'స్కానింగ్')
 active_syms = bot_meta.get('active_symbols', [])
 
+broker_badge = bot_meta.get('broker', 'Binance Spot')
 if len(active_syms) > 1:
-    short_syms = [s.replace('-USD', '') for s in active_syms if '-USD' in s]
-    syms_display = f"🌐 మల్టీ-కాయిన్ ({', '.join(short_syms)})"
+    if any('.NS' in s for s in active_syms):
+        clean_syms = [s.replace('.NS', '') for s in active_syms]
+        syms_display = f"🇮🇳 Zerodha NSE ({', '.join(clean_syms[:4])}{'...' if len(clean_syms) > 4 else ''})"
+    else:
+        clean_syms = [s.replace('-USD', '') for s in active_syms]
+        syms_display = f"🌐 మల్టీ-కాయిన్ ({', '.join(clean_syms)})"
 elif len(active_syms) == 1:
-    syms_display = f"🎯 {active_syms[0]}"
+    syms_display = f"🎯 {active_syms[0].replace('.NS', '').replace('-USD', '')}"
 else:
     syms_display = "⚡ స్కానింగ్"
 
@@ -297,20 +302,25 @@ else:
 
 st.sidebar.header("⚙️ Settings")
 symbol_options = {
-    # Crypto
+    # 🇮🇳 Indian Stocks (Zerodha NSE)
+    "Reliance Industries": "RELIANCE.NS",
+    "Tata Motors": "TATAMOTORS.NS",
+    "HDFC Bank": "HDFCBANK.NS",
+    "Infosys": "INFY.NS",
+    "State Bank of India (SBI)": "SBIN.NS",
+    "Tata Consultancy (TCS)": "TCS.NS",
+    "ICICI Bank": "ICICIBANK.NS",
+    "ITC Limited": "ITC.NS",
+    "Nifty 50 (Index)": "^NSEI",
+    "Bank Nifty (Index)": "^NSEBANK",
+    
+    # 🪙 Crypto (24/7 Binance Spot)
     "Bitcoin (BTC)": "BTC-USD",
     "Ethereum (ETH)": "ETH-USD",
     "Solana (SOL)": "SOL-USD",
     "Binance Coin (BNB)": "BNB-USD",
     "Dogecoin (DOGE)": "DOGE-USD",
     "Ripple (XRP)": "XRP-USD",
-    
-    # Indian Stocks
-    "Nifty 50 (Index)": "^NSEI",
-    "Bank Nifty (Index)": "^NSEBANK",
-    "Reliance": "RELIANCE.NS",
-    "Infosys": "INFY.NS",
-    "SBI": "SBIN.NS",
     
     # US Stocks
     "Apple (AAPL)": "AAPL",
@@ -332,36 +342,56 @@ symbol_options = {
 st.sidebar.title("🤖 AI Trading Mode")
 
 # Trading Mode Switch
-trading_mode = st.sidebar.radio("స్విచ్ (Mode Switch)", ["📝 Paper Trading (Virtual)", "💰 Live Trading (Binance)"])
+mode_options = [
+    "🇮🇳 Paper Trading (Indian Stocks - Zerodha Virtual)",
+    "📝 Paper Trading (Crypto - Binance Virtual)",
+    "💰 Live Trading (Binance Real Money)"
+]
+
+saved_mode = "🇮🇳 Paper Trading (Indian Stocks - Zerodha Virtual)"
+if os.path.exists('trading_mode.txt'):
+    try:
+        with open('trading_mode.txt', 'r') as f:
+            c = f.read().strip()
+            if "Zerodha" in c or "Indian" in c:
+                saved_mode = "🇮🇳 Paper Trading (Indian Stocks - Zerodha Virtual)"
+            elif "Live" in c:
+                saved_mode = "💰 Live Trading (Binance Real Money)"
+            else:
+                saved_mode = "📝 Paper Trading (Crypto - Binance Virtual)"
+    except: pass
+
+mode_idx = mode_options.index(saved_mode) if saved_mode in mode_options else 0
+trading_mode = st.sidebar.radio("స్విచ్ (Mode Switch)", mode_options, index=mode_idx)
 st.sidebar.markdown("---")
 
 live_usdt_balance = 0.0
-# Always fetch and show Real Binance Balance regardless of mode!
-try:
-    import ccxt
-    API_KEY = "guVp9OI7eoqXeNvKy1DlalCwwcP2W2CHRm6FWRy1mxY3AwZCdW7hIk9ubEVPrIoN"
-    SECRET_KEY = "sdpe9Q3BVdmzTnhhDY7zraFH2SDIBPWt6UTuY70n6ycLHPueEpYuHviS7imsHzNf"
-    exchange = ccxt.binance({
-        'apiKey': API_KEY,
-        'secret': SECRET_KEY,
-        'enableRateLimit': True,
-        'timeout': 3000,
-    })
-    balance = exchange.fetch_balance()
-    live_usdt_balance = balance['free'].get('USDT', 0.0)
-    st.sidebar.success(f"✅ Real Binance Balance: **${live_usdt_balance:.2f}**")
-
-
-
-except Exception as e:
-    st.sidebar.error(f"⚠️ బినాన్స్ కనెక్ట్ అవ్వలేదు. (Keys Check చేయండి)")
-    if trading_mode == "💰 Live Trading (Binance)":
-        trading_mode = "📝 Paper Trading (Virtual)"
-
-if trading_mode == "📝 Paper Trading (Virtual)":
-    st.sidebar.info("ప్రస్తుతం ప్రాక్టీస్ (Virtual) మోడ్ లో ఉంది. మీ రియల్ బినాన్స్ మనీ కట్ అవ్వదు.")
+if "Zerodha" in trading_mode:
+    st.sidebar.success("🇮🇳 **Zerodha Kite Virtual:** ₹50,000.00 క్యాపిటల్")
+    st.sidebar.info("భారతీయ స్టాక్స్ (NSE - Reliance, Tata Motors, HDFC Bank, Infosys, SBI, etc.) పై వర్చువల్ మనీతో రిస్క్ లేకుండా ట్రేడింగ్ జరుగుతుంది.")
 else:
-    st.sidebar.warning("⚠️ Live Trading On! బాట్ నిజమైన ట్రేడ్స్ చేస్తుంది.")
+    try:
+        import ccxt
+        API_KEY = "guVp9OI7eoqXeNvKy1DlalCwwcP2W2CHRm6FWRy1mxY3AwZCdW7hIk9ubEVPrIoN"
+        SECRET_KEY = "sdpe9Q3BVdmzTnhhDY7zraFH2SDIBPWt6UTuY70n6ycLHPueEpYuHviS7imsHzNf"
+        exchange = ccxt.binance({
+            'apiKey': API_KEY,
+            'secret': SECRET_KEY,
+            'enableRateLimit': True,
+            'timeout': 3000,
+        })
+        balance = exchange.fetch_balance()
+        live_usdt_balance = balance['free'].get('USDT', 0.0)
+        st.sidebar.success(f"✅ Real Binance Balance: **${live_usdt_balance:.2f}**")
+    except Exception as e:
+        if "Live" in trading_mode:
+            st.sidebar.error("⚠️ బినాన్స్ కనెక్ట్ అవ్వలేదు. (Keys Check చేయండి)")
+            trading_mode = "📝 Paper Trading (Crypto - Binance Virtual)"
+
+    if "Live" in trading_mode:
+        st.sidebar.warning("⚠️ Live Trading On! బాట్ బైనాన్స్ లో నిజమైన ట్రేడ్స్ చేస్తుంది.")
+    else:
+        st.sidebar.info("ప్రస్తుతం Crypto ప్రాక్టీస్ (Virtual) మోడ్ లో ఉంది. మీ రియల్ బినాన్స్ మనీ కట్ అవ్వదు.")
 
 # Save mode to file for binance_bot.py to read
 with open('trading_mode.txt', 'w') as f:
@@ -492,13 +522,21 @@ if os.path.exists('selected_symbol.txt'):
     except Exception:
         pass
 
-focus_options = [
-    "🌐 మల్టీ-కాయిన్ ట్రేడింగ్ (Multi-Coin 24/7 - BTC, ETH, SOL, BNB, DOGE, XRP)",
-    "🎯 సింగిల్ అసెట్ ఫోకస్ (Single Selected Asset Only)"
-]
+is_zerodha_mode = "Zerodha" in trading_mode
 
-# If saved_scope is a specific symbol, default to Single Asset mode; otherwise Multi-Coin (ALL)
-is_single_mode = (saved_scope != "ALL" and saved_scope in symbol_options.values())
+if is_zerodha_mode:
+    focus_options = [
+        "🇮🇳 మల్టీ-స్టాక్స్ ట్రేడింగ్ (Multi-Stock NSE - Reliance, Tata Motors, HDFC, Infosys, SBI, TCS, ICICI, ITC)",
+        "🎯 సింగిల్ స్టాక్ ఫోకస్ (Single Stock Focus)"
+    ]
+else:
+    focus_options = [
+        "🌐 మల్టీ-కాయిన్ ట్రేడింగ్ (Multi-Coin 24/7 - BTC, ETH, SOL, BNB, DOGE, XRP)",
+        "🎯 సింగిల్ అసెట్ ఫోకస్ (Single Selected Asset Only)"
+    ]
+
+# If saved_scope is a specific symbol, default to Single mode
+is_single_mode = (saved_scope not in ["ALL", "ALL_CRYPTO", "ALL_NSE"] and saved_scope in symbol_options.values())
 default_focus_idx = 1 if is_single_mode else 0
 
 trade_scope = st.sidebar.radio(
@@ -508,7 +546,14 @@ trade_scope = st.sidebar.radio(
     key="app_trading_focus"
 )
 
-sym_keys = list(symbol_options.keys())
+# Filter sym_keys for selectbox based on mode
+if is_zerodha_mode:
+    sym_keys = [k for k in symbol_options.keys() if ".NS" in symbol_options[k] or "^NSE" in symbol_options[k]]
+else:
+    sym_keys = [k for k in symbol_options.keys() if "-USD" in symbol_options[k]]
+
+if not sym_keys:
+    sym_keys = list(symbol_options.keys())
 
 if "సింగిల్" in trade_scope or "Single" in trade_scope:
     default_sym_idx = 0
@@ -516,15 +561,20 @@ if "సింగిల్" in trade_scope or "Single" in trade_scope:
         if symbol_options[k] == saved_scope:
             default_sym_idx = idx_k
             break
-    selected_name = st.sidebar.selectbox("ట్రేడింగ్ పెయిర్ (Trading Pair) ఎంచుకోండి:", sym_keys, index=default_sym_idx, key="app_single_pair")
+    label_text = "స్టాక్ (Stock) ఎంచుకోండి:" if is_zerodha_mode else "కాయిన్ (Coin) ఎంచుకోండి:"
+    selected_name = st.sidebar.selectbox(label_text, sym_keys, index=default_sym_idx, key="app_single_pair")
     symbol = symbol_options[selected_name]
     active_bot_symbol = symbol
     st.sidebar.info(f"🎯 బాట్ కేవలం **{selected_name}** పై మాత్రమే ట్రేడ్స్ చేస్తుంది.")
 else:
-    active_bot_symbol = "ALL"
-    st.sidebar.success("🚀 **మల్టీ-కాయిన్ ట్రేడింగ్ యాక్టివ్!** బాట్ ఒకేసారి BTC, ETH, SOL, BNB, DOGE, XRP అన్నింటినీ స్కాన్ చేస్తూ ట్రేడ్స్ చేస్తుంది.")
+    active_bot_symbol = "ALL_NSE" if is_zerodha_mode else "ALL_CRYPTO"
+    if is_zerodha_mode:
+        st.sidebar.success("🚀 **Zerodha మల్టీ-స్టాక్స్ యాక్టివ్!** బాట్ ఒకేసారి Reliance, Tata Motors, HDFC Bank, Infosys, SBI, TCS అన్నింటినీ స్కాన్ చేస్తూ ట్రేడ్స్ చేస్తుంది.")
+    else:
+        st.sidebar.success("🚀 **మల్టీ-కాయిన్ ట్రేడింగ్ యాక్టివ్!** బాట్ ఒకేసారి BTC, ETH, SOL, BNB, DOGE, XRP అన్నింటినీ స్కాన్ చేస్తూ ట్రేడ్స్ చేస్తుంది.")
     default_chart_idx = 0
-    selected_name = st.sidebar.selectbox("📊 లైవ్ చార్ట్ కోసం కాయిన్ ఎంచుకోండి:", sym_keys, index=default_chart_idx, key="app_chart_pair")
+    chart_label = "📊 లైవ్ చార్ట్ కోసం స్టాక్ ఎంచుకోండి:" if is_zerodha_mode else "📊 లైవ్ చార్ట్ కోసం కాయిన్ ఎంచుకోండి:"
+    selected_name = st.sidebar.selectbox(chart_label, sym_keys, index=default_chart_idx, key="app_chart_pair")
     symbol = symbol_options[selected_name]
 
 # Save active choice to selected_symbol.txt so bot immediately reads it
@@ -642,7 +692,15 @@ with main_tab1:
         current_price = last['close'] if last is not None else 65000.0
         signal = signal if signal else "HOLD"
         with st.container():
-            initial_capital = 10000.00 if trading_mode == "📝 Paper Trading (Virtual)" else (live_usdt_balance * 84.5)
+            if "Zerodha" in trading_mode:
+                initial_capital = 50000.00
+                title_str = "Zerodha Virtual: ₹50,000"
+            elif "Live" in trading_mode:
+                initial_capital = (live_usdt_balance * 84.5)
+                title_str = f"Live Binance: ${live_usdt_balance:.2f} USDT"
+            else:
+                initial_capital = 10000.00
+                title_str = "Crypto Virtual: ₹10,000"
             total_profit = 0.0
             current_balance = initial_capital
             invested_amount = 0.0
@@ -690,7 +748,7 @@ with main_tab1:
             available_cash = max(0.0, portfolio_value - invested_amount)
             roi = (total_profit / initial_capital) * 100 if initial_capital > 0 else 0.0
             
-            title_str = "Virtual: ₹10,000" if trading_mode == "📝 Paper Trading (Virtual)" else "Live Binance USDT"
+            # title_str configured above
             st.markdown(f"### 🏦 పోర్ట్‌ఫోలియో బ్యాలెన్స్ ({title_str})")
             b1, b2, b3, b4 = st.columns(4)
             b1.markdown(fancy_metric("టోటల్ పోర్ట్‌ఫోలియో", f"₹{portfolio_value:,.2f}", f"{roi:.2f}% ROI"), unsafe_allow_html=True)
@@ -715,9 +773,11 @@ with main_tab1:
                             d_pnl_pct = ((d_cur - d_info['avg_price']) / d_info['avg_price']) * 100.0
                             with d_cols[idx % len(d_cols)]:
                                 strat_tag = f" • {d_info.get('strategy', '').replace('_', ' ').title()}" if d_info.get('strategy') else ""
+                                p_color = "green" if d_pnl_pct >= 0 else "red"
+                                cur_sym_disp = f"₹{d_cur:,.2f}" if (".NS" in d_sym or not "-USD" in d_sym) else f"${d_cur:,.2f}"
                                 st.markdown(fancy_metric(
                                     f"{d_sym} (L{len(d_info.get('entries', []))}/3){strat_tag}",
-                                    f"₹{d_cur:,.2f}",
+                                    cur_sym_disp,
                                     f"{d_pnl_pct:+.2f}% (టార్గెట్: +1.5%)",
                                     p_color
                                 ), unsafe_allow_html=True)
@@ -1306,6 +1366,21 @@ with main_tab1:
                             elif "bnb" in cmd_lower:
                                 with open('ai_commands.txt', 'w') as f: f.write("FORCE_BUY BNB-USD")
                                 response = "👍 ఓకే బాస్! బినాన్స్ కాయిన్ (BNB) కొనమని కమాండ్ పంపించాను."
+                            elif "reliance" in cmd_lower:
+                                with open('ai_commands.txt', 'w') as f: f.write("FORCE_BUY RELIANCE.NS")
+                                response = "👍 ఓకే బాస్! రిలయన్స్ (RELIANCE.NS) కొనమని Zerodha కమాండ్ పంపించాను."
+                            elif "tata" in cmd_lower:
+                                with open('ai_commands.txt', 'w') as f: f.write("FORCE_BUY TATAMOTORS.NS")
+                                response = "👍 ఓకే బాస్! టాటా మోటార్స్ (TATAMOTORS.NS) కొనమని Zerodha కమాండ్ పంపించాను."
+                            elif "sbi" in cmd_lower:
+                                with open('ai_commands.txt', 'w') as f: f.write("FORCE_BUY SBIN.NS")
+                                response = "👍 ఓకే బాస్! స్టేట్ బ్యాంక్ (SBIN.NS) కొనమని Zerodha కమాండ్ పంపించాను."
+                            elif "infy" in cmd_lower or "infosys" in cmd_lower:
+                                with open('ai_commands.txt', 'w') as f: f.write("FORCE_BUY INFY.NS")
+                                response = "👍 ఓకే బాస్! ఇన్ఫోసిస్ (INFY.NS) కొనమని Zerodha కమాండ్ పంపించాను."
+                            elif "hdfc" in cmd_lower:
+                                with open('ai_commands.txt', 'w') as f: f.write("FORCE_BUY HDFCBANK.NS")
+                                response = "👍 ఓకే బాస్! HDFC బ్యాంక్ (HDFCBANK.NS) కొనమని Zerodha కమాండ్ పంపించాను."
                             else:
                                 response = "🤔 ఏ కాయిన్ కొనాలో కరెక్ట్ గా చెప్పండి బాస్. (Ex: 'buy btc')"
                             
