@@ -504,9 +504,23 @@ new_risk = st.sidebar.select_slider(
     value=bot_settings.get("risk_level", "Moderate (Smart AI)")
 )
 
-# 5. Panic Button (Emergency Stop)
+# 5. Panic Button & Balance Reset
 st.sidebar.markdown("<br>", unsafe_allow_html=True)
 panic = safe_button("🛑 EMERGENCY PANIC STOP", is_sidebar=True, help="కొన్న కాయిన్స్ అన్నీ వెంటనే అమ్మేసి బాట్ ని ఆపేస్తుంది!")
+
+st.sidebar.markdown("<br>", unsafe_allow_html=True)
+if st.sidebar.button("🔄 బ్యాలెన్స్ ₹50,000 కి రీసెట్ చేయి", help="పాత టెస్టింగ్ ఆర్డర్లని క్లియర్ చేసి వర్చువల్ బ్యాలెన్స్ ని ఖచ్చితంగా ₹50,000 కి సెట్ చేస్తుంది"):
+    if os.path.exists('trades_log.csv'):
+        try:
+            import time
+            os.rename('trades_log.csv', f'trades_log_bak_{int(time.time())}.csv')
+        except: pass
+        with open('trades_log.csv', 'w') as f_res:
+            f_res.write("Time,Symbol,Action,Price,Shares,Profit\n")
+    with open('dca_state.json', 'w') as f_dres:
+        f_dres.write("{}\n")
+    st.toast("✅ బ్యాలెన్స్ సరిగ్గా ₹50,000 కి రీసెట్ అయ్యింది!", icon="💰")
+    st.rerun()
 
 # Update settings if changed
 if (new_style != bot_settings.get("trading_style") or 
@@ -579,7 +593,7 @@ except Exception:
 
 st.sidebar.markdown("---")
 
-portfolio_value = 10000.0 if trading_mode == "📝 Paper Trading (Virtual)" else (live_usdt_balance * 84.5)
+portfolio_value = 50000.0 if "Live" not in trading_mode else ((live_usdt_balance * 84.5) if live_usdt_balance > 0 else 50000.0)
 roi = 0.0
 invested_amount = 0.0
 available_cash = portfolio_value
@@ -883,17 +897,17 @@ with main_tab1:
         signal = signal if signal else "HOLD"
         with st.container():
             if "Dual" in trading_mode:
-                initial_capital = 50000.00 + (10000.00 * 84.5 if live_usdt_balance == 0 else live_usdt_balance * 84.5)
-                title_str = "Dual Hybrid: ₹50,000 (NSE) + Crypto"
+                initial_capital = 50000.00
+                title_str = "Dual Hybrid (₹50,000 వర్చువల్ క్యాపిటల్: NSE + Crypto)"
             elif "Zerodha" in trading_mode:
                 initial_capital = 50000.00
-                title_str = "Zerodha Virtual: ₹50,000"
+                title_str = "Zerodha Virtual (₹50,000 క్యాపిటల్)"
             elif "Live" in trading_mode:
-                initial_capital = (live_usdt_balance * 84.5)
-                title_str = f"Live Binance: ${live_usdt_balance:.2f} USDT"
+                initial_capital = (live_usdt_balance * 84.5) if live_usdt_balance > 0 else 50000.00
+                title_str = f"Live Binance: ${live_usdt_balance:.2f} USDT (₹{initial_capital:,.2f})"
             else:
-                initial_capital = 10000.00
-                title_str = "Crypto Virtual: ₹10,000"
+                initial_capital = 50000.00
+                title_str = "Crypto Virtual (₹50,000 క్యాపిటల్)"
             total_profit = 0.0
             current_balance = initial_capital
             invested_amount = 0.0
@@ -902,23 +916,30 @@ with main_tab1:
                 try:
                     hist_df = pd.read_csv('trades_log.csv')
                     
-                    # 1. Calculate PnL from SELL trades
+                    # 1. Calculate PnL from SELL trades (Filter out old foreign test trades)
                     if 'Profit' in hist_df.columns:
                         g_prof = 0.0
                         g_loss = 0.0
                         taxes = 0.0
                         for idx, row in hist_df.iterrows():
+                            sym_r = str(row.get('Symbol', ''))
+                            # Only include Crypto (-USD) and Indian stocks (.NS, .BO)
+                            if not (sym_r.endswith('-USD') or sym_r.endswith('.NS') or sym_r.endswith('.BO')):
+                                continue
                             if row['Action'] == 'SELL' and str(row['Profit']) != '-':
-                                p_str = str(row['Profit']).replace('₹', '').replace(',', '')
-                                if p_str.startswith('-'):
-                                    p = -float(p_str.replace('-', ''))
-                                else:
-                                    p = float(p_str)
-                                if p > 0:
-                                    g_prof += p
-                                elif p < 0:
-                                    g_loss += abs(p)
-                                taxes += abs(p) * 0.001 # 0.1% Binance spot fee
+                                p_str = str(row['Profit']).replace('₹', '').replace('$', '').replace(',', '').strip()
+                                try:
+                                    if p_str.startswith('-'):
+                                        p = -float(p_str.replace('-', ''))
+                                    else:
+                                        p = float(p_str)
+                                    if p > 0:
+                                        g_prof += p
+                                    elif p < 0:
+                                        g_loss += abs(p)
+                                    taxes += abs(p) * 0.001 # 0.1% spot fee
+                                except Exception:
+                                    pass
                         total_profit = (g_prof - g_loss) - taxes
                         
                     # 2. Calculate Invested Amount strictly from active DCA positions (dca_state.json)

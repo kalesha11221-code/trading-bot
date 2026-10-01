@@ -926,7 +926,7 @@ def process_symbol(sym):
     if is_indian:
         mode_str = "🇮🇳 ZERODHA VIRTUAL"
         if cap_mode == "High Profit":
-            portfolio_cap = 200000.0  # ₹2,00,000 for heavy profit scalability
+            portfolio_cap = 50000.0  # ₹2,00,000 for heavy profit scalability
             if current_price > 2500:
                 slice_qty = 3.0   # 3 shares for Reliance/TCS (~₹9,000) -> +2.5% = ₹225 profit
             elif current_price > 700:
@@ -936,7 +936,7 @@ def process_symbol(sym):
             else:
                 slice_qty = 100.0 # 100 shares for Suzlon (~₹5,000-₹8,000)
         elif cap_mode == "Smart Dynamic":
-            portfolio_cap = 100000.0
+            portfolio_cap = 50000.0
             if current_price > 2500: slice_qty = 2.0
             elif current_price > 700: slice_qty = 4.0
             elif current_price > 100: slice_qty = 10.0
@@ -953,10 +953,10 @@ def process_symbol(sym):
         mode_str = "💰 LIVE BINANCE" if (live_mode and is_crypto) else "📝 VIRTUAL"
         if cap_mode == "High Profit":
             slice_cost_usd = round(35.0 * brain_conf, 1) # $35 per entry (~₹3,000) -> +2.5% = $0.88 (~₹75)
-            portfolio_cap = 150000.0
+            portfolio_cap = 50000.0
         elif cap_mode == "Smart Dynamic":
             slice_cost_usd = round(20.0 * brain_conf, 1)
-            portfolio_cap = 100000.0
+            portfolio_cap = 50000.0
         else:
             slice_cost_usd = round(10.0 * brain_conf, 1)
             portfolio_cap = 50000.0
