@@ -978,43 +978,43 @@ def process_symbol(sym):
                 brain_conf = json.load(f_b).get('small_capital_compounding', {}).get('confidence_multiplier', 1.0)
         except: pass
         
-    # Indian Stocks (Zerodha Paper) vs Crypto (Binance) sizing
+    # Indian Stocks (Zerodha Paper) vs Crypto (Binance) sizing (Optimized for ₹50,000 Capital)
     if is_indian:
         mode_str = "🇮🇳 ZERODHA VIRTUAL"
-        if cap_mode == "High Profit":
-            portfolio_cap = 50000.0  # ₹2,00,000 for heavy profit scalability
+        if cap_mode == "High Profit" or is_scalp_style:
+            portfolio_cap = 50000.0  # ₹50,000 active capital
             if current_price > 2500:
-                slice_qty = 3.0   # 3 shares for Reliance/TCS (~₹9,000) -> +2.5% = ₹225 profit
+                slice_qty = 4.0   # 4 shares for Reliance/TCS (~₹11,000-₹14,000) -> +1.5% = ₹165 - ₹210 profit
             elif current_price > 700:
-                slice_qty = 6.0   # 6 shares for TMCV, SBI, Infosys, HDFC Bank (~₹5,500-₹11,000)
+                slice_qty = 12.0  # 12 shares for TMCV, SBI, Infosys, HDFC Bank (~₹9,000-₹12,000) -> +1.5% = ₹150 profit
             elif current_price > 100:
-                slice_qty = 20.0  # 20 shares for ITC, Zomato/Eternal (~₹5,600-₹10,000)
+                slice_qty = 40.0  # 40 shares for ITC, Zomato/Eternal (~₹11,000-₹12,000) -> +1.5% = ₹170 profit
             else:
-                slice_qty = 100.0 # 100 shares for Suzlon (~₹5,000-₹8,000)
+                slice_qty = 150.0 # 150 shares for Suzlon (~₹9,000-₹12,000) -> +1.5% = ₹150 profit
         elif cap_mode == "Smart Dynamic":
             portfolio_cap = 50000.0
             if current_price > 2500: slice_qty = 2.0
-            elif current_price > 700: slice_qty = 4.0
-            elif current_price > 100: slice_qty = 10.0
-            else: slice_qty = 50.0
+            elif current_price > 700: slice_qty = 6.0
+            elif current_price > 100: slice_qty = 20.0
+            else: slice_qty = 75.0
         else: # Micro Safe
             portfolio_cap = 50000.0
             if current_price > 2500: slice_qty = 1.0
-            elif current_price > 700: slice_qty = 2.0
-            elif current_price > 100: slice_qty = 5.0
-            else: slice_qty = 10.0
+            elif current_price > 700: slice_qty = 3.0
+            elif current_price > 100: slice_qty = 10.0
+            else: slice_qty = 25.0
         slice_cost_inr = round(slice_qty * current_price, 2)
         slice_cost_usd = round(slice_cost_inr / 84.5, 2)
     else:
         mode_str = "💰 LIVE BINANCE" if (live_mode and is_crypto) else "📝 VIRTUAL"
-        if cap_mode == "High Profit":
-            slice_cost_usd = round(35.0 * brain_conf, 1) # $35 per entry (~₹3,000) -> +2.5% = $0.88 (~₹75)
+        if cap_mode == "High Profit" or is_scalp_style:
+            slice_cost_usd = round(120.0 * brain_conf, 1) # $120 per entry (~₹10,140) -> +1.5% = $1.80 (~₹152 profit)
             portfolio_cap = 50000.0
         elif cap_mode == "Smart Dynamic":
-            slice_cost_usd = round(20.0 * brain_conf, 1)
+            slice_cost_usd = round(60.0 * brain_conf, 1)  # $60 (~₹5,070)
             portfolio_cap = 50000.0
         else:
-            slice_cost_usd = round(10.0 * brain_conf, 1)
+            slice_cost_usd = round(25.0 * brain_conf, 1)  # $25 (~₹2,100)
             portfolio_cap = 50000.0
         slice_cost_inr = round(slice_cost_usd * 84.5, 2)
         slice_qty = slice_cost_usd / current_price
