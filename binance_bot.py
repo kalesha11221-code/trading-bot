@@ -598,26 +598,52 @@ def generate_signal(df, sym):
     is_bullish_candle = last['close'] > last['open']
     
     # -------------------------------------------------------------
+    # ⚙️ LOAD DYNAMIC TRADING SETTINGS (Scalping vs Swing vs Safe)
+    # -------------------------------------------------------------
+    bot_settings = {}
+    if os.path.exists('settings.json'):
+        try:
+            with open('settings.json', 'r') as f_s:
+                bot_settings = json.load(f_s)
+        except Exception:
+            pass
+
+    risk_level = bot_settings.get('risk_level', 'Extreme (High Profit)')
+    trading_style = bot_settings.get('trading_style', 'Scalping (Fast)')
+
+    is_scalper = ('Scalp' in trading_style) or ('Extreme' in risk_level)
+    is_conservative = ('Safe' in risk_level) or ('Conservative' in risk_level)
+
+    # -------------------------------------------------------------
     # 🛑 0. COOLDOWN RE-ENTRY GUARD (Prevents Whipsaw Churn)
     # -------------------------------------------------------------
     global last_exit_times
-    if sym in last_exit_times and (time.time() - last_exit_times[sym]) < COOLDOWN_SECONDS and not is_whale_pump:
-        rem_s = int(COOLDOWN_SECONDS - (time.time() - last_exit_times[sym]))
-        return 'hold', f" 🧠 AI ఆలోచన (హంతకుడు కూల్‌డౌన్): {sym} రీసెంట్ గా క్లోజ్ అయ్యింది. రిస్క్ ని అవాయిడ్ చేయడానికి {rem_s}s వేచి చూస్తున్నాను."
+    effective_cooldown = 120 if is_scalper else COOLDOWN_SECONDS
+    if sym in last_exit_times and (time.time() - last_exit_times[sym]) < effective_cooldown and not is_whale_pump:
+        rem_s = int(effective_cooldown - (time.time() - last_exit_times[sym]))
+        return 'hold', f" 🧠 AI ఆలోచన (కూల్‌డౌన్): {sym} రీసెంట్ గా క్లోజ్ అయ్యింది. రిస్క్ ని అవాయిడ్ చేయడానికి {rem_s}s వేచి చూస్తున్నాను."
 
     # -------------------------------------------------------------
     # 🛑 1. CHOP & SIDEWAYS NO-TRADE FILTER (Prevents Fake Whipsaws)
     # -------------------------------------------------------------
-    is_dead_chop = (last['ADX'] < 20) and (last['Bandwidth'] < 0.012) and not is_whale_pump
+    chop_adx = 13 if is_scalper else 20
+    chop_bw = 0.008 if is_scalper else 0.012
+    is_dead_chop = (last['ADX'] < chop_adx) and (last['Bandwidth'] < chop_bw) and not is_whale_pump
     if is_dead_chop:
-        return 'hold', f" 🧠 AI ఆలోచన (Sniper): 💤 [CHOP FILTER]: మార్కెట్ సైడ్‌వేస్ కన్సాలిడేషన్ లో ఉంది (ADX: {last['ADX']:.1f}). ఫాల్స్ బ్రేక్‌అవుట్స్ ని అవాయిడ్ చేయడానికి వెయిట్ చేస్తున్నాను."
+        return 'hold', f" 🧠 AI ఆలోచన: 💤 [CHOP FILTER]: మార్కెట్ సైడ్‌వేస్ కన్సాలిడేషన్ లో ఉంది (ADX: {last['ADX']:.1f}). ఫాల్స్ బ్రేక్‌అవుట్స్ ని అవాయిడ్ చేయడానికి వెయిట్ చేస్తున్నాను."
 
     # -------------------------------------------------------------
-    # 🛑 2. HIGHER TIMEFRAME (15m) BEARISH FILTER (No Falling Knives)
+    # 🛑 2. HIGHER TIMEFRAME (15m) FILTER (Adaptive Scalper vs Swing)
     # -------------------------------------------------------------
-    extreme_capitulation = (last['RSI'] < 22) and (last['close'] <= last['Lower_Band']) and volume_strong
-    if htf_status == 'BEARISH' and not extreme_capitulation and not is_whale_pump:
-        return 'hold', f" 🧠 AI ఆలోచన (Sniper): 🛑 15-నిమిషాల ట్రెండ్ బేరిష్ (డౌన్‌ట్రెండ్) లో ఉంది ({htf_desc}). క్యాపిటల్ ని కాపాడుకోవడానికి ఎంట్రీ తీసుకోలేదు."
+    extreme_capitulation = (last['RSI'] < 28) or (last['close'] <= last['Lower_Band']) or is_whale_pump
+    if is_scalper:
+        # In Scalping / Extreme mode: allow oversold bounce scalps & whale pumps even if 15m HTF is bearish
+        # Only block if HTF is bearish AND price is overbought / topped out (RSI > 55)
+        if htf_status == 'BEARISH' and last['RSI'] > 55 and not extreme_capitulation and not is_whale_pump:
+            return 'hold', f" 🧠 AI ఆలోచన (Scalper): 🛑 15-నిమిషాల ట్రెండ్ బేరిష్ గా ఉంది, RSI ({last['RSI']:.1f}) కూడా హై లో ఉంది. డిప్ కోసం వేచి చూస్తున్నాను."
+    else:
+        if htf_status == 'BEARISH' and not extreme_capitulation and not is_whale_pump:
+            return 'hold', f" 🧠 AI ఆలోచన (Sniper): 🛑 15-నిమిషాల ట్రెండ్ బేరిష్ (డౌన్‌ట్రెండ్) లో ఉంది ({htf_desc}). క్యాపిటల్ ని కాపాడుకోవడానికి ఎంట్రీ తీసుకోలేదు."
 
     # -------------------------------------------------------------
     # 🎯 3. INSTITUTIONAL 4-PILLAR CONFLUENCE SCORING ENGINE
@@ -803,25 +829,46 @@ def generate_signal(df, sym):
             pass
 
     # -------------------------------------------------------------
-    # 🏆 4. FINAL CONFLUENCE DECISION
+    # 🏆 4. FINAL CONFLUENCE DECISION (ADAPTIVE ENGINE)
     # -------------------------------------------------------------
     confluence_pillars = sum([1 for p in [pillar_trend, pillar_momentum, pillar_volume, pillar_predictive] if p])
-    
-    # 🎯 హంతకుడు (ASSASSIN SNIPER) BUY REQUIREMENT:
-    # 1. At least 3 out of 4 independent pillars MUST confirm (True Confluence)
-    # 2. Total buy_score >= 7.5 / 14 (High-conviction sniper entry)
-    # 3. Sell score <= 1.5 (Zero conflicting breakdown risk)
-    # 4. HTF (15m) MUST NOT BE BEARISH (Never fight the macro trend)
     strat_label = strat_dict.get(chosen_strategy, {}).get('name', chosen_strategy)
-    if (confluence_pillars >= 3 and buy_score >= 7.5 and sell_score <= 1.5 and htf_status != 'BEARISH') or (is_whale_pump and buy_score >= 6.5 and htf_status != 'BEARISH'):
-        return 'buy', f" 🎯 AI ఆలోచన [హంతకుడు ({strat_label})]: " + " ".join(thoughts) + f" [స్కోర్: {buy_score:.1f}/14 | పిల్లర్స్: {confluence_pillars}/4 | HTF: {htf_status}] పక్కా కన్ఫర్మేషన్ తో BUY సిగ్నల్!", chosen_strategy
+    
+    if is_scalper:
+        min_pillars = 1
+        req_buy_score = 3.5
+        max_sell_score = 4.5
+        htf_ok = (htf_status != 'BEARISH') or (last['RSI'] <= 55) or is_whale_pump
+        mode_tag = "హంతకుడు (Scalper Extreme)"
+    elif is_conservative:
+        min_pillars = 3
+        req_buy_score = 7.0
+        max_sell_score = 1.5
+        htf_ok = (htf_status != 'BEARISH') or extreme_capitulation
+        mode_tag = "హంతకుడు (Safe Sniper)"
+    else: # Balanced / Moderate
+        min_pillars = 2
+        req_buy_score = 5.0
+        max_sell_score = 3.0
+        htf_ok = (htf_status != 'BEARISH') or extreme_capitulation
+        mode_tag = "హంతకుడు (Balanced Swing)"
+
+    # BUY REQUIREMENT:
+    buy_triggered = (
+        (confluence_pillars >= min_pillars and buy_score >= req_buy_score and sell_score <= max_sell_score and htf_ok) or
+        (is_whale_pump and buy_score >= (3.5 if is_scalper else 6.0) and htf_ok) or
+        (is_scalper and last['RSI'] <= 34 and last['close'] <= (last['Lower_Band'] * 1.005) and sell_score <= max_sell_score)
+    )
+
+    if buy_triggered:
+        return 'buy', f" 🎯 AI ఆలోచన [{mode_tag} ({strat_label})]: " + " ".join(thoughts) + f" [స్కోర్: {buy_score:.1f}/14 | పిల్లర్స్: {confluence_pillars}/4 | HTF: {htf_status}] కన్ఫర్మేషన్ తో BUY సిగ్నల్!", chosen_strategy
         
     # SELL REQUIREMENT:
-    # Confirmed reversal breakdown with sell_score >= 5.0
-    elif sell_score >= 5.0:
-        return 'sell', f" 🎯 AI ఆలోచన [హంతకుడు (Risk Shield)]: " + " ".join(thoughts) + f" [రిస్క్ స్కోర్: {sell_score:.1f}] ట్రెండ్ రివర్స్ అయ్యే సూచనలు ఉన్నాయి కాబట్టి SELL సిగ్నల్!", 'risk_shield'
+    req_sell_score = 4.0 if is_scalper else 5.0
+    if sell_score >= req_sell_score:
+        return 'sell', f" 🎯 AI ఆలోచన [{mode_tag} (Risk Shield)]: " + " ".join(thoughts) + f" [రిస్క్ స్కోర్: {sell_score:.1f}] ట్రెండ్ రివర్స్ అయ్యే సూచనలు ఉన్నాయి కాబట్టి SELL సిగ్నల్!", 'risk_shield'
 
-    return 'hold', f" 🎯 AI ఆలోచన [హంతకుడు (Hunting)]: " + (" ".join(thoughts) if thoughts else "మార్కెట్ న్యూట్రల్ గా ఉంది.") + f" [స్కోర్: {buy_score:.1f} | పిల్లర్స్: {confluence_pillars}/4] ఖచ్చితమైన ప్రాఫిట్ ఎంట్రీ కోసం వేచి చూస్తున్నాను.", None
+    return 'hold', f" 🎯 AI ఆలోచన [{mode_tag} (Hunting)]: " + (" ".join(thoughts) if thoughts else "మార్కెట్ న్యూట్రల్ గా ఉంది.") + f" [స్కోర్: {buy_score:.1f} | పిల్లర్స్: {confluence_pillars}/4] ఖచ్చితమైన ప్రాఫిట్ ఎంట్రీ కోసం వేచి చూస్తున్నాను.", None
 
 
 def log_status(msg, voice_alert=None, color_code='\033[0m'):
@@ -848,12 +895,14 @@ def process_symbol(sym):
     
     if not is_crypto and now.weekday() >= 5:
         # Weekend: stock markets closed
+        wk_df = fetch_data(sym)
+        last_close = float(wk_df['close'].iloc[-1]) if (wk_df is not None and not wk_df.empty) else (pos['avg_price'] if pos else 0.0)
         return {
             "symbol": sym,
             "clean_name": clean_name,
-            "price": pos['avg_price'] if pos else 0.0,
+            "price": last_close,
             "signal": "HOLD",
-            "thought": "భారతీయ స్టాక్ మార్కెట్ (NSE) వీకెండ్ సెలవులో ఉంది. పొజిషన్లు సేఫ్ గా ఉన్నాయి.",
+            "thought": "భారతీయ స్టాక్ మార్కెట్ (NSE) వీకెండ్ సెలవులో ఉంది. సోమవారం ఉదయం 9:15 AM కి మార్కెట్ తిరిగి ప్రారంభమవుతుంది.",
             "strategy": "weekend_hold",
             "rsi": 50.0,
             "trend": "CLOSED",
@@ -907,13 +956,20 @@ def process_symbol(sym):
     ema_200 = float(last['EMA_200']) if 'EMA_200' in last and not pd.isna(last['EMA_200']) else current_price
     htf_trend = "BULLISH" if current_price >= ema_200 else "BEARISH"
     
-    # Capital Sizing Engine (High Profit vs Dynamic vs Micro Safe)
+    # Capital Sizing Engine & Trading Style (High Profit vs Dynamic vs Micro Safe)
     cap_mode = "High Profit"
+    trading_style = "Scalping (Fast)"
+    risk_level = "Extreme (High Profit)"
     if os.path.exists('settings.json'):
         try:
             with open('settings.json', 'r') as f_s:
-                cap_mode = json.load(f_s).get('capital_mode', 'High Profit')
+                s_data = json.load(f_s)
+                cap_mode = s_data.get('capital_mode', 'High Profit')
+                trading_style = s_data.get('trading_style', 'Scalping (Fast)')
+                risk_level = s_data.get('risk_level', 'Extreme (High Profit)')
         except: pass
+    
+    is_scalp_style = ("Scalp" in trading_style) or ("Extreme" in risk_level)
     
     brain_conf = 1.0
     if os.path.exists('ai_brain.json'):
@@ -983,13 +1039,22 @@ def process_symbol(sym):
             
         peak_gain_pct = ((peak_p - avg_price) / avg_price) * 100.0
         
-        # High Profit Triggers:
-        # 1. Trailing Exit: Reached >= 1.5% and dipped 0.4% from peak (locks in maximum profit!)
-        # 2. Big Target: Reached >= 2.8% directly
-        # 3. Base Reversal Exit: Reached >= 1.5% with confirmed SELL reversal signal
-        is_trailing_exit = (peak_gain_pct >= 1.5 and current_price <= (peak_p * 0.996))
-        is_target_exit = (profit_pct >= 2.8)
-        is_reversal_exit = (profit_pct >= 1.5 and signal == 'sell')
+        # High Profit / Scalper Triggers:
+        if is_scalp_style:
+            # Scalping exits: fast compounding profit capture
+            # 1. Trailing Exit: Reached >= 1.0% and dipped 0.3% from peak (locks in fast scalp!)
+            # 2. Target Exit: Reached >= 1.8% directly
+            # 3. Base Reversal Exit: Reached >= 0.8% with confirmed SELL reversal signal
+            is_trailing_exit = (peak_gain_pct >= 1.0 and current_price <= (peak_p * 0.997))
+            is_target_exit = (profit_pct >= 1.8)
+            is_reversal_exit = (profit_pct >= 0.8 and signal == 'sell')
+        else:
+            # 1. Trailing Exit: Reached >= 1.5% and dipped 0.4% from peak (locks in maximum profit!)
+            # 2. Big Target: Reached >= 2.8% directly
+            # 3. Base Reversal Exit: Reached >= 1.5% with confirmed SELL reversal signal
+            is_trailing_exit = (peak_gain_pct >= 1.5 and current_price <= (peak_p * 0.996))
+            is_target_exit = (profit_pct >= 2.8)
+            is_reversal_exit = (profit_pct >= 1.5 and signal == 'sell')
         
         if is_trailing_exit or is_target_exit or is_reversal_exit:
             profit = (current_price - avg_price) * total_qty
@@ -1079,7 +1144,8 @@ def process_symbol(sym):
     # 3. FIRST DIP ENTRY (INITIAL FRACTIONAL SLICE)
     # -------------------------------------------------------------
     elif pos is None and signal == 'buy':
-        if len(dca_state) < MAX_ACTIVE_POSITIONS:
+        max_positions = 4 if is_scalp_style else MAX_ACTIVE_POSITIONS
+        if len(dca_state) < max_positions:
             current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
             if (current_invested + slice_cost_inr) <= portfolio_cap:
                 if live_mode and is_crypto:
