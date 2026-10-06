@@ -1,0 +1,18 @@
+{
+  "BTC-USD": {
+    "entries": [
+      {
+        "price": 86200.0078125,
+        "qty": 0.0013921112427393379,
+        "cost": 10140.0,
+        "time": "2026-10-06 16:55:51"
+      }
+    ],
+    "avg_price": 86200.0078125,
+    "total_qty": 0.0013921112427393379,
+    "total_cost": 10140.0,
+    "target_sell_price": 87493.00792968749,
+    "peak_price": 86200.0078125,
+    "strategy": "trend_pullback_ema"
+  }
+}
