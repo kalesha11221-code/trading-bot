@@ -17,15 +17,31 @@ def _run_background_bot():
                 f.write(f"Bot thread start error: {e}\n")
         except: pass
 
+def _run_futures_bot_bg():
+    try:
+        import futures_bot
+        futures_bot.run_futures_bot()
+    except Exception as e:
+        pass
+
 _bg_bot_thread = None
+_bg_futures_thread = None
 
 def start_bot_thread(force=False):
-    global _bg_bot_thread
+    global _bg_bot_thread, _bg_futures_thread
+    started = False
+    
     if force or _bg_bot_thread is None or not _bg_bot_thread.is_alive():
         _bg_bot_thread = threading.Thread(target=_run_background_bot, daemon=True)
         _bg_bot_thread.start()
-        return True
-    return False
+        started = True
+        
+    if force or _bg_futures_thread is None or not _bg_futures_thread.is_alive():
+        _bg_futures_thread = threading.Thread(target=_run_futures_bot_bg, daemon=True)
+        _bg_futures_thread.start()
+        started = True
+        
+    return started
 
 start_bot_thread()
 
@@ -1166,13 +1182,14 @@ st.markdown("<br>", unsafe_allow_html=True)
 # -------------------------------------------------------------
 # 🌟 3. TOP-LEVEL ZERODHA PRO WEB TABS
 # -------------------------------------------------------------
-tab_pos, tab_mind, tab_charts, tab_orders, tab_search, tab_voice = st.tabs([
-    "📌 లైవ్ పొజిషన్లు & పోర్ట్‌ఫోలియో (Positions)",
-    "🧠 AI మైండ్ & ట్రేడ్ రీజనింగ్ (Bot Mind & Thoughts)",
-    "📊 ట్రేడింగ్ వ్యూ ప్రో చార్ట్స్ (Pro Analytics)",
-    "📋 ఆర్డర్ బుక్ & పెర్ఫార్మెన్స్ (Orders & PnL)",
-    "🔍 స్మార్ట్ అసెట్ సెర్చ్ & స్క్రీనర్ (Asset Screener)",
-    "💬 AI వాయిస్ అసిస్టెంట్ (Voice Assistant)"
+tab_pos, tab_futures, tab_mind, tab_charts, tab_orders, tab_search, tab_voice = st.tabs([
+    "📌 లైవ్ పొజిషన్లు (Spot)",
+    "🚀 Futures (Paper 5x)",
+    "🧠 AI మైండ్ & రీజనింగ్",
+    "📊 ప్రో చార్ట్స్",
+    "📋 ఆర్డర్స్ & PnL",
+    "🔍 స్క్రీనర్",
+    "💬 వాయిస్"
 ])
 
 # =============================================================
@@ -1364,7 +1381,86 @@ with tab_pos:
 
 
 # =============================================================
-# TAB 2: 🧠 AI మైండ్ & ట్రేడ్ రీజనింగ్ (BOT DECISION INTELLIGENCE)
+# TAB 2: 🚀 FUTURES PAPER TRADING (5x LEVERAGE)
+# =============================================================
+with tab_futures:
+    st.markdown("### 🚀 Crypto Futures Paper Trading (5x Leverage)")
+    st.caption("ఇక్కడ వర్చువల్ మార్జిన్ ₹5000/trade తో ఆటోమేటిక్ గా LONG/SHORT ట్రేడ్స్ జరుగుతాయి. లాభనష్టాలు లైవ్ లో అప్డేట్ అవుతాయి.")
+    
+    futures_state = {}
+    if os.path.exists('fo_state.json'):
+        try:
+            with open('fo_state.json', 'r') as f_fo:
+                futures_state = json.load(f_fo)
+        except:
+            pass
+            
+    if not futures_state:
+        st.info("ప్రస్తుతం ఎటువంటి ఫ్యూచర్స్ ట్రేడ్ రన్ అవ్వట్లేదు. మార్కెట్ కన్ఫర్మేషన్ కోసం ఎదురుచూస్తోంది...")
+    else:
+        f_rows = []
+        for fsym, finfo in futures_state.items():
+            f_pinfo = live_prices.get(fsym, {})
+            f_live = f_pinfo.get("price", float(finfo['entry_price']))
+            f_entry = float(finfo['entry_price'])
+            f_side = finfo['side']
+            f_qty = float(finfo['qty'])
+            f_margin = float(finfo['margin'])
+            f_lev = int(finfo['leverage'])
+            
+            if f_side == 'LONG':
+                f_pnl_usd = (f_live - f_entry) * f_qty
+            else:
+                f_pnl_usd = (f_entry - f_live) * f_qty
+                
+            f_pnl_inr = f_pnl_usd * USD_TO_INR
+            f_roe = (f_pnl_inr / f_margin) * 100.0
+            
+            pnl_c = "#00e676" if f_pnl_inr >= 0 else "#ff5252"
+            side_bg = "#004d40" if f_side == 'LONG' else "#4a148c"
+            
+            f_rows.append(f"""
+            <tr>
+              <td><b style="color:#e0e3eb;">{fsym}</b></td>
+              <td><span style="background:{side_bg};padding:3px 6px;border-radius:4px;font-weight:bold;">{f_side}</span> {f_lev}x</td>
+              <td>${f_entry:,.4f}</td>
+              <td style="color:#00bcd4;">${f_live:,.4f}</td>
+              <td>₹{f_margin:,.2f}</td>
+              <td style="color:{pnl_c};font-weight:bold;">₹{f_pnl_inr:+.2f} ({f_roe:+.2f}%)</td>
+            </tr>
+            """)
+            
+        f_table = f"""
+        <table class="zk-pos-table" style="width:100%;border-collapse:separate;border-spacing:0;background:#131722;border:1px solid #2a2e39;border-radius:10px;overflow:hidden;">
+          <thead>
+            <tr style="background:#181c27;">
+              <th style="padding:11px 12px;color:#787b86;">Symbol</th>
+              <th style="padding:11px 12px;color:#787b86;">Side & Leverage</th>
+              <th style="padding:11px 12px;color:#787b86;">Entry Price</th>
+              <th style="padding:11px 12px;color:#00bcd4;">Live Price</th>
+              <th style="padding:11px 12px;color:#787b86;">Margin (₹)</th>
+              <th style="padding:11px 12px;color:#787b86;">PnL & ROE%</th>
+            </tr>
+          </thead>
+          <tbody style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#e0e3eb;">
+            {''.join(f_rows)}
+          </tbody>
+        </table>
+        """
+        st.markdown(f_table, unsafe_allow_html=True)
+        
+    st.markdown("---")
+    st.markdown("#### 📋 ఫ్యూచర్స్ ట్రేడ్స్ హిస్టరీ (Futures Trades History)")
+    if os.path.exists('fo_trades_log.csv'):
+        try:
+            f_df = pd.read_csv('fo_trades_log.csv')
+            safe_dataframe(f_df.tail(15).iloc[::-1], hide_index=True)
+        except:
+            pass
+
+
+# =============================================================
+# TAB 3: 🧠 AI మైండ్ & ట్రేడ్ రీజనింగ్ (BOT DECISION INTELLIGENCE)
 # =============================================================
 with tab_mind:
     st.markdown("### 🧠 AI బాట్ మైండ్ & ట్రేడ్ రీజనింగ్ హబ్ (Trade Decisions & Thought Log)")
