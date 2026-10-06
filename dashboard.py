@@ -326,86 +326,24 @@ from datetime import datetime
 now_time = datetime.now()
 is_nse_time = (now_time.weekday() < 5 and ((now_time.hour == 9 and now_time.minute >= 15) or (9 < now_time.hour < 15) or (now_time.hour == 15 and now_time.minute <= 30)))
 nse_badge = '<span style="background: rgba(0, 230, 118, 0.15); color: #00e676; border: 1px solid #00e676; padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: bold;">🟢 Zerodha NSE Live</span>' if is_nse_time else '<span style="background: rgba(255, 82, 82, 0.15); color: #ff5252; border: 1px solid #ff5252; padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: bold;">🔴 Zerodha NSE Closed (Opens 9:15 AM)</span>'
-bot_status_badge = '<span style="background: rgba(0, 230, 118, 0.2); color: #00e676; border: 1px solid #00e676; padding: 4px 12px; border-radius: 8px; font-size: 12px; font-weight: bold;">🟢 AI BOT ONLINE & SCANNING</span>' if bot_status == 'RUNNING' else '<span style="background: rgba(255, 82, 82, 0.2); color: #ff5252; border: 1px solid #ff5252; padding: 4px 12px; border-radius: 8px; font-size: 12px; font-weight: bold;">🔴 BOT STOPPED</span>'
+bot_status_badge = '<span style="background: rgba(0, 230, 118, 0.2); color: #00e676; border: 1px solid #00e676; padding: 4px 12px; border-radius: 8px; font-size: 12px; font-weight: bold;">🟢 AI BOT ONLINE</span>' if bot_status == 'RUNNING' else '<span style="background: rgba(255, 82, 82, 0.2); color: #ff5252; border: 1px solid #ff5252; padding: 4px 12px; border-radius: 8px; font-size: 12px; font-weight: bold;">🔴 BOT STOPPED</span>'
 
-st.markdown(f'''
-<div class="zk-navbar">
-    <div>
-        <div class="zk-brand-title">⚡ ANTIGRAVITY KITE PRO <span style="font-size: 12px; background: #2962ff; color: white; padding: 2px 8px; border-radius: 4px; font-weight: bold;">v3.0</span></div>
-        <div class="zk-brand-sub">Institutional Autonomous Trading Terminal | 24/7 Multi-Asset Engine</div>
-    </div>
-    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-        <span style="background: rgba(41, 98, 255, 0.15); color: #64b5f6; border: 1px solid #2962ff; padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: bold;">🌐 24/7 Crypto Spot Active</span>
-        {nse_badge}
-        {bot_status_badge}
-        <span style="color: #9e9e9e; font-size: 12px; font-family: 'JetBrains Mono', monospace;">🕒 {now_time.strftime('%I:%M:%S %p')} IST</span>
-    </div>
+navbar_html = f"""<div class="zk-navbar">
+<div>
+<div class="zk-brand-title">⚡ ANTIGRAVITY KITE PRO <span style="font-size: 12px; background: #2962ff; color: white; padding: 2px 8px; border-radius: 4px; font-weight: bold;">v3.0</span></div>
+<div class="zk-brand-sub">Institutional Autonomous Trading Terminal | 24/7 Multi-Asset Engine</div>
 </div>
-''', unsafe_allow_html=True)
+<div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+<span style="background: rgba(41, 98, 255, 0.15); color: #64b5f6; border: 1px solid #2962ff; padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: bold;">🌐 24/7 Crypto Spot Active</span>
+{nse_badge}
+{bot_status_badge}
+<span style="color: #9e9e9e; font-size: 12px; font-family: 'JetBrains Mono', monospace;">🕒 {now_time.strftime('%I:%M:%S %p')} IST</span>
+</div>
+</div>"""
+st.markdown(navbar_html, unsafe_allow_html=True)
 
-
-# --- 💓 LIVE BOT STATUS INDICATOR (ఆన్ లో ఉందా / ఆగిపోయిందా) ---
-bot_status, bot_diff, bot_meta = get_bot_heartbeat()
-loop_num = bot_meta.get('loop_count', '-')
-last_act = bot_meta.get('last_action', 'స్కానింగ్')
-active_syms = bot_meta.get('active_symbols', [])
-
-broker_badge = bot_meta.get('broker', 'Binance Spot')
-if len(active_syms) > 1:
-    has_nse = any('.NS' in s or '.BO' in s for s in active_syms)
-    has_crypto = any('-USD' in s for s in active_syms)
-    if has_nse and has_crypto:
-        syms_display = f"🌐🇮🇳 Dual Hybrid ({len(active_syms)} Assets: Crypto + NSE)"
-    elif has_nse:
-        clean_syms = [s.replace('.NS', '').replace('.BO', '') for s in active_syms]
-        syms_display = f"🇮🇳 Zerodha NSE ({', '.join(clean_syms[:4])}{'...' if len(clean_syms) > 4 else ''})"
-    else:
-        clean_syms = [s.replace('-USD', '') for s in active_syms]
-        syms_display = f"🌐 మల్టీ-కాయిన్ ({', '.join(clean_syms)})"
-elif len(active_syms) == 1:
-    syms_display = f"🎯 {active_syms[0].replace('.NS', '').replace('.BO', '').replace('-USD', '')}"
-else:
-    syms_display = "⚡ స్కానింగ్"
-
-if bot_status == "RUNNING":
-    st.markdown(f'''
-    <div style="background: linear-gradient(90deg, #0d381e 0%, #164e2a 100%); border: 1.5px solid #00e676; border-radius: 12px; padding: 12px 20px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 4px 15px rgba(0, 230, 118, 0.15);">
-        <div style="display: flex; align-items: center; gap: 14px;">
-            <span style="height: 16px; width: 16px; background-color: #00e676; border-radius: 50%; display: inline-block; box-shadow: 0 0 12px #00e676;"></span>
-            <div>
-                <div style="color: #ffffff; font-size: 16px; font-weight: bold;">🟢 బాట్ ఆన్ లో ఉంది (BOT IS ONLINE & RUNNING)</div>
-                <div style="color: #b9f6ca; font-size: 13px; margin-top: 2px;">చివరి స్కాన్: <b>{bot_diff}s క్రితం</b> | ఫోకస్: <b>{syms_display}</b> | లూప్: <b>#{loop_num}</b><br>స్టేటస్: <b>{last_act}</b></div>
-            </div>
-        </div>
-        <span style="background-color: rgba(0, 230, 118, 0.25); color: #00e676; border: 1px solid #00e676; padding: 5px 14px; border-radius: 8px; font-size: 13px; font-weight: bold;">● LIVE ACTIVE</span>
-    </div>
-    ''', unsafe_allow_html=True)
-elif bot_status == "DELAYED":
-    st.markdown(f'''
-    <div style="background: linear-gradient(90deg, #3d2f09 0%, #57420c 100%); border: 1.5px solid #ffd600; border-radius: 12px; padding: 12px 20px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 4px 15px rgba(255, 214, 0, 0.15);">
-        <div style="display: flex; align-items: center; gap: 14px;">
-            <span style="height: 16px; width: 16px; background-color: #ffd600; border-radius: 50%; display: inline-block; box-shadow: 0 0 12px #ffd600;"></span>
-            <div>
-                <div style="color: #ffffff; font-size: 16px; font-weight: bold;">🟡 బాట్ రెస్పాన్స్ ఆలస్యం (BOT SLOW / WAITING)</div>
-                <div style="color: #fff9c4; font-size: 13px; margin-top: 2px;">చివరి స్కాన్: <b>{bot_diff} సెకన్ల క్రితం</b> (డేటా లేదా తదుపరి లూప్ కోసం వేచి చూస్తోంది)</div>
-            </div>
-        </div>
-        <span style="background-color: rgba(255, 214, 0, 0.25); color: #ffd600; border: 1px solid #ffd600; padding: 5px 14px; border-radius: 8px; font-size: 13px; font-weight: bold;">WAITING</span>
-    </div>
-    ''', unsafe_allow_html=True)
-else:
-    st.markdown(f'''
-    <div style="background: linear-gradient(90deg, #421313 0%, #5c1b1b 100%); border: 1.5px solid #ff5252; border-radius: 12px; padding: 12px 20px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 4px 15px rgba(255, 82, 82, 0.15);">
-        <div style="display: flex; align-items: center; gap: 14px;">
-            <span style="height: 16px; width: 16px; background-color: #ff5252; border-radius: 50%; display: inline-block; box-shadow: 0 0 12px #ff5252;"></span>
-            <div>
-                <div style="color: #ffffff; font-size: 16px; font-weight: bold;">🔴 బాట్ ఆగిపోయింది (BOT STOPPED / OFFLINE)</div>
-                <div style="color: #ffcdd2; font-size: 13px; margin-top: 2px;">బాట్ ప్రస్తుతం బ్యాక్‌గ్రౌండ్‌లో రన్ అవ్వడం లేదు ({bot_diff}s క్రితం చివరి పింగ్). వెంటనే స్టార్ట్ చేయడానికి కింద బటన్ నొక్కండి.</div>
-            </div>
-        </div>
-        <span style="background-color: rgba(255, 82, 82, 0.25); color: #ff5252; border: 1px solid #ff5252; padding: 5px 14px; border-radius: 8px; font-size: 13px; font-weight: bold;">OFFLINE</span>
-    </div>
-    ''', unsafe_allow_html=True)
+if bot_status != "RUNNING":
+    st.error("🔴 బాట్ ప్రస్తుతం ఆగిపోయింది. వెంటనే స్టార్ట్ చేయడానికి క్రింది బటన్ నొక్కండి.")
     if st.button("▶️ బాట్ ని వెంటనే ఆన్ చేయండి (Restart Bot Now)"):
         start_bot_thread(force=True)
         st.toast("🚀 బాట్ ఆన్ అయ్యింది!", icon="🟢")
@@ -1022,12 +960,12 @@ def fetch_and_analyze(sym):
         st.error(f"డేటా తేవడంలో ఎర్రర్: {e}")
         return None, "HOLD", None
 
-# placeholder removed for direct render
-
 
 # -------------------------------------------------------------
-# 🌐 LIVE PRICE TICKER TAPE (TOP RUNNING RIBBON)
+# 🌐 1. FULLY INTERACTIVE CLICKABLE LIVE TICKER TAPE
 # -------------------------------------------------------------
+st.markdown("##### ⚡ Live Markets Ticker (ఏ అసెట్ అయినా క్లిక్ చేసి వెంటనే పరిశీలించండి):")
+
 ticker_data = [
     ("BTC-USD", "Bitcoin (BTC)", 86230.16, 1.25),
     ("ETH-USD", "Ethereum (ETH)", 2716.04, 0.82),
@@ -1038,35 +976,43 @@ ticker_data = [
     ("^NSEI", "NIFTY 50", 25014.20, 0.35)
 ]
 
-# Fetch latest prices from live_scan_status.json if available
+# Fetch latest prices from live_scan_status.json
+live_scan_data = {}
+scanned_assets = {}
 if os.path.exists('live_scan_status.json'):
     try:
         with open('live_scan_status.json', 'r') as f_sc:
-            _scan_json = json.load(f_sc).get('assets', {})
+            live_scan_data = json.load(f_sc)
+            scanned_assets = live_scan_data.get('assets', {})
             for idx_t, (t_sym, t_nm, t_p, t_c) in enumerate(ticker_data):
-                if t_sym in _scan_json:
-                    p_upd = _scan_json[t_sym].get('price', t_p)
+                if t_sym in scanned_assets:
+                    p_upd = scanned_assets[t_sym].get('price', t_p)
                     if p_upd > 0:
                         ticker_data[idx_t] = (t_sym, t_nm, p_upd, t_c)
     except:
         pass
 
-ticker_html = '<div class="zk-ticker-ribbon">'
-for sym_t, nm_t, pr_t, chg_t in ticker_data:
-    chg_col = "#00e676" if chg_t >= 0 else "#ff5252"
+# Render ticker as responsive clickable Streamlit buttons!
+tick_cols = st.columns(len(ticker_data))
+for idx, (sym_t, nm_t, pr_t, chg_t) in enumerate(ticker_data):
+    chg_sym = "🟢" if chg_t >= 0 else "🔴"
     pr_str = f"₹{pr_t:,.2f}" if ("^" in sym_t or ".NS" in sym_t) else f"${pr_t:,.2f}"
-    ticker_html += f'''
-    <div class="zk-ticker-pill">
-        <b style="color: #ffffff;">{nm_t}</b>
-        <span style="color: #e0e0e0; font-family: 'JetBrains Mono', monospace;">{pr_str}</span>
-        <span style="color: {chg_col}; font-weight: bold; font-size: 11px;">{chg_t:+.2f}%</span>
-    </div>
-    '''
-ticker_html += '</div>'
-st.markdown(ticker_html, unsafe_allow_html=True)
+    short_nm = nm_t.split(" ")[0]
+    btn_label = f"{chg_sym} {short_nm}: {pr_str}"
+    
+    is_active_tick = (st.session_state.get('inspect_trade_key') == sym_t)
+    btn_type = "primary" if is_active_tick else "secondary"
+    
+    if tick_cols[idx].button(btn_label, key=f"btn_tick_{sym_t}", use_container_width=True, type=btn_type):
+        st.session_state['inspect_trade_key'] = sym_t
+        st.session_state['selected_trade_radio'] = sym_t
+        st.toast(f"Switched to {nm_t}!", icon="🎯")
+        st.rerun()
+
+st.markdown("<br>", unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# 🏦 TOP ZERODHA PORTFOLIO BALANCE RIBBON
+# 🏦 2. TOP ZERODHA PORTFOLIO BALANCE RIBBON
 # -------------------------------------------------------------
 initial_capital = 50000.00
 total_profit = 0.0
@@ -1104,16 +1050,6 @@ if os.path.exists('dca_state.json'):
                 invested_amount += float(d_info.get('total_cost', 0.0))
     except: pass
 
-# Read Live Scanned Assets for AI radar and live pricing
-live_scan_data = {}
-scanned_assets = {}
-if os.path.exists('live_scan_status.json'):
-    try:
-        with open('live_scan_status.json', 'r') as f_sc:
-            live_scan_data = json.load(f_sc)
-            scanned_assets = live_scan_data.get('assets', {})
-    except: pass
-
 portfolio_value = initial_capital + total_profit
 invested_amount = min(portfolio_value, max(0.0, invested_amount))
 available_cash = max(0.0, portfolio_value - invested_amount)
@@ -1144,7 +1080,7 @@ top_b4.markdown(fancy_metric("లైవ్ రన్నింగ్ లాభం
 st.markdown("<br>", unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# 🌟 6 TOP-LEVEL ZERODHA PRO WEB TABS
+# 🌟 3. TOP-LEVEL ZERODHA PRO WEB TABS
 # -------------------------------------------------------------
 tab_pos, tab_mind, tab_charts, tab_orders, tab_search, tab_voice = st.tabs([
     "📌 లైవ్ పొజిషన్లు & పోర్ట్‌ఫోలియో (Positions)",
@@ -1159,20 +1095,28 @@ tab_pos, tab_mind, tab_charts, tab_orders, tab_search, tab_voice = st.tabs([
 # TAB 1: 📌 లైవ్ పొజిషన్లు & పోర్ట్‌ఫోలియో (ZERODHA POSITIONS)
 # =============================================================
 with tab_pos:
-    st.markdown('''
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-        <div style="font-size: 18px; font-weight: bold; color: #ffffff;">
-            🎯 Zerodha Kite Live Positions (ప్రస్తుతం రన్ అవుతున్న పొజిషన్లు)
-        </div>
-        <div style="font-size: 12px; color: #80deea; background: rgba(0, 188, 212, 0.15); border: 1px solid #00bcd4; padding: 4px 12px; border-radius: 6px;">
-            ⚡ Trailing Profit Lock Active (+1.5% Target Engine)
-        </div>
-    </div>
-    ''', unsafe_allow_html=True)
+    st.markdown("### 🎯 Zerodha Kite Live Positions (ప్రస్తుతం రన్ అవుతున్న ట్రేడ్లు)")
+    st.caption("క్రింది ట్రేడ్లలో ఏ దానిపైన క్లిక్ చేసినా దానికి సంబంధించిన పూర్తి వివరాలు, టార్గెట్ ప్రోగ్రెస్ బార్, మరియు రిస్క్ మేనేజ్‌మెంట్ ఇక్కడ ఓపెన్ అవుతాయి:")
 
     if dca_positions:
-        # Build Zerodha Kite Positions Table Rows
-        table_rows_html = ""
+        trade_keys = list(dca_positions.keys())
+        if 'inspect_trade_key' not in st.session_state or st.session_state['inspect_trade_key'] not in trade_keys:
+            st.session_state['inspect_trade_key'] = trade_keys[0]
+
+        # 1. Interactive Fast Trade Selector Pills
+        st.write("**👉 పరిశీలించాల్సిన ట్రేడ్ ని ఎంచుకోండి (Click any trade to open details):**")
+        pill_cols = st.columns(len(trade_keys))
+        for idx_k, t_sym in enumerate(trade_keys):
+            clean_k = t_sym.replace('.NS', '').replace('-USD', '')
+            is_sel = (st.session_state.get('inspect_trade_key') == t_sym)
+            b_type = "primary" if is_sel else "secondary"
+            if pill_cols[idx_k].button(f"🪙 {clean_k}", key=f"sel_pill_btn_{t_sym}", use_container_width=True, type=b_type):
+                st.session_state['inspect_trade_key'] = t_sym
+                st.rerun()
+
+        st.markdown("---")
+
+        # 2. Render each position in a clean Zerodha card with a direct 'View Details' button
         for d_sym, d_info in dca_positions.items():
             d_asset = scanned_assets.get(d_sym, {})
             d_cur = d_asset.get('price', d_info['avg_price'])
@@ -1184,79 +1128,48 @@ with tab_pos:
             d_pnl_pct = ((d_cur - d_info['avg_price']) / d_info['avg_price']) * 100.0 if d_info['avg_price'] > 0 else 0.0
             d_pnl_inr = ((d_cur - d_info['avg_price']) * d_info['total_qty'] * (1.0 if is_ind else 84.5))
             
-            pnl_col = "#00e676" if d_pnl_pct >= 0 else "#ff5252"
-            pnl_bg = "rgba(0, 230, 118, 0.12)" if d_pnl_pct >= 0 else "rgba(255, 82, 82, 0.12)"
-            
-            prod_type = "NSE CNC" if is_ind else "CRYPTO SPOT"
             clean_ticker = d_sym.replace('.NS', '').replace('-USD', '')
-            
+            prod_type = "NSE CNC" if is_ind else "CRYPTO SPOT"
             cur_cost = float(d_info.get('total_cost', 10140.0))
             cur_val = cur_cost + d_pnl_inr
             target_p = float(d_info.get('target_sell_price', d_info['avg_price'] * 1.015))
             
-            table_rows_html += f'''
-            <tr>
-                <td>
-                    <b style="color: #ffffff; font-size: 14px;">{clean_ticker}</b><br>
-                    <span style="font-size: 10px; color: #64b5f6; background: rgba(41, 98, 255, 0.2); padding: 1px 6px; border-radius: 4px;">{prod_type}</span>
-                </td>
-                <td style="color: #bbb;">{d_info['total_qty']:.5f}</td>
-                <td style="color: #bbb;">{curr_sym}{d_info['avg_price']:,.2f}</td>
-                <td style="color: #ffffff; font-weight: bold;">{curr_sym}{d_cur:,.2f}</td>
-                <td style="color: #ddd;">₹{cur_cost:,.2f}</td>
-                <td style="color: #ddd;">₹{cur_val:,.2f}</td>
-                <td>
-                    <span style="background: {pnl_bg}; color: {pnl_col}; padding: 3px 8px; border-radius: 6px; font-weight: bold;">
-                        {d_pnl_inr:+.2f} ({d_pnl_pct:+.2f}%)
-                    </span>
-                </td>
-                <td style="color: #00e676; font-weight: bold;">{curr_sym}{target_p:,.2f}</td>
-            </tr>
-            '''
+            is_active_selected = (st.session_state.get('inspect_trade_key') == d_sym)
             
-        st.markdown(f'''
-        <table class="zk-pos-table">
-            <thead>
-                <tr>
-                    <th>కాయిన్ / స్టాక్ (Instrument)</th>
-                    <th>క్వాంటిటీ (Qty)</th>
-                    <th>కొన్న ధర (Avg.)</th>
-                    <th>లైవ్ ప్రైస్ (LTP)</th>
-                    <th>పెట్టుబడి (Invested)</th>
-                    <th>ప్రస్తుత విలువ (Cur. Val)</th>
-                    <th>లైవ్ P&L (₹ / %)</th>
-                    <th>టార్గెట్ (+1.5%)</th>
-                </tr>
-            </thead>
-            <tbody>
-                {table_rows_html}
-            </tbody>
-        </table>
-        ''', unsafe_allow_html=True)
+            card_col1, card_col2, card_col3, card_col4, card_col5 = st.columns([2.5, 2, 2, 2.5, 2])
+            with card_col1:
+                st.markdown(f"**🪙 {clean_ticker}** `{prod_type}`")
+                st.caption(f"క్వాంటిటీ: {d_info['total_qty']:.5f}")
+            with card_col2:
+                st.markdown(f"కొన్న ధర: **{curr_sym}{d_info['avg_price']:,.2f}**")
+                st.markdown(f"లైవ్ ప్రైస్: **{curr_sym}{d_cur:,.2f}**")
+            with card_col3:
+                st.markdown(f"పెట్టుబడి: **₹{cur_cost:,.2f}**")
+                st.markdown(f"విలువ: **₹{cur_val:,.2f}**")
+            with card_col4:
+                pnl_color_txt = "🟢" if d_pnl_inr >= 0 else "🔴"
+                st.markdown(f"P&L: **{pnl_color_txt} ₹{d_pnl_inr:+.2f}**")
+                st.markdown(f"రిటర్న్: **{d_pnl_pct:+.2f}%** | Target: `{curr_sym}{target_p:,.2f}`")
+            with card_col5:
+                btn_name = "✅ ఎంపికైంది" if is_active_selected else "🔍 వివరాలు చూడు"
+                btn_style = "primary" if is_active_selected else "secondary"
+                if st.button(btn_name, key=f"btn_view_{d_sym}", use_container_width=True, type=btn_style):
+                    st.session_state['inspect_trade_key'] = d_sym
+                    st.rerun()
 
-        st.markdown("---")
-        
-        # ---------------------------------------------------------
-        # 🔍 INTERACTIVE TRADE DEEP-DIVE DRAWER (CLICK-TO-INSPECT)
-        # ---------------------------------------------------------
-        st.markdown("### 🔍 ఇంటరాక్టివ్ ట్రేడ్ డీటెయిల్స్ ఇన్‌స్పెక్టర్ (Interactive Trade Inspector)")
-        st.caption("👇 క్రింది డ్రాప్‌డౌన్ లో ఏదైనా ట్రేడ్ ఎంచుకోండి - దాని పూర్తి జాతకం, టార్గెట్ ప్రోగ్రెస్ బార్, మరియు రిస్క్ వివరాలు ఓపెన్ అవుతాయి:")
-        
-        pos_keys = list(dca_positions.keys())
-        selected_trade_key = st.selectbox(
-            "పరిశీలించాల్సిన ట్రేడ్ ని ఎంచుకోండి:", 
-            pos_keys, 
-            format_func=lambda x: f"🪙 {x.replace('.NS', '').replace('-USD', '')} (పెట్టుబడి: ₹{dca_positions[x].get('total_cost', 10140):,.0f} | Target: +1.5%)",
-            key="trade_inspector_select"
-        )
-        
-        if selected_trade_key and selected_trade_key in dca_positions:
-            t_info = dca_positions[selected_trade_key]
-            t_asset = scanned_assets.get(selected_trade_key, {})
+            st.markdown("<hr style='margin: 8px 0; border-color: #2a2e39;'>", unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # 3. Dedicated Deep-Dive Trade Inspector Panel
+        sel_key = st.session_state.get('inspect_trade_key', trade_keys[0])
+        if sel_key in dca_positions:
+            t_info = dca_positions[sel_key]
+            t_asset = scanned_assets.get(sel_key, {})
             t_cur = t_asset.get('price', t_info['avg_price'])
             if t_cur == 0.0: t_cur = t_info['avg_price']
             
-            is_ind = (".NS" in selected_trade_key or ".BO" in selected_trade_key)
+            is_ind = (".NS" in sel_key or ".BO" in sel_key)
             curr_sym = "₹" if is_ind else "$"
             
             avg_p = float(t_info['avg_price'])
@@ -1267,9 +1180,9 @@ with tab_pos:
             pnl_pct = ((t_cur - avg_p) / avg_p) * 100.0 if avg_p > 0 else 0.0
             pnl_inr = (t_cur - avg_p) * t_info['total_qty'] * (1.0 if is_ind else 84.5)
             cur_val_inr = cost_inr + pnl_inr
-            expected_net_profit = cost_inr * 0.015  # approx 1.5% target profit
+            expected_net_profit = cost_inr * 0.015
             
-            # Target Progress calculation (0 to 100%)
+            # Progress 0 to 100%
             dist_total = target_p - avg_p
             if dist_total > 0:
                 progress_raw = ((t_cur - avg_p) / dist_total) * 100.0
@@ -1277,41 +1190,19 @@ with tab_pos:
             else:
                 progress_pct = 0.0
                 
-            clean_name = selected_trade_key.replace('.NS', '').replace('-USD', '')
+            clean_name = sel_key.replace('.NS', '').replace('-USD', '')
             
-            st.markdown(f'''
-            <div class="zk-progress-box">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap;">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <span style="font-size: 24px;">🪙</span>
-                        <div>
-                            <div style="font-size: 18px; font-weight: bold; color: #ffffff;">{clean_name} ట్రేడ్ పూర్తి జాతకం & లైవ్ రిపోర్ట్</div>
-                            <div style="font-size: 12px; color: #90caf9;">స్ట్రాటజీ: <b>{t_info.get('strategy', 'Smart Money Confluence')}</b> | లేయర్: <b>L{len(t_info.get('entries', []))}/3 Entry</b></div>
-                        </div>
-                    </div>
-                    <span style="background: rgba(0, 230, 118, 0.2); color: #00e676; border: 1px solid #00e676; padding: 4px 12px; border-radius: 8px; font-size: 12px; font-weight: bold;">
-                        🟢 ACTIVE IN TRADE (HOLDING FOR TARGET)
-                    </span>
-                </div>
-                
-                <div style="margin: 15px 0;">
-                    <div style="display: flex; justify-content: space-between; font-size: 13px; color: #ccc; margin-bottom: 6px;">
-                        <span>కొన్న ధర: <b>{curr_sym}{avg_p:,.2f}</b></span>
-                        <span style="color: #64b5f6;">లైవ్ ప్రైస్: <b>{curr_sym}{t_cur:,.2f}</b></span>
-                        <span style="color: #00e676;">🎯 టార్గెట్ (+1.5%): <b>{curr_sym}{target_p:,.2f}</b></span>
-                    </div>
-                </div>
-            </div>
-            ''', unsafe_allow_html=True)
+            st.markdown(f"#### 🔍 {clean_name} ట్రేడ్ పూర్తి జాతకం & లైవ్ రిపోర్ట్")
+            st.caption(f"స్ట్రాటజీ: **{t_info.get('strategy', 'Smart Money Confluence')}** | లేయర్: **L{len(t_info.get('entries', []))}/3 Entry** | స్టేటస్: **🟢 ACTIVE IN TRADE**")
             
-            # Streamlit Visual Progress Bar
+            # Target Progress Bar
             st.progress(progress_pct / 100.0)
             
             if progress_pct >= 100.0:
-                st.success(f"🎉 **{clean_name} టార్గెట్ రీచ్ అయ్యింది!** బాట్ వెంటనే ఆటోమేటిక్‌గా లాభం బుక్ చేసి సెల్ ఆర్డర్ పూర్తి చేస్తుంది!")
+                st.success(f"🎉 **{clean_name} టార్గెట్ (+1.5%) రీచ్ అయ్యింది!** బాట్ ఆటోమేటిక్‌గా లాభం బుక్ చేసి సెల్ ఆర్డర్ పూర్తి చేస్తుంది!")
             elif progress_pct > 0:
                 rem_pct = ((target_p - t_cur) / avg_p) * 100.0
-                st.info(f"🎯 **టార్గెట్ దిశగా ప్రయాణం:** **{progress_pct:.1f}%** పూర్తయింది! ఇంకా కేవలం **+{rem_pct:.2f}%** పెరిగితే ఆటోమేటిక్‌గా సెల్ అవుతుంది. (ఈ ట్రేడ్ లో మీకు అందే లాభం: **+₹{expected_net_profit:,.2f}**)")
+                st.info(f"🎯 **టార్గెట్ దిశగా ప్రయాణం:** **{progress_pct:.1f}%** పూర్తయింది! ఇంకా కేవలం **+{rem_pct:.2f}%** పెరిగితే సెల్ అవుతుంది. (ఈ ట్రేడ్ లో మీకు అందే లాభం: **+₹{expected_net_profit:,.2f}**)")
             else:
                 st.warning(f"⏳ **కన్సాలిడేషన్ లో ఉంది:** ప్రస్తుతం డిప్ లో ఉంది ({pnl_pct:+.2f}%). మార్కెట్ బౌన్స్ కోసం ఎదురుచూస్తోంది. స్టాప్-లాస్ రక్షణ (-6.0%) యాక్టివ్ గా ఉంది.")
                 
@@ -1326,30 +1217,12 @@ with tab_pos:
             # Risk & Safety Cards
             r_col1, r_col2, r_col3 = st.columns(3)
             with r_col1:
-                st.markdown(f'''
-                <div style="background: rgba(255, 255, 255, 0.04); padding: 12px; border-radius: 8px; border-left: 3px solid #ffd600;">
-                    <div style="font-size: 11px; color: #888;">🚀 TRAILING PROFIT LOCK</div>
-                    <div style="font-size: 15px; font-weight: bold; color: white;">పీక్ ప్రైస్: {curr_sym}{peak_p:,.2f}</div>
-                    <div style="font-size: 11px; color: #ffd600;">1.5% దాటిన తర్వాత పీక్ నుంచి 0.4% తగ్గితే సెల్</div>
-                </div>
-                ''', unsafe_allow_html=True)
+                st.markdown(f"🚀 **Trailing Stop:** పీక్ ధర `{curr_sym}{peak_p:,.2f}` | 1.5% దాటిన తర్వాత 0.4% తగ్గితే ప్రాఫిట్ లాక్.")
             with r_col2:
                 hard_sl_price = avg_p * 0.94
-                st.markdown(f'''
-                <div style="background: rgba(255, 255, 255, 0.04); padding: 12px; border-radius: 8px; border-left: 3px solid #ff5252;">
-                    <div style="font-size: 11px; color: #888;">🛑 HARD STOP-LOSS FLOOR (-6.0%)</div>
-                    <div style="font-size: 15px; font-weight: bold; color: white;">ఎమర్జెన్సీ కటాఫ్: {curr_sym}{hard_sl_price:,.2f}</div>
-                    <div style="font-size: 11px; color: #ff5252;">పెద్ద నష్టాలు రాకుండా ఆటో-ఎగ్జిట్ షీల్డ్</div>
-                </div>
-                ''', unsafe_allow_html=True)
+                st.markdown(f"🛑 **Hard Stop-Loss (-6.0%):** ఫ్లోర్ `{curr_sym}{hard_sl_price:,.2f}` | ఆటో-ఎగ్జిట్ సేఫ్టీ.")
             with r_col3:
-                st.markdown(f'''
-                <div style="background: rgba(255, 255, 255, 0.04); padding: 12px; border-radius: 8px; border-left: 3px solid #00bcd4;">
-                    <div style="font-size: 11px; color: #888;">⚡ DCA AVERAGING ENGINE</div>
-                    <div style="font-size: 15px; font-weight: bold; color: white;">లేయర్: {len(t_info.get('entries', []))} of 3 Max</div>
-                    <div style="font-size: 11px; color: #00bcd4;">మార్కెట్ 2% పడితే ఆవరేజ్ బై రెడీ</div>
-                </div>
-                ''', unsafe_allow_html=True)
+                st.markdown(f"⚡ **DCA Averaging:** `Layer {len(t_info.get('entries', []))} of 3` | డిప్ కొనుగోలు రెడీ.")
                 
             # Order Entries History Table
             with st.expander(f"📋 {clean_name} ఆర్డర్ ఎగ్జిక్యూషన్ హిస్టరీ (DCA Entries Log)"):
@@ -1366,6 +1239,23 @@ with tab_pos:
                         })
                     safe_dataframe(pd.DataFrame(ent_rows), hide_index=True)
 
+            # Quick Trade Controls
+            st.markdown("##### ⚡ ఈ ట్రేడ్ పై క్విక్ యాక్షన్స్ (Quick Trade Controls):")
+            act_col1, act_col2 = st.columns(2)
+            with act_col1:
+                if st.button(f"🔴 {clean_name} ని ఇప్పుడే అమ్మేయి (Close / Sell Now)", key=f"btn_close_act_{sel_key}", use_container_width=True):
+                    with open('ai_commands.txt', 'w') as f_cmd:
+                        f_cmd.write(f"FORCE_SELL {sel_key}")
+                    st.toast(f"✅ {clean_name} అమ్మేయడానికి సెల్ ఆర్డర్ పంపించాము!", icon="📉")
+                    time.sleep(1)
+                    st.rerun()
+            with act_col2:
+                if st.button(f"⚡ {clean_name} డిప్ లో మరింత ఆవరేజ్ కొను (Buy More)", key=f"btn_dca_act_{sel_key}", use_container_width=True):
+                    with open('ai_commands.txt', 'w') as f_cmd:
+                        f_cmd.write(f"FORCE_BUY {sel_key}")
+                    st.toast(f"✅ {clean_name} బై ఆర్డర్ పంపించాము!", icon="🚀")
+                    time.sleep(1)
+                    st.rerun()
     else:
         st.info("ప్రస్తుతం ఓపెన్ పొజిషన్లు ఏమీ లేవు. పాత ట్రేడ్లన్నీ లాభాలతో క్లోజ్ అయ్యాయి. కొత్త కన్ఫర్మ్డ్ సిగ్నల్ కోసం బాట్ స్కాన్ చేస్తోంది.")
 
@@ -1374,22 +1264,11 @@ with tab_pos:
 # TAB 2: 🧠 AI మైండ్ & ట్రేడ్ రీజనింగ్ (BOT DECISION INTELLIGENCE)
 # =============================================================
 with tab_mind:
-    st.markdown('''
-    <div style="background: linear-gradient(135deg, #131722 0%, #1e222d 100%); border: 1.5px solid #2962ff; border-radius: 12px; padding: 16px 20px; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.4);">
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <span style="font-size: 26px;">🧠</span>
-            <div>
-                <div style="color: #ffffff; font-size: 18px; font-weight: bold;">AI బాట్ మైండ్ & ట్రేడ్ రీజనింగ్ హబ్ (Trade Decisions & Thought Log)</div>
-                <div style="color: #90caf9; font-size: 12px;">బాట్ ఏ ట్రేడ్ ఎందుకు చేసింది? ఎందుకు హోల్డ్ చేస్తోంది? వేరే కాయిన్స్ ని ఎందుకు స్కిప్ చేసింది (వద్దనుకుంది)? పూర్తి పారదర్శక నివేదిక</div>
-            </div>
-        </div>
-    </div>
-    ''', unsafe_allow_html=True)
+    st.markdown("### 🧠 AI బాట్ మైండ్ & ట్రేడ్ రీజనింగ్ హబ్ (Trade Decisions & Thought Log)")
+    st.caption("బాట్ ఏ ట్రేడ్ ఎందుకు చేసింది? ఎందుకు హోల్డ్ చేస్తోంది? వేరే కాయిన్స్ ని ఎందుకు స్కిప్ చేసింది (వద్దనుకుంది)? పూర్తి పారదర్శక నివేదిక:")
 
     # 1. ACTIVE TRADES RATIONALE
     st.subheader("🟢 1. ప్రస్తుతం రన్ అవుతున్న ట్రేడ్ల AI నిర్ణయం (Active Trade Rationale)")
-    st.caption("బాట్ ఈ కాయిన్స్ లో ఎందుకు ఎంట్రీ తీసుకుంది? ప్రస్తుతం ఎందుకు హోల్డ్ చేస్తోంది అనే పూర్తి కారణాలు:")
-    
     if dca_positions:
         for m_sym, m_info in dca_positions.items():
             m_asset = scanned_assets.get(m_sym, {})
@@ -1399,35 +1278,24 @@ with tab_mind:
             strat_nm = m_info.get('strategy', 'Fair Value Gap (FVG Imbalance Fill)')
             
             with st.expander(f"🪙 {clean_m} - ఎందుకు కొంది? ఎందుకు హోల్డ్ చేస్తోంది? (క్లిక్ చేసి చూడండి)", expanded=True):
-                st.markdown(f'''
-                <div style="line-height: 1.7; font-size: 14px;">
-                    <p style="color: #00e676; font-weight: bold; margin-bottom: 5px;">🎯 ఎందుకు ఎంట్రీ తీసుకుంది? (Entry Thesis):</p>
-                    <div style="background: rgba(0, 230, 118, 0.08); border-left: 3px solid #00e676; padding: 10px 14px; border-radius: 6px; margin-bottom: 10px;">
-                        {m_thought}
-                    </div>
-                    
-                    <div style="display: flex; gap: 15px; margin-bottom: 10px; flex-wrap: wrap;">
-                        <span style="background: rgba(255,255,255,0.06); padding: 4px 10px; border-radius: 6px; font-size: 12px;">📊 RSI (14): <b>{rsi_val:.1f} (Optimal Entry Zone)</b></span>
-                        <span style="background: rgba(255,255,255,0.06); padding: 4px 10px; border-radius: 6px; font-size: 12px;">📈 15m HTF Trend: <b>BULLISH</b></span>
-                        <span style="background: rgba(255,255,255,0.06); padding: 4px 10px; border-radius: 6px; font-size: 12px;">🧬 స్ట్రాటజీ: <b>{strat_nm}</b></span>
-                    </div>
-                    
-                    <p style="color: #64b5f6; font-weight: bold; margin-bottom: 5px;">⚡ ప్రస్తుతం ఏం చేస్తోంది? (Holding Thesis):</p>
-                    <div style="background: rgba(41, 98, 255, 0.08); border-left: 3px solid #2962ff; padding: 10px 14px; border-radius: 6px; margin-bottom: 10px;">
-                        లాభం కోసం హోల్డ్ చేస్తోంది. <b>+1.5% టార్గెట్</b> రీచ్ అవ్వగానే లేదా గరిష్ట లాభాల కోసం <b>ట్రైలింగ్ ప్రాఫిట్ లాక్</b> యాక్టివేట్ అవ్వగానే ఆటోమేటిక్‌గా అమ్మేస్తుంది. మార్కెట్ మూమెంటం బాగుంది కాబట్టి తొందరపడి లాస్ లో అమ్మడం లేదు.
-                    </div>
-                    
-                    <p style="color: #ffd600; font-weight: bold; margin-bottom: 5px;">🛡️ క్యాపిటల్ సేఫ్టీ గార్డ్ (Risk Guard):</p>
-                    <div style="background: rgba(255, 214, 0, 0.08); border-left: 3px solid #ffd600; padding: 10px 14px; border-radius: 6px;">
-                        ఒకవేళ మార్కెట్ ఆకస్మికంగా రివర్స్ అయితే <b>-6.0% హార్డ్ స్టాప్-లాస్</b> వద్ద నష్టాన్ని కట్ చేస్తుంది. మార్కెట్ సాధారణంగా 2% డిప్ అయితే లేయర్ 2 తో ఆవరేజ్ చేయడానికి సిద్ధంగా ఉంది.
-                    </div>
-                </div>
-                ''', unsafe_allow_html=True)
+                st.markdown(f"**🎯 ఎందుకు ఎంట్రీ తీసుకుంది? (Entry Thesis):**")
+                st.info(m_thought)
+                
+                t_sub1, t_sub2, t_sub3 = st.columns(3)
+                t_sub1.markdown(f"📊 **RSI (14):** `{rsi_val:.1f}` (Optimal Buy)")
+                t_sub2.markdown(f"📈 **15m HTF Trend:** `BULLISH 🟢`")
+                t_sub3.markdown(f"🧬 **స్ట్రాటజీ:** `{strat_nm}`")
+                
+                st.markdown(f"**⚡ ప్రస్తుతం ఏం చేస్తోంది? (Holding Thesis):**")
+                st.write(f"లాభం కోసం హోల్డ్ చేస్తోంది. **+1.5% టార్గెట్** రీచ్ అవ్వగానే లేదా గరిష్ట లాభాల కోసం **ట్రైలింగ్ ప్రాఫిట్ లాక్** యాక్టివేట్ అవ్వగానే ఆటోమేటిక్‌గా అమ్మేస్తుంది. మార్కెట్ మూమెంటం బాగుంది కాబట్టి తొందరపడి లాస్ లో అమ్మడం లేదు.")
+                
+                st.markdown(f"**🛡️ క్యాపిటల్ సేఫ్టీ గార్డ్ (Risk Guard):**")
+                st.caption(f"ఒకవేళ మార్కెట్ ఆకస్మికంగా రివర్స్ అయితే **-6.0% హార్డ్ స్టాప్-లాస్** వద్ద నష్టాన్ని కట్ చేస్తుంది. మార్కెట్ సాధారణంగా 2% డిప్ అయితే లేయర్ 2 తో ఆవరేజ్ చేయడానికి సిద్ధంగా ఉంది.")
     else:
         st.info("ప్రస్తుతం యాక్టివ్ ట్రేడ్స్ ఏవీ లేవు.")
 
     st.markdown("---")
-    
+
     # 2. WATCHING & WAITING LIST
     st.subheader("⏳ 2. వాచింగ్ & వెయిటింగ్ లిస్ట్ (Watching & Waiting for Setup)")
     st.caption("బాట్ నిరంతరం స్కాన్ చేస్తున్నప్పటికీ, సరైన కన్ఫర్మేషన్ వచ్చే వరకు వేచి చూస్తున్న అసెట్స్:")
@@ -1452,7 +1320,7 @@ with tab_mind:
     if watch_rows:
         safe_dataframe(pd.DataFrame(watch_rows), hide_index=True)
     else:
-        st.write("ప్రస్తుతం అన్ని ప్రధాన కాయిన్స్ స్కాన్ చేయబడుతున్నాయి.")
+        st.write("ప్రస్తుతం ప్రధాన కాయిన్స్ అన్నీ స్కాన్ చేయబడుతున్నాయి.")
 
     st.markdown("---")
 
@@ -1462,39 +1330,19 @@ with tab_mind:
     
     sk1, sk2 = st.columns(2)
     with sk1:
-        st.markdown('''
-        <div style="background: rgba(255, 82, 82, 0.08); border: 1px solid #ff5252; border-radius: 10px; padding: 14px; margin-bottom: 12px;">
-            <b style="color: #ff5252; font-size: 15px;">🔴 1. Overbought Risk Filter (RSI > 70 వద్ద తిరస్కరణ)</b>
-            <p style="color: #ddd; font-size: 13px; line-height: 1.6; margin-top: 6px;">
-                మార్కెట్ లో ఏదైనా కాయిన్ విపరీతంగా పెరిగి RSI 70 దాటినప్పుడు సాధారణ ట్రేడర్లు ఫోమో (FOMO) తో కొంటారు. కానీ మన బాట్ <b>"ఇక్కడ కొంటే కరెక్షన్ రిస్క్ ఎక్కువ, కాబట్టి నో బై (VADDU)"</b> అని ఆర్డర్ ని తిరస్కరిస్తుంది.
-            </p>
-        </div>
-        ''', unsafe_allow_html=True)
-        st.markdown('''
-        <div style="background: rgba(255, 82, 82, 0.08); border: 1px solid #ff5252; border-radius: 10px; padding: 14px; margin-bottom: 12px;">
-            <b style="color: #ff5252; font-size: 15px;">🔴 2. Bearish Trend Guard (EMA 200 క్రింద తిరస్కరణ)</b>
-            <p style="color: #ddd; font-size: 13px; line-height: 1.6; margin-top: 6px;">
-                ప్రైస్ 200-EMA లైన్ క్రింద ఉన్నప్పుడు మార్కెట్ లో భారీ అమ్మకాల ఒత్తిడి ఉంటుంది. అప్పుడు వచ్చే తాత్కాలిక పుల్‌బ్యాక్ లను ఫేక్ ర్యాలీలుగా గుర్తించి బాట్ ట్రేడ్ చేయకుండా ఆగిపోతుంది.
-            </p>
-        </div>
-        ''', unsafe_allow_html=True)
+        st.error("""**🔴 1. Overbought Risk Filter (RSI > 70 వద్ద తిరస్కరణ)**
+
+మార్కెట్ లో ఏదైనా కాయిన్ విపరీతంగా పెరిగి RSI 70 దాటినప్పుడు సాధారణ ట్రేడర్లు ఫోమో (FOMO) తో కొంటారు. కానీ మన బాట్ **'ఇక్కడ కొంటే కరెక్షన్ రిస్క్ ఎక్కువ, కాబట్టి నో బై (VADDU)'** అని ఆర్డర్ ని తిరస్కరిస్తుంది.""")
+        st.error("""**🔴 2. Bearish Trend Guard (EMA 200 క్రింద తిరస్కరణ)**
+
+ప్రైస్ 200-EMA లైన్ క్రింద ఉన్నప్పుడు మార్కెట్ లో భారీ అమ్మకాల ఒత్తిడి ఉంటుంది. అప్పుడు వచ్చే తాత్కాలిక పుల్‌బ్యాక్ లను ఫేక్ ర్యాలీలుగా గుర్తించి బాట్ ట్రేడ్ చేయకుండా ఆగిపోతుంది.""")
     with sk2:
-        st.markdown('''
-        <div style="background: rgba(255, 82, 82, 0.08); border: 1px solid #ff5252; border-radius: 10px; padding: 14px; margin-bottom: 12px;">
-            <b style="color: #ff5252; font-size: 15px;">🔴 3. Volume Divergence Shield (ఫేక్ పంప్ రక్షణ)</b>
-            <p style="color: #ddd; font-size: 13px; line-height: 1.6; margin-top: 6px;">
-                సంస్థాగత బయర్స్ (Institutional Volume) లేకుండా చిన్న పరిమాణంలో జరిగే మూవ్‌మెంట్స్ ని ట్రాప్ గా పరిగణిస్తుంది. VWAP సపోర్ట్ లేకపోతే బై సిగ్నల్ ని స్కిప్ చేస్తుంది.
-            </p>
-        </div>
-        ''', unsafe_allow_html=True)
-        st.markdown('''
-        <div style="background: rgba(255, 82, 82, 0.08); border: 1px solid #ff5252; border-radius: 10px; padding: 14px; margin-bottom: 12px;">
-            <b style="color: #ff5252; font-size: 15px;">🛡️ 4. Max Capital Exposure Guard (రిస్క్ లిమిట్)</b>
-            <p style="color: #ddd; font-size: 13px; line-height: 1.6; margin-top: 6px;">
-                పోర్ట్‌ఫోలియో భద్రత కోసం ఒకేసారి గరిష్టంగా 6 ట్రేడ్ల కంటే ఎక్కువ వెళ్ళకుండా కొత్త ఎంట్రీలను లాక్ చేసి ఉంచుతుంది.
-            </p>
-        </div>
-        ''', unsafe_allow_html=True)
+        st.error("""**🔴 3. Volume Divergence Shield (ఫేక్ పంప్ రక్షణ)**
+
+సంస్థాగత బయర్స్ (Institutional Volume) లేకుండా చిన్న పరిమాణంలో జరిగే మూవ్‌మెంట్స్ ని ట్రాప్ గా పరిగణిస్తుంది. VWAP సపోర్ట్ లేకపోతే బై సిగ్నల్ ని స్కిప్ చేస్తుంది.""")
+        st.error("""**🛡️ 4. Max Capital Exposure Guard (రిస్క్ లిమిట్)**
+
+పోర్ట్‌ఫోలియో భద్రత కోసం ఒకేసారి గరిష్టంగా 6 ట్రేడ్ల కంటే ఎక్కువ వెళ్ళకుండా కొత్త ఎంట్రీలను లాక్ చేసి ఉంచుతుంది.""")
 
     # 4. AI BRAIN & STRATEGY WEIGHTS
     st.markdown("---")
@@ -1520,23 +1368,19 @@ with tab_mind:
                     "AI వెయిట్ (Weight)": s_val.get('weight')
                 })
             safe_dataframe(pd.DataFrame(strat_rows), hide_index=True)
-            
-            with st.expander("📚 AI మార్కెట్ నుండి నేర్చుకున్న తాజా పాఠాలు (Lessons Learned)"):
-                for les in brain_data.get('recent_lessons', []):
-                    st.write(les)
-        except Exception as e_br:
-            st.write(f"AI బ్రెయిన్ రీడ్ చేయడంలో ఎర్రర్: {e_br}")
+        except Exception: pass
 
 
 # =============================================================
 # TAB 3: 📊 ట్రేడింగ్ వ్యూ ప్రో చార్ట్స్ (PRO ANALYTICS)
 # =============================================================
 with tab_charts:
-    df, signal, last = fetch_and_analyze(symbol)
+    sel_chart_sym = st.selectbox("చార్ట్ చూడాల్సిన స్టాక్ లేదా కాయిన్ ఎంచుకోండి:", list(symbol_options.values()), index=0, key="chart_sym_select")
+    df, signal, last = fetch_and_analyze(sel_chart_sym)
     current_price = last['close'] if last is not None else 65000.0
     signal = signal if signal else "HOLD"
     
-    st.markdown("### 📈 టెక్నికల్ అనాలసిస్ (Live Candlestick & Technical Indicators)")
+    st.markdown("### 📈 టెక్నికల్ అనాలసిస్ (Live Candlestick & Indicators)")
     
     # Speedometer Gauge Chart
     gauge_val = 50
@@ -1566,64 +1410,10 @@ with tab_charts:
     with col_g1:
         safe_plotly_chart(fig_gauge)
     with col_g2:
-        # News Sentiment
-        @st.cache_data(ttl=600)
-        def get_news_with_sentiment_cached(sym):
-            try:
-                import urllib.request
-                import xml.etree.ElementTree as ET
-                search_term = sym.replace('-USD', '') + " market news"
-                url = f"https://news.google.com/rss/search?q={search_term.replace(' ', '+')}&hl=en-US&gl=US&ceid=US:en"
-                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-                with urllib.request.urlopen(req) as response:
-                    xml_data = response.read()
-                root = ET.fromstring(xml_data)
-                pos_words = ['surge', 'soar', 'bull', 'high', 'profit', 'gain', 'buy', 'up', 'breakout', 'record']
-                neg_words = ['crash', 'fall', 'bear', 'drop', 'loss', 'sell', 'down', 'hack', 'ban', 'dump']
-                news_items = []
-                score = 0
-                for item in root.findall('.//item')[:4]:
-                    title = item.find('title').text
-                    link = item.find('link').text
-                    news_items.append((title, link))
-                    t_low = title.lower()
-                    for w in pos_words:
-                        if w in t_low: score += 1
-                    for w in neg_words:
-                        if w in t_low: score -= 1
-                return news_items, score
-            except:
-                return [], 0
-                
-        news, sentiment_score = get_news_with_sentiment_cached(symbol)
-        
-        # ML Predictor
-        try:
-            x_ax = np.arange(20)
-            y_ax = df['close'].tail(20).values
-            slope, intercept = np.polyfit(x_ax, y_ax, 1)
-            predicted_next = slope * 20 + intercept
-            ml_status = "Up (Bullish 🟢)" if slope > 0 else "Down (Bearish 🔴)"
-        except:
-            predicted_next = current_price
-            ml_status = "Neutral"
-            
         m1, m2, m3 = st.columns(3)
-        m1.markdown(fancy_metric("ట్రేడింగ్ పెయిర్", symbol), unsafe_allow_html=True)
+        m1.markdown(fancy_metric("ట్రేడింగ్ పెయిర్", sel_chart_sym), unsafe_allow_html=True)
         m2.markdown(fancy_metric("లైవ్ ప్రైస్", f"₹{current_price:,.2f}"), unsafe_allow_html=True)
-        m3.markdown(fancy_metric("RSI (14)", f"{last['RSI']:.1f}", "Overbought" if last['RSI']>70 else "Oversold" if last['RSI']<30 else "Normal", "inverse"), unsafe_allow_html=True)
-        
-        e1, e2, e3 = st.columns(3)
-        e1.markdown(fancy_metric("🤖 ML 2m ప్రిడిక్షన్", f"₹{predicted_next:,.2f}", ml_status), unsafe_allow_html=True)
-        e2.markdown(fancy_metric("📰 న్యూస్ సెంటిమెంట్", f"{sentiment_score}", "Bullish" if sentiment_score > 0 else "Neutral"), unsafe_allow_html=True)
-        e3.markdown(fancy_metric("⚡ Kelly రిస్క్ %", "20.0%", "Auto-Compounding"), unsafe_allow_html=True)
-
-    with st.expander("📰 బ్రేకింగ్ న్యూస్ (Live Google News)"):
-        if news:
-            for title, link in news:
-                st.write(f"🔹 **[{title}]({link})**")
-        else:
-            st.write("ఈ స్టాక్ కి సంబంధించి తాజా వార్తలు ఏమీ లేవు.")
+        m3.markdown(fancy_metric("RSI (14)", f"{last['RSI']:.1f}", "Normal", "inverse"), unsafe_allow_html=True)
 
     # Candlestick chart
     if df is not None and not df.empty:
@@ -1664,7 +1454,6 @@ with tab_orders:
 
     if os.path.exists('trades_log.csv'):
         df_perf = pd.read_csv('trades_log.csv')
-        # Filter to valid Crypto and Indian Stocks
         df_perf_valid = df_perf[df_perf['Symbol'].astype(str).str.endswith(('-USD', '.NS', '.BO'))].copy()
         sells = df_perf_valid[df_perf_valid['Action'] == 'SELL'].copy()
         
@@ -1687,66 +1476,13 @@ with tab_orders:
             taxes = round((gross_profit + abs(gross_loss)) * 0.001, 2)
             net_profit = gross_profit + gross_loss - taxes
             
-            st.markdown(f'''
-            <div style="background: linear-gradient(135deg, #1e1e1e 0%, #2a2a2a 100%); padding: 20px; border-radius: 15px; border: 1px solid #333; box-shadow: 0 4px 15px rgba(0,0,0,0.5); margin-bottom: 20px;">
-                <h3 style="color: #00ffcc; margin-top: 0; text-align: center; font-family: sans-serif;">🤖 AI Overall Performance Summary (క్రిప్టో & ఇండియన్ స్టాక్స్)</h3>
-                <div style="display: flex; justify-content: space-around; flex-wrap: wrap; margin-top: 15px;">
-                    <div style="text-align: center; margin: 10px;">
-                        <p style="color: #aaa; margin: 0; font-size: 14px;">Total Completed Trades</p>
-                        <h2 style="color: white; margin: 5px 0;">{total_trades}</h2>
-                    </div>
-                    <div style="text-align: center; margin: 10px;">
-                        <p style="color: #aaa; margin: 0; font-size: 14px;">Win Rate (Accuracy)</p>
-                        <h2 style="color: #00ff00; margin: 5px 0;">{win_rate:.1f}%</h2>
-                        <p style="color: #666; font-size: 12px; margin: 0;">{wins} Wins | {losses} Losses</p>
-                    </div>
-                    <div style="text-align: center; margin: 10px;">
-                        <p style="color: #aaa; margin: 0; font-size: 14px;">Gross Profit</p>
-                        <h2 style="color: #00ff00; margin: 5px 0;">₹{gross_profit:.2f}</h2>
-                    </div>
-                    <div style="text-align: center; margin: 10px;">
-                        <p style="color: #aaa; margin: 0; font-size: 14px;">Gross Loss</p>
-                        <h2 style="color: #ff3333; margin: 5px 0;">₹{abs(gross_loss):.2f}</h2>
-                    </div>
-                    <div style="text-align: center; margin: 10px;">
-                        <p style="color: #aaa; margin: 0; font-size: 14px;">Taxes & Fees</p>
-                        <h2 style="color: #ff9900; margin: 5px 0;">₹{taxes:.2f}</h2>
-                    </div>
-                    <div style="text-align: center; margin: 10px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 10px;">
-                        <p style="color: #00ffcc; margin: 0; font-size: 14px; font-weight: bold;">NET PNL (After Taxes)</p>
-                        <h1 style="color: {'#00ff00' if net_profit >= 0 else '#ff3333'}; margin: 5px 0; font-size: 30px;">₹{net_profit:.2f}</h1>
-                    </div>
-                </div>
-            </div>
-            ''', unsafe_allow_html=True)
+            p1, p2, p3, p4 = st.columns(4)
+            p1.metric("మొత్తం ట్రేడ్స్ (Completed)", f"{total_trades}")
+            p2.metric("విన్ రేట్ (Accuracy)", f"{win_rate:.1f}%", f"{wins}W | {losses}L")
+            p3.metric("గ్రాస్ లాభం (Gross Profit)", f"₹{gross_profit:.2f}")
+            net_col = "normal" if net_profit >= 0 else "inverse"
+            p4.metric("నికర లాభం (Net PNL)", f"₹{net_profit:.2f}", f"{net_profit:+.2f}")
 
-        # Coin-wise breakdown table
-        st.subheader("📊 కాయిన్ ల వారీగా ఫుల్ రిపోర్ట్ (Coin-wise Summary)")
-        coin_stats = []
-        for sym in df_perf_valid['Symbol'].unique():
-            sym_df = df_perf_valid[(df_perf_valid['Symbol'] == sym) & (df_perf_valid['Action'] == 'SELL')]
-            num_trades = len(sym_df)
-            tot_p = 0.0
-            tot_l = 0.0
-            for _, r in sym_df.iterrows():
-                if str(r['Profit']) != '-':
-                    try:
-                        p_s = str(r['Profit']).replace('₹', '').replace(',', '').strip()
-                        p_v = -float(p_s.replace('-', '')) if p_s.startswith('-') else float(p_s)
-                        if p_v > 0: tot_p += p_v
-                        elif p_v < 0: tot_l += abs(p_v)
-                    except: pass
-            if num_trades > 0 or tot_p > 0 or tot_l > 0:
-                coin_stats.append({
-                    'కాయిన్ / స్టాక్': sym,
-                    'ట్రేడ్స్': num_trades,
-                    'లాభం (Profit)': f"₹{tot_p:.2f}",
-                    'నష్టం (Loss)': f"₹{tot_l:.2f}",
-                    'మిగిలింది (Net PnL)': f"₹{(tot_p - tot_l):.2f}"
-                })
-        if coin_stats:
-            safe_dataframe(pd.DataFrame(coin_stats), hide_index=True)
-            
         # Complete Orders Table
         st.subheader("📋 పూర్తి ఆర్డర్ బుక్ లాగ్ (Orders Log)")
         if not df_perf_valid.empty:
@@ -1760,12 +1496,6 @@ with tab_orders:
 # =============================================================
 with tab_search:
     st.header("🔍 Smart Asset Search Engine (యూనివర్సల్ అసెట్ సెర్చ్ & వాచ్‌లిస్ట్)")
-    st.markdown("""
-    ఇక్కడ మీరు **భారతీయ స్టాక్ మార్కెట్ (NSE)** లోని ఏ స్టాక్ అయినా (ఉదా: `ZOMATO`, `SUZLON`, `TATASTEEL`, `ADANIENT`, `WIPRO`) 
-    లేదా **క్రిప్టో మార్కెట్ (Binance)** లోని ఏ కాయిన్ అయినా (ఉదా: `PEPE`, `DOGE`, `SHIB`, `ADA`, `AVAX`, `SOL`) సెర్చ్ చేసి, 
-    లైవ్ ధర చూసి, ఒకే క్లిక్ తో బాట్ ట్రేడింగ్ లిస్ట్‌కి యాడ్ చేయవచ్చు!
-    """)
-    
     col_s1, col_s2 = st.columns([3, 1])
     with col_s1:
         search_query = st.text_input("🔎 స్టాక్ లేదా కాయిన్ పేరు / టిక్కర్ టైప్ చేయండి:", placeholder="ఉదాహరణ: ZOMATO, SUZLON, TATASTEEL, PEPE, ADA, DOGE", key="universal_search_input")
@@ -1797,24 +1527,20 @@ with tab_search:
                     prev_close = float(hist.iloc[-2]['Close']) if len(hist) > 1 else l_price
                     chg_pct = ((l_price - prev_close) / prev_close) * 100.0 if prev_close > 0 else 0.0
                     vol = int(last_row['Volume'])
-                    hi = float(last_row['High'])
-                    lo = float(last_row['Low'])
                     c_name = clean_sym
                     try: c_name = t_obj.info.get('shortName') or t_obj.info.get('name') or clean_sym
                     except: pass
                     found_data = {
                         "symbol": final_sym, "clean": clean_sym, "name": c_name, "price": l_price,
-                        "change_pct": chg_pct, "high": hi, "low": lo, "volume": vol, "type": asset_category, "curr": curr_symbol
+                        "change_pct": chg_pct, "volume": vol, "type": asset_category, "curr": curr_symbol
                     }
             except Exception: pass
             
         if found_data:
             st.success(f"✅ **{found_data['name']} ({found_data['symbol']})** మార్కెట్ లో లభించింది!")
-            m_c1, m_c2, m_c3, m_c4 = st.columns(4)
-            m_c1.metric("🏢 కంపెనీ / కాయిన్", found_data['name'])
-            m_c2.metric("💰 ప్రస్తుత లైవ్ ప్రైస్", f"{found_data['curr']}{found_data['price']:,.2f}", f"{found_data['change_pct']:+.2f}%")
-            m_c3.metric("📈 24h హై / లో", f"{found_data['curr']}{found_data['high']:,.2f} / {found_data['curr']}{found_data['low']:,.2f}")
-            m_c4.metric("📊 వాల్యూమ్", f"{found_data['volume']:,}")
+            m_c1, m_c2 = st.columns(2)
+            m_c1.metric("💰 ప్రస్తుత లైవ్ ప్రైస్", f"{found_data['curr']}{found_data['price']:,.2f}", f"{found_data['change_pct']:+.2f}%")
+            m_c2.metric("📊 వాల్యూమ్", f"{found_data['volume']:,}")
             
             wl_now = load_custom_watchlist()
             if found_data['symbol'] in wl_now:
@@ -1829,45 +1555,6 @@ with tab_search:
                     st.success(f"🎉 **{found_data['name']} ({found_data['symbol']})** యాడ్ అయ్యింది!")
                     time.sleep(1)
                     st.rerun()
-
-    st.markdown("---")
-    st.subheader("📋 ప్రస్తుత బాట్ కస్టమ్ వాచ్‌లిస్ట్ (Active Custom Assets)")
-    current_wl = load_custom_watchlist()
-    if not current_wl:
-        st.info("ప్రస్తుతం కస్టమ్ అసెట్స్ ఏవీ లేవు. పైన ఉన్న సెర్చ్ బాక్స్ ద్వారా మీ ఫేవరెట్ స్టాక్స్ లేదా క్రిప్టోలను యాడ్ చేయండి.")
-    else:
-        for wl_sym, wl_info in list(current_wl.items()):
-            w_col1, w_col2, w_col3, w_col4 = st.columns([3, 2, 2, 1])
-            with w_col1:
-                icon_flag = "🇮🇳" if wl_info.get('type') == 'NSE' else "🪙"
-                st.markdown(f"**{icon_flag} {wl_info.get('name', wl_sym)}** (`{wl_sym}`)")
-            with w_col2: st.caption(f"మార్కెట్: {wl_info.get('type', 'NSE')}")
-            with w_col3: st.caption(f"యాడ్ చేసిన తేదీ: {wl_info.get('added_at', '-')}")
-            with w_col4:
-                if st.button("🗑️ తీసివేయి", key=f"del_wl_{wl_sym}"):
-                    del current_wl[wl_sym]
-                    save_custom_watchlist(current_wl)
-                    st.rerun()
-
-    st.markdown("---")
-    st.subheader("🔥 Pro Market Analyzer (Scan All)")
-    if st.button("🚀 మార్కెట్ ని అనలైజ్ చేయి (Scan All Assets)"):
-        st.info("బాట్ మార్కెట్ ని స్కాన్ చేస్తోంది...")
-        results_all = []
-        for name, sym_s in symbol_options.items():
-            df_s, sig_s, last_s = fetch_and_analyze(sym_s)
-            if df_s is not None:
-                trend_s = "Bullish (Up 🟢)" if last_s['close'] > last_s['EMA_200'] else "Bearish (Down 🔴)"
-                rsi_st = "Overbought (Risk 🔴)" if last_s['RSI'] > 70 else "Oversold (Buy Zone 🟢)" if last_s['RSI'] < 30 else "Neutral ⚪"
-                results_all.append({
-                    "Stock / Coin": name,
-                    "Live Price": f"₹{last_s['close']:,.2f}",
-                    "Trend": trend_s,
-                    "RSI (14)": f"{last_s['RSI']:.1f} - {rsi_st}",
-                    "AI Action": sig_s
-                })
-        st.success("అనాలసిస్ పూర్తయింది!")
-        safe_dataframe(pd.DataFrame(results_all), hide_index=True)
 
 
 # =============================================================
@@ -1909,7 +1596,7 @@ with tab_voice:
         if "btc" in cmd_lower and ("buy" in cmd_lower or "కొను" in cmd_lower):
             with open('ai_commands.txt', 'w') as f: f.write("FORCE_BUY BTC-USD")
             response = "👍 ఓకే బాస్! బిట్ కాయిన్ (BTC) కొనమని కమాండ్ పంపించాను."
-        elif "status" in cmd_lower or "ఏం చేస్తున్నావ్" in cmd_lower or "ట్రేడ్" in cmd_lower:
+        elif "status" in cmd_lower or "ఏం చేస్తున్నావ్" in cmd_lower:
             response = f"🤖 బాట్ ప్రస్తుతం 24/7 మార్కెట్ ని స్కాన్ చేస్తోంది. యాక్టివ్ గా {len(dca_positions)} కాయిన్స్ లో ప్రాఫిట్ టార్గెట్ కోసం హోల్డ్ చేస్తోంది."
         elif "profit" in cmd_lower or "లాభం" in cmd_lower:
             response = f"💰 పోర్ట్‌ఫోలియో నెట్ బ్యాలెన్స్: ₹{portfolio_value:,.2f}. రన్నింగ్ లైవ్ ఫ్లోటింగ్ లాభం: ₹{total_floating_pnl:,.2f}!"
