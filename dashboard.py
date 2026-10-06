@@ -94,6 +94,40 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import urllib.request
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 🔥 LIVE BINANCE PRICES FETCHER (cached every 5 seconds)
+# ─────────────────────────────────────────────────────────────────────────────
+BINANCE_SYMBOLS = {
+    "BTC-USD": "BTCUSDT",
+    "ETH-USD": "ETHUSDT",
+    "SOL-USD": "SOLUSDT",
+    "BNB-USD": "BNBUSDT",
+    "DOGE-USD": "DOGEUSDT",
+    "XRP-USD": "XRPUSDT",
+}
+
+@st.cache_data(ttl=6, show_spinner=False)
+def get_live_prices():
+    """Fetch latest prices from Binance public API (no auth required)."""
+    prices = {}
+    for symbol, b_sym in BINANCE_SYMBOLS.items():
+        try:
+            url = f"https://api.binance.com/api/v3/ticker/24hr?symbol={b_sym}"
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                data = json.loads(resp.read().decode())
+                prices[symbol] = {
+                    "price": float(data["lastPrice"]),
+                    "change_pct": float(data["priceChangePercent"]),
+                    "high": float(data["highPrice"]),
+                    "low": float(data["lowPrice"]),
+                    "volume": float(data["quoteVolume"]),
+                }
+        except Exception:
+            prices[symbol] = {"price": 0.0, "change_pct": 0.0, "high": 0.0, "low": 0.0, "volume": 0.0}
+    return prices
 
 def fancy_metric(label, value, delta="", delta_color="normal"):
     val_str = str(value)
@@ -964,49 +998,52 @@ def fetch_and_analyze(sym):
 # -------------------------------------------------------------
 # 🌐 1. FULLY INTERACTIVE CLICKABLE LIVE TICKER TAPE
 # -------------------------------------------------------------
-st.markdown("##### ⚡ Live Markets Ticker (ఏ అసెట్ అయినా క్లిక్ చేసి వెంటనే పరిశీలించండి):")
+# 🔥 FETCH LIVE BINANCE PRICES (runs on every refresh)
+# -------------------------------------------------------------
+live_prices = get_live_prices()
 
-ticker_data = [
-    ("BTC-USD", "Bitcoin (BTC)", 86230.16, 1.25),
-    ("ETH-USD", "Ethereum (ETH)", 2716.04, 0.82),
-    ("SOL-USD", "Solana (SOL)", 120.32, 2.45),
-    ("BNB-USD", "Binance Coin (BNB)", 783.73, 1.54),
-    ("DOGE-USD", "Dogecoin (DOGE)", 0.1001, 3.12),
-    ("XRP-USD", "Ripple (XRP)", 1.5120, 1.95),
-    ("^NSEI", "NIFTY 50", 25014.20, 0.35)
-]
-
-# Fetch latest prices from live_scan_status.json
-live_scan_data = {}
+# Build scanned_assets with live prices (merge with live_scan_status if available)
 scanned_assets = {}
 if os.path.exists('live_scan_status.json'):
     try:
         with open('live_scan_status.json', 'r') as f_sc:
-            live_scan_data = json.load(f_sc)
-            scanned_assets = live_scan_data.get('assets', {})
-            for idx_t, (t_sym, t_nm, t_p, t_c) in enumerate(ticker_data):
-                if t_sym in scanned_assets:
-                    p_upd = scanned_assets[t_sym].get('price', t_p)
-                    if p_upd > 0:
-                        ticker_data[idx_t] = (t_sym, t_nm, p_upd, t_c)
+            scanned_assets = json.load(f_sc).get('assets', {})
     except:
         pass
 
-# Render ticker as responsive clickable Streamlit buttons!
-tick_cols = st.columns(len(ticker_data))
-for idx, (sym_t, nm_t, pr_t, chg_t) in enumerate(ticker_data):
+# Override/add live Binance prices into scanned_assets
+for sym_k, price_info in live_prices.items():
+    if price_info["price"] > 0:
+        if sym_k not in scanned_assets:
+            scanned_assets[sym_k] = {}
+        scanned_assets[sym_k]["price"] = price_info["price"]
+        scanned_assets[sym_k]["change_pct"] = price_info["change_pct"]
+
+# ─────────────────────────────────────────────────────────────
+# ⚡ LIVE TICKER TAPE
+# ─────────────────────────────────────────────────────────────
+_TICKER_META = [
+    ("BTC-USD",  "Bitcoin",  "BTC"),
+    ("ETH-USD",  "Ethereum", "ETH"),
+    ("SOL-USD",  "Solana",   "SOL"),
+    ("BNB-USD",  "Binance",  "BNB"),
+    ("DOGE-USD", "Dogecoin", "DOGE"),
+    ("XRP-USD",  "Ripple",   "XRP"),
+]
+
+st.markdown("##### ⚡ Live Markets Ticker — Binance Real-Time (క్లిక్ చేసి ఆ కాయిన్ వివరాలు చూడండి):")
+tick_cols = st.columns(len(_TICKER_META))
+for idx, (sym_t, long_nm, short_nm) in enumerate(_TICKER_META):
+    price_info = live_prices.get(sym_t, {})
+    pr_t  = price_info.get("price", 0.0)
+    chg_t = price_info.get("change_pct", 0.0)
     chg_sym = "🟢" if chg_t >= 0 else "🔴"
-    pr_str = f"₹{pr_t:,.2f}" if ("^" in sym_t or ".NS" in sym_t) else f"${pr_t:,.2f}"
-    short_nm = nm_t.split(" ")[0]
-    btn_label = f"{chg_sym} {short_nm}: {pr_str}"
-    
+    pr_str  = f"${pr_t:,.4f}" if pr_t < 1 else f"${pr_t:,.2f}"
+    btn_label = f"{chg_sym} {short_nm}  {pr_str}  ({chg_t:+.2f}%)"
     is_active_tick = (st.session_state.get('inspect_trade_key') == sym_t)
     btn_type = "primary" if is_active_tick else "secondary"
-    
     if tick_cols[idx].button(btn_label, key=f"btn_tick_{sym_t}", use_container_width=True, type=btn_type):
         st.session_state['inspect_trade_key'] = sym_t
-        st.session_state['selected_trade_radio'] = sym_t
-        st.toast(f"Switched to {nm_t}!", icon="🎯")
         st.rerun()
 
 st.markdown("<br>", unsafe_allow_html=True)
@@ -1050,33 +1087,80 @@ if os.path.exists('dca_state.json'):
                 invested_amount += float(d_info.get('total_cost', 0.0))
     except: pass
 
+# USD → INR rate (try Binance USDT→INR equivalent or use constant)
+USD_TO_INR = 84.5
+try:
+    _inr_url = "https://api.exchangerate-api.com/v4/latest/USD"
+    _req = urllib.request.Request(_inr_url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(_req, timeout=2) as _resp:
+        _fx = json.loads(_resp.read().decode())
+        _fx_inr = float(_fx.get("rates", {}).get("INR", 84.5))
+        if 75 <= _fx_inr <= 100:
+            USD_TO_INR = _fx_inr
+except:
+    pass
+
 portfolio_value = initial_capital + total_profit
 invested_amount = min(portfolio_value, max(0.0, invested_amount))
 available_cash = max(0.0, portfolio_value - invested_amount)
 roi = (total_profit / initial_capital) * 100 if initial_capital > 0 else 0.0
 
-# Calculate Total Real-time Floating P&L from open positions
+# ─── Calculate REAL-TIME Floating P&L using live Binance prices ───
 total_floating_pnl = 0.0
+per_position_pnl = {}  # {sym: {"live": price, "pnl_pct": %, "pnl_inr": ₹}}
 for d_sym, d_info in dca_positions.items():
-    d_asset = scanned_assets.get(d_sym, {})
-    d_cur = d_asset.get('price', d_info['avg_price'])
-    if d_cur == 0.0: d_cur = d_info['avg_price']
-    d_pnl_val = (d_cur - d_info['avg_price']) * d_info['total_qty']
-    if d_sym.endswith('-USD'):
-        total_floating_pnl += d_pnl_val * 84.5
-    else:
-        total_floating_pnl += d_pnl_val
+    avg_p = float(d_info.get('avg_price', 0))
+    total_qty = float(d_info.get('total_qty', 0))
+    total_cost = float(d_info.get('total_cost', 0))
+    if avg_p <= 0:
+        continue
+    # Use live Binance price first, fallback to scanned_assets, then avg_price
+    live_p_info = live_prices.get(d_sym, {})
+    live_p = live_p_info.get("price", 0.0)
+    if live_p <= 0:
+        live_p = scanned_assets.get(d_sym, {}).get("price", avg_p)
+    if live_p <= 0:
+        live_p = avg_p
+    
+    pnl_usd = (live_p - avg_p) * total_qty
+    pnl_inr = pnl_usd * USD_TO_INR if d_sym.endswith('-USD') else pnl_usd
+    pnl_pct = ((live_p - avg_p) / avg_p) * 100.0
+    cur_val_inr = total_cost + pnl_inr
+    
+    total_floating_pnl += pnl_inr
+    per_position_pnl[d_sym] = {
+        "live_price": live_p,
+        "avg_price": avg_p,
+        "pnl_pct": pnl_pct,
+        "pnl_inr": pnl_inr,
+        "cur_val_inr": cur_val_inr,
+        "total_cost": total_cost,
+        "total_qty": total_qty,
+    }
 
 total_floating_pnl_pct = (total_floating_pnl / invested_amount) * 100 if invested_amount > 0 else 0.0
+live_portfolio_value = portfolio_value + total_floating_pnl
 
-# Top metrics columns
-top_b1, top_b2, top_b3, top_b4 = st.columns(4)
-top_b1.markdown(fancy_metric("టోటల్ పోర్ట్‌ఫోలియో (Net Balance)", f"₹{portfolio_value:,.2f}", f"{roi:+.2f}% ROI"), unsafe_allow_html=True)
-top_b2.markdown(fancy_metric("ఇన్వెస్ట్ చేసిన మొత్తం (Locked Margin)", f"₹{invested_amount:,.2f}", f"{len(dca_positions)} యాక్టివ్ ట్రేడ్స్"), unsafe_allow_html=True)
-top_b3.markdown(fancy_metric("అందుబాటులో ఉన్న నగదు (Free Cash)", f"₹{available_cash:,.2f}", "ట్రేడింగ్ కి రెడీ"), unsafe_allow_html=True)
+# ─── PROFESSIONAL PORTFOLIO HEADER RIBBON ───
+st.markdown("""
+<div style="background: linear-gradient(135deg, #0d1117 0%, #1a1f2e 100%);
+            border: 1px solid #2962ff; border-radius: 14px; padding: 18px 24px; margin-bottom: 18px;
+            box-shadow: 0 4px 24px rgba(41,98,255,0.2);">
+  <div style="font-size: 13px; color: #787b86; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 12px;">
+    🏦 ANTIGRAVITY KITE PRO — PORTFOLIO SNAPSHOT (Live)
+  </div>
+""", unsafe_allow_html=True)
+
+top_b1, top_b2, top_b3, top_b4, top_b5 = st.columns(5)
+top_b1.markdown(fancy_metric("🏦 నెట్ పోర్ట్‌ఫోలియో", f"₹{portfolio_value:,.2f}", f"{roi:+.2f}% Booked ROI"), unsafe_allow_html=True)
+top_b2.markdown(fancy_metric("🔒 ఇన్వెస్ట్ చేసిన మొత్తం", f"₹{invested_amount:,.2f}", f"{len(dca_positions)} ట్రేడ్స్ ఓపెన్"), unsafe_allow_html=True)
+top_b3.markdown(fancy_metric("💵 ఉచిత నగదు (Cash)", f"₹{available_cash:,.2f}", "కొత్త ట్రేడ్ కి రెడీ"), unsafe_allow_html=True)
 top_pnl_color = "normal" if total_floating_pnl >= 0 else "inverse"
-top_b4.markdown(fancy_metric("లైవ్ రన్నింగ్ లాభం (Floating PnL)", f"₹{total_floating_pnl:,.2f}", f"{total_floating_pnl_pct:+.2f}% Live", top_pnl_color), unsafe_allow_html=True)
+top_b4.markdown(fancy_metric("📈 ఫ్లోటింగ్ లాభం (Live P&L)", f"₹{total_floating_pnl:+,.2f}", f"{total_floating_pnl_pct:+.2f}% Live", top_pnl_color), unsafe_allow_html=True)
+live_pf_color = "normal" if live_portfolio_value >= portfolio_value else "inverse"
+top_b5.markdown(fancy_metric("⚡ లైవ్ టోటల్ విలువ", f"₹{live_portfolio_value:,.2f}", f"1 USD = ₹{USD_TO_INR:.2f}", live_pf_color), unsafe_allow_html=True)
 
+st.markdown("</div>", unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
 
 # -------------------------------------------------------------
@@ -1103,83 +1187,102 @@ with tab_pos:
         if 'inspect_trade_key' not in st.session_state or st.session_state['inspect_trade_key'] not in trade_keys:
             st.session_state['inspect_trade_key'] = trade_keys[0]
 
-        # 1. Interactive Fast Trade Selector Pills
-        st.write("**👉 పరిశీలించాల్సిన ట్రేడ్ ని ఎంచుకోండి (Click any trade to open details):**")
+        # ─── ZERODHA KITE STYLE POSITIONS TABLE (HTML) ───
+        rows_html = ""
+        for d_sym, d_info in dca_positions.items():
+            pnl_data = per_position_pnl.get(d_sym, {})
+            live_p   = pnl_data.get("live_price", float(d_info.get("avg_price", 0)))
+            avg_p    = pnl_data.get("avg_price",  float(d_info.get("avg_price", 0)))
+            pnl_pct  = pnl_data.get("pnl_pct", 0.0)
+            pnl_inr  = pnl_data.get("pnl_inr", 0.0)
+            cur_val  = pnl_data.get("cur_val_inr", float(d_info.get("total_cost", 0)))
+            cost_inr = pnl_data.get("total_cost", float(d_info.get("total_cost", 0)))
+            target_p = float(d_info.get("target_sell_price", avg_p * 1.015))
+            qty      = float(d_info.get("total_qty", 0))
+            is_ind   = (".NS" in d_sym or ".BO" in d_sym)
+            curr_sym = "₹" if is_ind else "$"
+            clean_nm = d_sym.replace(".NS", "").replace("-USD", "")
+            pnl_clr  = "#00e676" if pnl_inr >= 0 else "#ff5252"
+            pnl_icon = "▲" if pnl_inr >= 0 else "▼"
+            dist_to_target = ((target_p - live_p) / avg_p) * 100.0 if avg_p > 0 else 0.0
+            pr_fmt   = f"{curr_sym}{live_p:,.4f}" if live_p < 1 else f"{curr_sym}{live_p:,.2f}"
+            avg_fmt  = f"{curr_sym}{avg_p:,.4f}" if avg_p < 1 else f"{curr_sym}{avg_p:,.2f}"
+            tgt_fmt  = f"{curr_sym}{target_p:,.4f}" if target_p < 1 else f"{curr_sym}{target_p:,.2f}"
+            rows_html += f"""
+            <tr>
+              <td><b style="color:#e0e3eb;">{clean_nm}</b><br>
+                  <span style="font-size:11px;color:#2962ff;">CRYPTO SPOT</span></td>
+              <td style="color:#9e9e9e;font-size:12px;">{qty:.5f}</td>
+              <td>{avg_fmt}</td>
+              <td style="color:#00bcd4;font-weight:600;">{pr_fmt}</td>
+              <td style="color:#ffa726;">{tgt_fmt}</td>
+              <td>₹{cost_inr:,.2f}</td>
+              <td>₹{cur_val:,.2f}</td>
+              <td style="color:{pnl_clr};font-weight:700;">{pnl_icon} ₹{abs(pnl_inr):,.2f}<br>
+                  <span style="font-size:11px;">({pnl_pct:+.2f}%)</span></td>
+              <td style="color:#ffa726;font-size:12px;">{dist_to_target:+.2f}% more</td>
+            </tr>"""
+
+        positions_table_html = f"""
+        <div style="overflow-x:auto; margin-bottom:20px;">
+        <table class="zk-pos-table" style="width:100%;border-collapse:separate;border-spacing:0;
+               background:#131722;border:1px solid #2a2e39;border-radius:10px;overflow:hidden;">
+          <thead>
+            <tr style="background:#181c27;">
+              <th style="padding:11px 12px;color:#787b86;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">అసెట్ (Asset)</th>
+              <th style="padding:11px 12px;color:#787b86;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">క్వాంటిటీ</th>
+              <th style="padding:11px 12px;color:#787b86;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">కొన్న ధర (Avg)</th>
+              <th style="padding:11px 12px;color:#00bcd4;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">🔴 లైవ్ ధర</th>
+              <th style="padding:11px 12px;color:#ffa726;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">🎯 టార్గెట్</th>
+              <th style="padding:11px 12px;color:#787b86;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">పెట్టుబడి (₹)</th>
+              <th style="padding:11px 12px;color:#787b86;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">ప్రస్తుత విలువ (₹)</th>
+              <th style="padding:11px 12px;color:#787b86;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">లాభం / నష్టం</th>
+              <th style="padding:11px 12px;color:#787b86;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">టార్గెట్ దూరం</th>
+            </tr>
+          </thead>
+          <tbody style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#e0e3eb;">
+            {rows_html}
+          </tbody>
+        </table>
+        </div>"""
+        st.markdown(positions_table_html, unsafe_allow_html=True)
+
+        # ─── TRADE SELECTOR PILLS ───
+        st.write("**👉 పూర్తి వివరాలు చూడాల్సిన కాయిన్ క్లిక్ చేయండి:**")
         pill_cols = st.columns(len(trade_keys))
         for idx_k, t_sym in enumerate(trade_keys):
             clean_k = t_sym.replace('.NS', '').replace('-USD', '')
+            pnl_d = per_position_pnl.get(t_sym, {})
+            p_pct = pnl_d.get("pnl_pct", 0.0)
+            pill_icon = "🟢" if p_pct >= 0 else "🔴"
             is_sel = (st.session_state.get('inspect_trade_key') == t_sym)
             b_type = "primary" if is_sel else "secondary"
-            if pill_cols[idx_k].button(f"🪙 {clean_k}", key=f"sel_pill_btn_{t_sym}", use_container_width=True, type=b_type):
+            pill_label = f"{pill_icon} {clean_k} ({p_pct:+.2f}%)"
+            if pill_cols[idx_k].button(pill_label, key=f"sel_pill_btn_{t_sym}", use_container_width=True, type=b_type):
                 st.session_state['inspect_trade_key'] = t_sym
                 st.rerun()
 
         st.markdown("---")
 
-        # 2. Render each position in a clean Zerodha card with a direct 'View Details' button
-        for d_sym, d_info in dca_positions.items():
-            d_asset = scanned_assets.get(d_sym, {})
-            d_cur = d_asset.get('price', d_info['avg_price'])
-            if d_cur == 0.0: d_cur = d_info['avg_price']
-            
-            is_ind = (".NS" in d_sym or ".BO" in d_sym)
-            curr_sym = "₹" if is_ind else "$"
-            
-            d_pnl_pct = ((d_cur - d_info['avg_price']) / d_info['avg_price']) * 100.0 if d_info['avg_price'] > 0 else 0.0
-            d_pnl_inr = ((d_cur - d_info['avg_price']) * d_info['total_qty'] * (1.0 if is_ind else 84.5))
-            
-            clean_ticker = d_sym.replace('.NS', '').replace('-USD', '')
-            prod_type = "NSE CNC" if is_ind else "CRYPTO SPOT"
-            cur_cost = float(d_info.get('total_cost', 10140.0))
-            cur_val = cur_cost + d_pnl_inr
-            target_p = float(d_info.get('target_sell_price', d_info['avg_price'] * 1.015))
-            
-            is_active_selected = (st.session_state.get('inspect_trade_key') == d_sym)
-            
-            card_col1, card_col2, card_col3, card_col4, card_col5 = st.columns([2.5, 2, 2, 2.5, 2])
-            with card_col1:
-                st.markdown(f"**🪙 {clean_ticker}** `{prod_type}`")
-                st.caption(f"క్వాంటిటీ: {d_info['total_qty']:.5f}")
-            with card_col2:
-                st.markdown(f"కొన్న ధర: **{curr_sym}{d_info['avg_price']:,.2f}**")
-                st.markdown(f"లైవ్ ప్రైస్: **{curr_sym}{d_cur:,.2f}**")
-            with card_col3:
-                st.markdown(f"పెట్టుబడి: **₹{cur_cost:,.2f}**")
-                st.markdown(f"విలువ: **₹{cur_val:,.2f}**")
-            with card_col4:
-                pnl_color_txt = "🟢" if d_pnl_inr >= 0 else "🔴"
-                st.markdown(f"P&L: **{pnl_color_txt} ₹{d_pnl_inr:+.2f}**")
-                st.markdown(f"రిటర్న్: **{d_pnl_pct:+.2f}%** | Target: `{curr_sym}{target_p:,.2f}`")
-            with card_col5:
-                btn_name = "✅ ఎంపికైంది" if is_active_selected else "🔍 వివరాలు చూడు"
-                btn_style = "primary" if is_active_selected else "secondary"
-                if st.button(btn_name, key=f"btn_view_{d_sym}", use_container_width=True, type=btn_style):
-                    st.session_state['inspect_trade_key'] = d_sym
-                    st.rerun()
-
-            st.markdown("<hr style='margin: 8px 0; border-color: #2a2e39;'>", unsafe_allow_html=True)
-
-        st.markdown("<br>", unsafe_allow_html=True)
-
         # 3. Dedicated Deep-Dive Trade Inspector Panel
         sel_key = st.session_state.get('inspect_trade_key', trade_keys[0])
         if sel_key in dca_positions:
             t_info = dca_positions[sel_key]
-            t_asset = scanned_assets.get(sel_key, {})
-            t_cur = t_asset.get('price', t_info['avg_price'])
-            if t_cur == 0.0: t_cur = t_info['avg_price']
-            
-            is_ind = (".NS" in sel_key or ".BO" in sel_key)
+
+            # Use live Binance prices from per_position_pnl
+            pnl_data = per_position_pnl.get(sel_key, {})
+            t_cur    = pnl_data.get("live_price", float(t_info.get("avg_price", 0)))
+            pnl_pct  = pnl_data.get("pnl_pct", 0.0)
+            pnl_inr  = pnl_data.get("pnl_inr", 0.0)
+            cur_val_inr = pnl_data.get("cur_val_inr", float(t_info.get("total_cost", 10140.0)))
+
+            is_ind   = (".NS" in sel_key or ".BO" in sel_key)
             curr_sym = "₹" if is_ind else "$"
-            
-            avg_p = float(t_info['avg_price'])
+
+            avg_p    = float(t_info.get('avg_price', 0))
             target_p = float(t_info.get('target_sell_price', avg_p * 1.015))
-            peak_p = float(t_info.get('peak_price', t_cur))
+            peak_p   = float(t_info.get('peak_price', t_cur))
             cost_inr = float(t_info.get('total_cost', 10140.0))
-            
-            pnl_pct = ((t_cur - avg_p) / avg_p) * 100.0 if avg_p > 0 else 0.0
-            pnl_inr = (t_cur - avg_p) * t_info['total_qty'] * (1.0 if is_ind else 84.5)
-            cur_val_inr = cost_inr + pnl_inr
             expected_net_profit = cost_inr * 0.015
             
             # Progress 0 to 100%
