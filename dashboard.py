@@ -128,21 +128,25 @@ BINANCE_SYMBOLS = {
 
 @st.cache_data(ttl=6, show_spinner=False)
 def get_live_prices():
-    """Fetch latest prices from Binance public API (no auth required)."""
+    """Fetch latest prices using yfinance (cloud friendly)."""
     prices = {}
-    for symbol, b_sym in BINANCE_SYMBOLS.items():
+    for symbol in BINANCE_SYMBOLS.keys():
         try:
-            url = f"https://api.binance.com/api/v3/ticker/24hr?symbol={b_sym}"
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=4) as resp:
-                data = json.loads(resp.read().decode())
+            t = yf.Ticker(symbol)
+            hist = t.history(period="2d", interval="1d")
+            if len(hist) >= 1:
+                last_price = float(hist['Close'].iloc[-1])
+                prev_price = float(hist['Close'].iloc[0]) if len(hist) > 1 else last_price
+                change_pct = ((last_price - prev_price) / prev_price * 100) if prev_price else 0.0
                 prices[symbol] = {
-                    "price": float(data["lastPrice"]),
-                    "change_pct": float(data["priceChangePercent"]),
-                    "high": float(data["highPrice"]),
-                    "low": float(data["lowPrice"]),
-                    "volume": float(data["quoteVolume"]),
+                    "price": last_price,
+                    "change_pct": change_pct,
+                    "high": float(hist['High'].iloc[-1]),
+                    "low": float(hist['Low'].iloc[-1]),
+                    "volume": float(hist['Volume'].iloc[-1]),
                 }
+            else:
+                prices[symbol] = {"price": 0.0, "change_pct": 0.0, "high": 0.0, "low": 0.0, "volume": 0.0}
         except Exception:
             prices[symbol] = {"price": 0.0, "change_pct": 0.0, "high": 0.0, "low": 0.0, "volume": 0.0}
     return prices
