@@ -1,8 +1,9 @@
 import os
+import db_helper
 import sys
 import time
 import json
-import db_helper
+
 import threading
 from datetime import datetime
 
@@ -579,7 +580,7 @@ with open('trading_mode.txt', 'w') as f:
 
 
 import json
-import db_helper
+
 
 # Load existing settings or defaults
 try:
@@ -1637,9 +1638,88 @@ with tab_orders:
             if os.path.exists('trades_log.csv'):
                 with open('trades_log.csv', 'w') as f_reset:
                     f_reset.write("Time,Symbol,Action,Price,Shares,Profit\n")
-            dca_positions = db_helper.get_state('dca_state')
-for d_sym, d_info in dca_positions.items():
-    invested_amount += float(d_info.get('total_cost', 0.0))
+            db_helper.save_state('dca_state', {})
+            st.toast("✅ పాత ట్రేడ్ హిస్టరీ రీసెట్ అయ్యింది! ఫ్రెష్ ₹50,000 క్యాపిటల్ రెడీ.", icon="🗑️")
+            st.rerun()
+
+    if os.path.exists('trades_log.csv'):
+        df_perf = pd.read_csv('trades_log.csv')
+        df_perf_valid = df_perf[df_perf['Symbol'].astype(str).str.endswith(('-USD', '.NS', '.BO'))].copy()
+        sells = df_perf_valid[df_perf_valid['Action'] == 'SELL'].copy()
+        
+        if not sells.empty:
+            def clean_profit(val):
+                if str(val) == '-': return 0.0
+                p_str = str(val).replace('₹', '').replace(',', '').strip()
+                try:
+                    return -float(p_str.replace('-', '')) if p_str.startswith('-') else float(p_str)
+                except: return 0.0
+
+            sells['CleanProfit'] = sells['Profit'].apply(clean_profit)
+            total_trades = len(sells)
+            wins = len(sells[sells['CleanProfit'] > 0])
+            losses = len(sells[sells['CleanProfit'] < 0])
+            win_rate = (wins / total_trades) * 100 if total_trades > 0 else 0
+            
+            gross_profit = sells[sells['CleanProfit'] > 0]['CleanProfit'].sum()
+            gross_loss = sells[sells['CleanProfit'] < 0]['CleanProfit'].sum()
+            taxes = round((gross_profit + abs(gross_loss)) * 0.001, 2)
+            net_profit = gross_profit + gross_loss - taxes
+            
+            p1, p2, p3, p4 = st.columns(4)
+            p1.metric("మొత్తం ట్రేడ్స్ (Completed)", f"{total_trades}")
+            p2.metric("విన్ రేట్ (Accuracy)", f"{win_rate:.1f}%", f"{wins}W | {losses}L")
+            p3.metric("గ్రాస్ లాభం (Gross Profit)", f"₹{gross_profit:.2f}")
+            net_col = "normal" if net_profit >= 0 else "inverse"
+            p4.metric("నికర లాభం (Net PNL)", f"₹{net_profit:.2f}", f"{net_profit:+.2f}")
+
+        # Complete Orders Table
+        st.subheader("📋 పూర్తి ఆర్డర్ బుక్ లాగ్ (Orders Log)")
+        if not df_perf_valid.empty:
+            safe_dataframe(df_perf_valid.tail(50), hide_index=True)
+    else:
+        st.info("ఇంకా ట్రేడ్ లాగ్స్ ఏమీ లేవు.")
+
+
+# =============================================================
+# TAB 5: 🔍 స్మార్ట్ అసెట్ సెర్చ్ & స్క్రీనర్ (ASSET SCREENER)
+# =============================================================
+with tab_search:
+    st.header("🔍 Smart Asset Search Engine (యూనివర్సల్ అసెట్ సెర్చ్ & వాచ్‌లిస్ట్)")
+    col_s1, col_s2 = st.columns([3, 1])
+    with col_s1:
+        search_query = st.text_input("🔎 స్టాక్ లేదా కాయిన్ పేరు / టిక్కర్ టైప్ చేయండి:", placeholder="ఉదాహరణ: ZOMATO, SUZLON, TATASTEEL, PEPE, ADA, DOGE", key="universal_search_input")
+    with col_s2:
+        market_choice = st.radio("మార్కెట్ రకం:", ["🇮🇳 Indian Stock (NSE)", "🪙 Crypto (USD)"], key="universal_market_choice")
+        
+    do_search = st.button("🔍 లైవ్ డేటా వెరిఫై చేయి", use_container_width=True)
+    if do_search and search_query.strip():
+        raw_q = search_query.strip().upper()
+        if "Indian" in market_choice or "NSE" in market_choice:
+            clean_sym = raw_q.replace('.NS', '').replace('.BO', '')
+            final_sym = f"{clean_sym}.NS"
+            asset_category = "NSE"
+            curr_symbol = "₹"
+        else:
+            clean_sym = raw_q.replace('-USD', '').replace('USDT', '').replace('/', '')
+            final_sym = f"{clean_sym}-USD"
+            asset_category = "CRYPTO"
+            curr_symbol = "$"
+            
+        with st.spinner(f"మార్కెట్ నుండి {final_sym} డేటా తెస్తున్నాము..."):
+            found_data = None
+            try:
+                t_obj = yf.Ticker(final_sym)
+                hist = t_obj.history(period="5d", interval="1d")
+                if not hist.empty:
+                    last_row = hist.iloc[-1]
+                    l_price = float(last_row['Close'])
+                    prev_close = float(hist.iloc[-2]['Close']) if len(hist) > 1 else l_price
+                    chg_pct = ((l_price - prev_close) / prev_close) * 100.0 if prev_close > 0 else 0.0
+                    vol = int(last_row['Volume'])
+                    c_name = clean_sym
+                    try: c_name = t_obj.info.get('shortName') or t_obj.info.get('name') or clean_sym
+                    except: pass
                     found_data = {
                         "symbol": final_sym, "clean": clean_sym, "name": c_name, "price": l_price,
                         "change_pct": chg_pct, "volume": vol, "type": asset_category, "curr": curr_symbol
