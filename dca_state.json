@@ -2,17 +2,97 @@
   "BTC-USD": {
     "entries": [
       {
-        "price": 86200.0078125,
-        "qty": 0.0013921112427393379,
+        "price": 86230.16,
+        "qty": 0.0013916245223085746,
         "cost": 10140.0,
-        "time": "2026-10-06 16:55:51"
+        "time": "2026-10-06 16:57:52"
       }
     ],
-    "avg_price": 86200.0078125,
-    "total_qty": 0.0013921112427393379,
+    "avg_price": 86230.16,
+    "total_qty": 0.0013916245223085746,
     "total_cost": 10140.0,
-    "target_sell_price": 87493.00792968749,
-    "peak_price": 86200.0078125,
+    "target_sell_price": 87523.61,
+    "peak_price": 86230.16,
     "strategy": "trend_pullback_ema"
+  },
+  "ETH-USD": {
+    "entries": [
+      {
+        "price": 2716.04,
+        "qty": 0.04418197017501281,
+        "cost": 10140.0,
+        "time": "2026-10-06 16:57:54"
+      }
+    ],
+    "avg_price": 2716.04,
+    "total_qty": 0.04418197017501281,
+    "total_cost": 10140.0,
+    "target_sell_price": 2756.78,
+    "peak_price": 2716.04,
+    "strategy": "fvg_imbalance_fill"
+  },
+  "SOL-USD": {
+    "entries": [
+      {
+        "price": 120.32,
+        "qty": 0.9973404280615371,
+        "cost": 10140.0,
+        "time": "2026-10-06 16:57:55"
+      }
+    ],
+    "avg_price": 120.32,
+    "total_qty": 0.9973404280615371,
+    "total_cost": 10140.0,
+    "target_sell_price": 122.12,
+    "peak_price": 120.32,
+    "strategy": "fvg_imbalance_fill"
+  },
+  "BNB-USD": {
+    "entries": [
+      {
+        "price": 783.73,
+        "qty": 0.1531139588767905,
+        "cost": 10140.0,
+        "time": "2026-10-06 16:57:56"
+      }
+    ],
+    "avg_price": 783.73,
+    "total_qty": 0.1531139588767905,
+    "total_cost": 10140.0,
+    "target_sell_price": 795.49,
+    "peak_price": 783.73,
+    "strategy": "fvg_imbalance_fill"
+  },
+  "DOGE-USD": {
+    "entries": [
+      {
+        "price": 0.1,
+        "qty": 1253.263752040934,
+        "cost": 10140.0,
+        "time": "2026-10-06 16:57:57"
+      }
+    ],
+    "avg_price": 0.1,
+    "total_qty": 1253.263752040934,
+    "total_cost": 10140.0,
+    "target_sell_price": 0.1015,
+    "peak_price": 0.1,
+    "strategy": "fvg_imbalance_fill"
+  },
+  "XRP-USD": {
+    "entries": [
+      {
+        "price": 1.51,
+        "qty": 79.28118436194008,
+        "cost": 10140.0,
+        "time": "2026-10-06 16:57:58"
+      }
+    ],
+    "avg_price": 1.51,
+    "total_qty": 79.28118436194008,
+    "total_cost": 10140.0,
+    "target_sell_price": 1.54,
+    "peak_price": 1.51,
+    "strategy": "fvg_imbalance_fill"
   }
 }

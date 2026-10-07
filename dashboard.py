@@ -45,7 +45,7 @@ def start_bot_thread(force=False):
         
     return started
 
-start_bot_thread()
+# start_bot_thread()  # Disabled: Bot runs on Render now
 
 def get_bot_heartbeat():
     hb_file = 'bot_heartbeat.json'

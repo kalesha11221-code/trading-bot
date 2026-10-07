@@ -35,6 +35,7 @@ def analyze_pattern_future(df):
 
 
 import os
+import db_helper
 
 import concurrent.futures
 import threading
@@ -99,7 +100,7 @@ def send_telegram_message(text):
 def update_ai_brain_after_trade(sym, profit, strategy_key=None):
     try:
         import json
-import db_helper
+
         import math
         brain_file = 'ai_brain.json'
         brain = {}
@@ -517,7 +518,7 @@ def get_htf_trend(df):
 def generate_signal(df, sym):
     # 🧠 SELF-LEARNING AI BRAIN
     import json
-import db_helper
+
     try:
         with open('ai_brain.json', 'r') as f:
             ai_brain = json.load(f)
@@ -1325,7 +1326,7 @@ def run_bot_loop():
             }
             try:
                 import json
-import db_helper
+
                 with file_lock:
                     with open('bot_heartbeat.json', 'w') as f_hb:
                         json.dump(heartbeat_data, f_hb)
@@ -1336,7 +1337,7 @@ import db_helper
             log_status(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️ ఎర్రర్: {e}")
             try:
                 import json
-import db_helper
+
                 with file_lock:
                     with open('bot_heartbeat.json', 'w') as f_hb:
                         json.dump({
