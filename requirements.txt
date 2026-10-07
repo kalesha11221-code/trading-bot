@@ -8,3 +8,4 @@ requests
 gtts
 streamlit-mic-recorder
 google-generativeai
+pymongo==4.6.1

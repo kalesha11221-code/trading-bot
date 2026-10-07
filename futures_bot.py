@@ -1,6 +1,7 @@
 import os
 import time
 import json
+import db_helper
 import urllib.request
 import threading
 import pandas as pd
@@ -29,17 +30,10 @@ def init_files():
                 f.write("Timestamp,Symbol,Action,Side,EntryPrice,ExitPrice,Margin,Leverage,Profit_INR\n")
 
 def get_state():
-    with file_lock:
-        try:
-            with open(STATE_FILE, 'r') as f:
-                return json.load(f)
-        except:
-            return {}
+    return db_helper.get_state('fo_state')
 
 def save_state(state):
-    with file_lock:
-        with open(STATE_FILE, 'w') as f:
-            json.dump(state, f, indent=4)
+    db_helper.save_state('fo_state', state)
 
 def log_trade(sym, action, side, entry_p, exit_p, margin, lev, profit):
     with file_lock:
