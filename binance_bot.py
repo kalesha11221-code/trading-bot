@@ -1,4 +1,5 @@
 import time
+import ml_brain
 import pandas as pd
 from datetime import datetime
 
@@ -341,6 +342,7 @@ last_exit_times = {}
 def get_macro_trend(sym):
     global macro_trends
     import time
+import ml_brain
     # Update cache every 6 hours
     if sym in macro_trends and time.time() - macro_trends[sym]['timestamp'] < 21600:
         return macro_trends[sym]['is_bull_market']
@@ -1108,7 +1110,7 @@ def process_symbol(sym):
         # -------------------------------------------------------------
         # 2. ADDITIONAL DCA DIP BUY (AVERAGING DOWN)
         # -------------------------------------------------------------
-        elif len(pos.get('entries', [])) < 3 and current_price <= (avg_price * 0.982) and signal == 'buy':
+        elif len(pos.get('entries', [])) < 3 and current_price <= (avg_price * 0.982) and signal == 'buy' and ml_brain.get_ml_signal(sym) == 1:
             # Capital Protection Guard
             current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
             if (current_invested + slice_cost_inr) <= portfolio_cap:
@@ -1146,7 +1148,7 @@ def process_symbol(sym):
     # -------------------------------------------------------------
     # 3. FIRST DIP ENTRY (INITIAL FRACTIONAL SLICE)
     # -------------------------------------------------------------
-    elif pos is None and signal == 'buy':
+    elif pos is None and signal == 'buy' and ml_brain.get_ml_signal(sym) == 1:
         max_positions = 4 if is_scalp_style else MAX_ACTIVE_POSITIONS
         if len(dca_state) < max_positions:
             current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
