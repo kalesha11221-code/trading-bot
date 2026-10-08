@@ -342,7 +342,6 @@ last_exit_times = {}
 def get_macro_trend(sym):
     global macro_trends
     import time
-import ml_brain
     # Update cache every 6 hours
     if sym in macro_trends and time.time() - macro_trends[sym]['timestamp'] < 21600:
         return macro_trends[sym]['is_bull_market']
