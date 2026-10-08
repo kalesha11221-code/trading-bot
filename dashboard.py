@@ -1,3 +1,4 @@
+import textwrap
 import os
 import db_helper
 import sys
@@ -1228,20 +1229,19 @@ with tab_pos:
             pr_fmt   = f"{curr_sym}{live_p:,.4f}" if live_p < 1 else f"{curr_sym}{live_p:,.2f}"
             avg_fmt  = f"{curr_sym}{avg_p:,.4f}" if avg_p < 1 else f"{curr_sym}{avg_p:,.2f}"
             tgt_fmt  = f"{curr_sym}{target_p:,.4f}" if target_p < 1 else f"{curr_sym}{target_p:,.2f}"
-            rows_html += f"""
-            <tr>
-              <td><b style="color:#e0e3eb;">{clean_nm}</b><br>
-                  <span style="font-size:11px;color:#2962ff;">CRYPTO SPOT</span></td>
-              <td style="color:#9e9e9e;font-size:12px;">{qty:.5f}</td>
-              <td>{avg_fmt}</td>
-              <td style="color:#00bcd4;font-weight:600;">{pr_fmt}</td>
-              <td style="color:#ffa726;">{tgt_fmt}</td>
-              <td>₹{cost_inr:,.2f}</td>
-              <td>₹{cur_val:,.2f}</td>
-              <td style="color:{pnl_clr};font-weight:700;">{pnl_icon} ₹{abs(pnl_inr):,.2f}<br>
-                  <span style="font-size:11px;">({pnl_pct:+.2f}%)</span></td>
-              <td style="color:#ffa726;font-size:12px;">{dist_to_target:+.2f}% more</td>
-            </tr>"""
+            rows_html += f"""<tr>
+  <td><b style="color:#e0e3eb;">{clean_nm}</b><br>
+      <span style="font-size:11px;color:#2962ff;">CRYPTO SPOT</span></td>
+  <td style="color:#9e9e9e;font-size:12px;">{qty:.5f}</td>
+  <td>{avg_fmt}</td>
+  <td style="color:#00bcd4;font-weight:600;">{pr_fmt}</td>
+  <td style="color:#ffa726;">{tgt_fmt}</td>
+  <td>₹{cost_inr:,.2f}</td>
+  <td>₹{cur_val:,.2f}</td>
+  <td style="color:{pnl_clr};font-weight:700;">{pnl_icon} ₹{abs(pnl_inr):,.2f}<br>
+      <span style="font-size:11px;">({pnl_pct:+.2f}%)</span></td>
+  <td style="color:#ffa726;font-size:12px;">{dist_to_target:+.2f}% more</td>
+</tr>"""
 
         positions_table_html = f"""
         <div style="overflow-x:auto; margin-bottom:20px;">
@@ -1265,7 +1265,7 @@ with tab_pos:
           </tbody>
         </table>
         </div>"""
-        st.markdown(positions_table_html, unsafe_allow_html=True)
+        st.markdown(textwrap.dedent(positions_table_html), unsafe_allow_html=True)
 
         # ─── TRADE SELECTOR PILLS ───
         st.write("**👉 పూర్తి వివరాలు చూడాల్సిన కాయిన్ క్లిక్ చేయండి:**")
