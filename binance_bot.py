@@ -72,7 +72,7 @@ SYMBOL_ALIASES = {
 
 symbols_to_trade = CRYPTO_SYMBOLS
 
-# 🎯 హంతకుడు (Assassin Sniper) Portfolio & Risk Guards
+# 🎯 స్కామర్ బ్రెయిన్ 🥷 (Assassin Sniper) Portfolio & Risk Guards
 MAX_ACTIVE_POSITIONS = 3
 MAX_PORTFOLIO_CAPITAL = 10000.0
 COOLDOWN_SECONDS = 300  # 5-minute cooldown after closing trade on a symbol
@@ -843,19 +843,19 @@ def generate_signal(df, sym):
         req_buy_score = 3.5
         max_sell_score = 4.5
         htf_ok = (htf_status != 'BEARISH') or (last['RSI'] <= 55) or is_whale_pump
-        mode_tag = "హంతకుడు (Scalper Extreme)"
+        mode_tag = "స్కామర్ బ్రెయిన్ 🥷 (Scalper Extreme)"
     elif is_conservative:
         min_pillars = 3
         req_buy_score = 7.0
         max_sell_score = 1.5
         htf_ok = (htf_status != 'BEARISH') or extreme_capitulation
-        mode_tag = "హంతకుడు (Safe Sniper)"
+        mode_tag = "స్కామర్ బ్రెయిన్ 🥷 (Safe Sniper)"
     else: # Balanced / Moderate
         min_pillars = 2
         req_buy_score = 5.0
         max_sell_score = 3.0
         htf_ok = (htf_status != 'BEARISH') or extreme_capitulation
-        mode_tag = "హంతకుడు (Balanced Swing)"
+        mode_tag = "స్కామర్ బ్రెయిన్ 🥷 (Balanced Swing)"
 
     # BUY REQUIREMENT:
     buy_triggered = (
@@ -1074,7 +1074,7 @@ def process_symbol(sym):
             price_disp = f"₹{current_price:,.2f}" if is_indian else f"${current_price:,.2f}"
             profit_disp = f"₹{profit:,.2f}"
             
-            msg = f"🎯 [{mode_str} హంతకుడు ప్రాఫిట్ మాక్సిమైజర్]: {sym} ({qty_label}) | భారీ లాభం: {profit_disp} (+{profit_pct:.2f}%)\n{thought} 🧠 [Peak: +{peak_gain_pct:.2f}% | DCA Layers: {len(pos.get('entries', []))}]"
+            msg = f"🎯 [{mode_str} స్కామర్ బ్రెయిన్ 🥷 ప్రాఫిట్ మాక్సిమైజర్]: {sym} ({qty_label}) | భారీ లాభం: {profit_disp} (+{profit_pct:.2f}%)\n{thought} 🧠 [Peak: +{peak_gain_pct:.2f}% | DCA Layers: {len(pos.get('entries', []))}]"
             voice_msg = f"Alert. Profit maximizer reached on {clean_name}. Selling for great profit."
             log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
             strat_key = pos.get('strategy', 'rsi_vwap_confluence')
@@ -1137,7 +1137,7 @@ def process_symbol(sym):
                 avg_disp = f"₹{pos['avg_price']:,.2f}" if is_indian else f"${pos['avg_price']:,.2f}"
                 target_disp = f"₹{pos['target_sell_price']:,.2f}" if is_indian else f"${pos['target_sell_price']:,.2f}"
                 
-                msg = f"🎯 [{mode_str} హంతకుడు DCA Layer {layer}/3]: {sym} @ {price_disp} ({qty_label})\nకొత్త సగటు ధర: {avg_disp} | టార్గెట్ (+1.5%): {target_disp}\n{thought}"
+                msg = f"🎯 [{mode_str} స్కామర్ బ్రెయిన్ 🥷 DCA Layer {layer}/3]: {sym} @ {price_disp} ({qty_label})\nకొత్త సగటు ధర: {avg_disp} | టార్గెట్ (+1.5%): {target_disp}\n{thought}"
                 voice_msg = f"Alert. Averaging down on {clean_name}."
                 log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[96m')
                 log_trade("BUY", sym, current_price, slice_qty, 0.0)
@@ -1180,7 +1180,7 @@ def process_symbol(sym):
                 cost_disp = f"₹{slice_cost_inr:,.2f}" if is_indian else f"${slice_cost_usd} / ₹{slice_cost_inr:,.2f}"
                 target_disp = f"₹{target_p:,.2f}" if is_indian else f"${target_p:,.2f}"
                 
-                msg = f"🎯 [{mode_str} హంతకుడు స్నైపర్ DCA]: {sym} డిప్ లో కొన్నాను @ {price_disp} ({cost_disp} | {qty_label})\n🎯 టార్గెట్ (+1.5% లాభం): {target_disp} | టెక్నిక్: {strat_used}\n{thought}"
+                msg = f"🎯 [{mode_str} స్కామర్ బ్రెయిన్ 🥷 స్నైపర్ DCA]: {sym} డిప్ లో కొన్నాను @ {price_disp} ({cost_disp} | {qty_label})\n🎯 టార్గెట్ (+1.5% లాభం): {target_disp} | టెక్నిక్: {strat_used}\n{thought}"
                 voice_msg = f"Alert. Buying fractional slice of {clean_name}."
                 log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
                 log_trade("BUY", sym, current_price, slice_qty, 0.0)
