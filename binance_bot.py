@@ -1283,9 +1283,7 @@ def run_bot_loop():
                 "assets": {r['symbol']: r for r in results if r and isinstance(r, dict) and 'symbol' in r}
             }
             try:
-                with file_lock:
-                    with open('live_scan_status.json', 'w') as f_scan:
-                        json.dump(live_scan_data, f_scan, indent=2)
+                db_helper.save_state('live_scan_status', live_scan_data)
             except Exception:
                 pass
             

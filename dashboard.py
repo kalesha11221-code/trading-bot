@@ -1028,12 +1028,11 @@ live_prices = get_live_prices()
 
 # Build scanned_assets with live prices (merge with live_scan_status if available)
 scanned_assets = {}
-if os.path.exists('live_scan_status.json'):
-    try:
-        with open('live_scan_status.json', 'r') as f_sc:
-            scanned_assets = json.load(f_sc).get('assets', {})
-    except:
-        pass
+try:
+    sc_data = db_helper.get_state('live_scan_status', {})
+    scanned_assets = sc_data.get('assets', {})
+except:
+    pass
 
 # Override/add live Binance prices into scanned_assets
 for sym_k, price_info in live_prices.items():
