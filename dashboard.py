@@ -49,36 +49,21 @@ def start_bot_thread(force=False):
 # start_bot_thread()  # Disabled: Bot runs on Render now
 
 def get_bot_heartbeat():
-    hb_file = 'bot_heartbeat.json'
-    if os.path.exists(hb_file):
-        try:
-            with open(hb_file, 'r') as f:
-                data = json.load(f)
+    try:
+        data = db_helper.get_state('bot_heartbeat', {})
+        if data and 'last_ping' in data:
             last_ping = data.get('last_ping', 0)
             diff = time.time() - last_ping
-            if diff <= 30:
+            # Higher thresholds because Render DB sync takes time + ML takes time
+            if diff <= 120:
                 return "RUNNING", int(diff), data
-            elif diff <= 70:
+            elif diff <= 300:
                 return "DELAYED", int(diff), data
             else:
                 return "STOPPED", int(diff), data
-        except Exception:
-            pass
-
-    # Secondary fallback to bot_logs.txt timestamp/mtime
-    if os.path.exists('bot_logs.txt'):
-        try:
-            mtime = os.path.getmtime('bot_logs.txt')
-            diff = time.time() - mtime
-            if diff <= 35:
-                return "RUNNING", int(diff), {"loop_count": "-", "last_action": "లైవ్ స్కానింగ్ జరుగుతోంది"}
-            elif diff <= 90:
-                return "DELAYED", int(diff), {"loop_count": "-", "last_action": "ఆలస్యం"}
-            else:
-                return "STOPPED", int(diff), {"loop_count": "-", "last_action": "ఆగిపోయింది"}
-        except Exception:
-            pass
-            
+    except Exception:
+        pass
+        
     return "STOPPED", 999, {"loop_count": 0, "last_action": "బాట్ ఇంకా స్టార్ట్ కాలేదు"}
 
 

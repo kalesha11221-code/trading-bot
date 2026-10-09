@@ -1326,9 +1326,7 @@ def run_bot_loop():
             try:
                 import json
 
-                with file_lock:
-                    with open('bot_heartbeat.json', 'w') as f_hb:
-                        json.dump(heartbeat_data, f_hb)
+                db_helper.save_state('bot_heartbeat', heartbeat_data)
             except Exception:
                 pass
                 
@@ -1337,15 +1335,13 @@ def run_bot_loop():
             try:
                 import json
 
-                with file_lock:
-                    with open('bot_heartbeat.json', 'w') as f_hb:
-                        json.dump({
-                            "last_ping": time.time(),
-                            "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                            "status": "ERROR",
-                            "error": str(e),
-                            "loop_count": loop_count
-                        }, f_hb)
+                db_helper.save_state('bot_heartbeat', {
+                    "last_ping": time.time(),
+                    "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    "status": "ERROR",
+                    "error": str(e),
+                    "loop_count": loop_count
+                })
             except Exception:
                 pass
             
