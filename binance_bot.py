@@ -881,6 +881,20 @@ def process_symbol(sym):
     now = datetime.now()
     is_crypto = sym.endswith("-USD")
     is_indian = sym.endswith(".NS") or sym.endswith(".BO") or sym in ["^NSEI", "^NSEBANK"]
+    if is_indian:
+        import pytz
+        ist = pytz.timezone('Asia/Kolkata')
+        now_ist = datetime.now(ist)
+        if now_ist.weekday() > 4: # Weekend
+            return {'symbol': sym, 'status': 'MARKET_CLOSED'}
+        
+        curr_t = now_ist.time()
+        m_open = datetime.strptime("09:15", "%H:%M").time()
+        m_close = datetime.strptime("15:30", "%H:%M").time()
+        
+        if not (m_open <= curr_t <= m_close):
+            return {'symbol': sym, 'status': 'MARKET_CLOSED'}
+            
     clean_name = sym.replace('.NS', '').replace('.BO', '').replace('-USD', '')
     
     # Load Fractional Micro-DCA State & Live Trading Mode
