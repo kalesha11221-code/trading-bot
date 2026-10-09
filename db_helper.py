@@ -2,10 +2,10 @@ import os
 import json
 from pymongo import MongoClient
 
-# Configure MongoDB Connection
-MONGO_URI = os.getenv("MONGO_URI", "")
+# Configure MongoDB Connection (Hardcoded for Render/Streamlit sync)
+MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://kalesha11221_db_user:htGdtrwq23PLvQYi@cluster0.ur7meip.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
 
-# Try to get from Streamlit Secrets
+# Try to get from Streamlit Secrets just in case
 try:
     import streamlit as st
     if "MONGO_URI" in st.secrets:
