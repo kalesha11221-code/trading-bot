@@ -264,19 +264,10 @@ except:
 DCA_FILE = 'dca_state.json'
 
 def load_dca_state():
-    if os.path.exists(DCA_FILE):
-        try:
-            with open(DCA_FILE, 'r') as f:
-                return json.load(f)
-        except: pass
-    return {}
+    return db_helper.get_state('dca_state', {})
 
 def save_dca_state(state):
-    try:
-        with file_lock:
-            with open(DCA_FILE, 'w') as f:
-                json.dump(state, f, indent=2)
-    except: pass
+    db_helper.save_state('dca_state', state)
 
 def load_custom_watchlist():
     if os.path.exists('custom_watchlist.json'):

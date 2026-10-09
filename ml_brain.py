@@ -33,17 +33,31 @@ def get_ml_signal(symbol):
     try:
         print(f"🧠 [AI] Fetching data & Training ML Model for {symbol}...")
         
-        # Download 60 days of 1-hour data
-        df = yf.download(symbol, period="60d", interval="1h", progress=False)
+        import requests
+        from datetime import datetime
+        
+        # Use Binance Public API instead of yfinance to avoid 429 Rate Limits
+        b_sym = symbol.replace('-USD', 'USDT')
+        if '.NS' in symbol or '.BO' in symbol:
+            return 1 # Fallback for Indian stocks
+            
+        url = f"https://api.binance.com/api/v3/klines?symbol={b_sym}&interval=1h&limit=500"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        resp = requests.get(url, headers=headers, timeout=10)
+        data = resp.json()
+        
+        if not data or isinstance(data, dict) and 'code' in data:
+            return 1 # Fallback
+            
+        rows = []
+        for k in data:
+            rows.append({
+                'Close': float(k[4])
+            })
+        df = pd.DataFrame(rows)
         
         if df.empty or len(df) < 50:
             return 1 # Fallback
-            
-        # Clean up multi-index columns if yfinance returns them
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-            
-        df = df.copy()
             
         # Create Technical Features
         df['SMA_10'] = df['Close'].rolling(window=10).mean()

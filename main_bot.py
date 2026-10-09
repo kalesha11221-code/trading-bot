@@ -5,7 +5,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import binance_bot
 import futures_bot
 
-print("Starting 24/7 Trading Bot Backend Worker (Render Web Service)...")
+print("Starting 24/7 Trading Bot Backend Worker (Render Web Service)...", flush=True)
 
 class DummyHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -17,25 +17,25 @@ class DummyHandler(BaseHTTPRequestHandler):
 def run_dummy_server():
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(('0.0.0.0', port), DummyHandler)
-    print(f"Web service started on port {port}")
+    print(f"Web service started on port {port}", flush=True)
     server.serve_forever()
 
 def run_spot():
     while True:
         try:
-            print("Starting Spot Bot...")
+            print("Starting Spot Bot...", flush=True)
             binance_bot.run_bot_loop()
         except Exception as e:
-            print(f"Spot Bot Error: {e}")
+            print(f"Spot Bot Error: {e}", flush=True)
             time.sleep(10)
 
 def run_futures():
     while True:
         try:
-            print("Starting Futures Bot...")
+            print("Starting Futures Bot...", flush=True)
             futures_bot.run_futures_bot()
         except Exception as e:
-            print(f"Futures Bot Error: {e}")
+            print(f"Futures Bot Error: {e}", flush=True)
             time.sleep(10)
 
 if __name__ == "__main__":
