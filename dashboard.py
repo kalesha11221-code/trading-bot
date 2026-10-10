@@ -1190,7 +1190,7 @@ with top_b4:
             st.write("ఓపెన్ ట్రేడ్స్ లేవు.")
         else:
             for s, p in dca_positions.items():
-                curr_price = live_prices.get(s, p['avg_price'])
+                curr_price = live_prices.get(s, {}).get('price', p['avg_price'])
                 pnl = (curr_price - p['avg_price']) * p['total_qty']
                 c = "🟢" if pnl >= 0 else "🔴"
                 st.write(f"{c} **{s}:** ₹{pnl:+.2f}")

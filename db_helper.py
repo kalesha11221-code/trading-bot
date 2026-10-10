@@ -19,7 +19,7 @@ db = None
 
 if MONGO_URI:
     try:
-        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tlsCAFile=certifi.where())
+        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tlsAllowInvalidCertificates=True)
         # Test connection
         client.server_info()
         db = client["trading_bot_db"]
