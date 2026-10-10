@@ -1,6 +1,38 @@
 import textwrap
 import os
 import db_helper
+
+import requests
+
+def get_render_state():
+    try:
+        url = "https://trading-bot-leaw.onrender.com"
+        resp = requests.get(url, timeout=10)
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception as e:
+        pass
+    return None
+
+RENDER_STATE = get_render_state()
+
+def get_state_smart(collection_name, default_val=None):
+    if default_val is None: default_val = {}
+    
+    # 1. Try fetching from the live Render Server first!
+    if RENDER_STATE:
+        if collection_name == "bot_heartbeat" and "heartbeat" in RENDER_STATE:
+            return RENDER_STATE["heartbeat"]
+        if collection_name == "dca_state" and "dca_state" in RENDER_STATE:
+            return RENDER_STATE["dca_state"]
+        if collection_name == "fo_state" and "fo_state" in RENDER_STATE:
+            return RENDER_STATE["fo_state"]
+        if collection_name == "live_scan_status" and "scan_status" in RENDER_STATE:
+            return RENDER_STATE["scan_status"]
+            
+    # 2. Fallback to MongoDB
+    return get_state_smart(collection_name, default_val)
+
 import sys
 import time
 import json
@@ -50,7 +82,7 @@ def start_bot_thread(force=False):
 
 def get_bot_heartbeat():
     try:
-        data = db_helper.get_state('bot_heartbeat', {})
+        data = get_state_smart('bot_heartbeat', {})
         if data and 'last_ping' in data:
             last_ping = data.get('last_ping', 0)
             diff = time.time() - last_ping
@@ -1014,7 +1046,7 @@ live_prices = get_live_prices()
 # Build scanned_assets with live prices (merge with live_scan_status if available)
 scanned_assets = {}
 try:
-    sc_data = db_helper.get_state('live_scan_status', {})
+    sc_data = get_state_smart('live_scan_status', {})
     scanned_assets = sc_data.get('assets', {})
 except:
     pass
@@ -1087,7 +1119,7 @@ if os.path.exists('trades_log.csv'):
 # Read active DCA positions
 dca_positions = {}
 invested_amount = 0.0
-dca_positions = db_helper.get_state('dca_state')
+dca_positions = get_state_smart('dca_state')
 for d_sym, d_info in dca_positions.items():
     invested_amount += float(d_info.get('total_cost', 0.0))
 
@@ -1418,7 +1450,7 @@ with tab_futures:
     st.markdown("### 🚀 Crypto Futures Paper Trading (5x Leverage)")
     st.caption("ఇక్కడ వర్చువల్ మార్జిన్ ₹5000/trade తో ఆటోమేటిక్ గా LONG/SHORT ట్రేడ్స్ జరుగుతాయి. లాభనష్టాలు లైవ్ లో అప్డేట్ అవుతాయి.")
     
-    futures_state = db_helper.get_state('fo_state')
+    futures_state = get_state_smart('fo_state')
             
     if not futures_state:
         st.info("ప్రస్తుతం ఎటువంటి ఫ్యూచర్స్ ట్రేడ్ రన్ అవ్వట్లేదు. మార్కెట్ కన్ఫర్మేషన్ కోసం ఎదురుచూస్తోంది...")
