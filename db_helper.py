@@ -1,6 +1,6 @@
 import os
 import json
-from pymongo import MongoClient
+from pymongo import MongoClient\nimport certifi
 
 # Configure MongoDB Connection (Hardcoded for Render/Streamlit sync)
 MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://kalesha11221_db_user:htGdtrwq23PLvQYi@cluster0.ur7meip.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
@@ -18,7 +18,7 @@ db = None
 
 if MONGO_URI:
     try:
-        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tlsCAFile=certifi.where())
         # Test connection
         client.server_info()
         db = client["trading_bot_db"]
