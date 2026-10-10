@@ -1156,13 +1156,57 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 top_b1, top_b2, top_b3, top_b4, top_b5 = st.columns(5)
-top_b1.markdown(fancy_metric("🏦 నెట్ పోర్ట్‌ఫోలియో", f"₹{portfolio_value:,.2f}", f"{roi:+.2f}% Booked ROI"), unsafe_allow_html=True)
-top_b2.markdown(fancy_metric("🔒 ఇన్వెస్ట్ చేసిన మొత్తం", f"₹{invested_amount:,.2f}", f"{len(dca_positions)} ట్రేడ్స్ ఓపెన్"), unsafe_allow_html=True)
-top_b3.markdown(fancy_metric("💵 ఉచిత నగదు (Cash)", f"₹{available_cash:,.2f}", "కొత్త ట్రేడ్ కి రెడీ"), unsafe_allow_html=True)
-top_pnl_color = "normal" if total_floating_pnl >= 0 else "inverse"
-top_b4.markdown(fancy_metric("📈 ఫ్లోటింగ్ లాభం (Live P&L)", f"₹{total_floating_pnl:+,.2f}", f"{total_floating_pnl_pct:+.2f}% Live", top_pnl_color), unsafe_allow_html=True)
-live_pf_color = "normal" if live_portfolio_value >= portfolio_value else "inverse"
-top_b5.markdown(fancy_metric("⚡ లైవ్ టోటల్ విలువ", f"₹{live_portfolio_value:,.2f}", f"1 USD = ₹{USD_TO_INR:.2f}", live_pf_color), unsafe_allow_html=True)
+with top_b1:
+    st.markdown(fancy_metric("🏦 నెట్ పోర్ట్‌ఫోలియో", f"₹{portfolio_value:,.2f}", f"{roi:+.2f}% Booked ROI"), unsafe_allow_html=True)
+    with st.popover("🔍 లాభం ఎలా వచ్చింది?", use_container_width=True):
+        st.markdown("### 🏦 నెట్ పోర్ట్‌ఫోలియో వివరాలు")
+        st.write("మన బాట్ స్టార్ట్ అయినప్పటి నుండి బుక్ చేసిన అసలు లాభం ఇది.")
+        st.info(f"**మొదటి క్యాపిటల్ (Initial):** ₹50,000.00\n**ఇప్పటివరకు లాభం (Profit):** ₹{portfolio_value - 50000:,.2f}\n**మొత్తం బ్యాలెన్స్:** ₹{portfolio_value:,.2f}")
+
+with top_b2:
+    st.markdown(fancy_metric("🔒 ఇన్వెస్ట్ చేసిన మొత్తం", f"₹{invested_amount:,.2f}", f"{len(dca_positions)} ట్రేడ్స్ ఓపెన్"), unsafe_allow_html=True)
+    with st.popover("🔍 ఏ కాయిన్స్ లో ఉంది?", use_container_width=True):
+        st.markdown("### 🔒 ఇన్వెస్ట్ చేసిన కాయిన్స్")
+        if not dca_positions:
+            st.write("ప్రస్తుతం ఓపెన్ లో ఏ ట్రేడ్స్ లేవు.")
+        else:
+            for s, p in dca_positions.items():
+                st.write(f"**{s}:** ₹{p.get('total_cost', 0):,.2f}")
+
+with top_b3:
+    st.markdown(fancy_metric("💵 ఉచిత నగదు (Cash)", f"₹{available_cash:,.2f}", "కొత్త ట్రేడ్ కి రెడీ"), unsafe_allow_html=True)
+    with st.popover("🔍 ఈ Cash ఎక్కడిది?", use_container_width=True):
+        st.markdown("### 💵 ఫ్రీ క్యాష్")
+        st.write("ఇది ఇంకా ఇన్వెస్ట్ చేయకుండా ఖాళీగా ఉన్న అమౌంట్. కొత్త డిప్ రాగానే మన బాట్ ఈ ఫండ్స్ ని యూజ్ చేసి DCA చేస్తుంది.")
+        st.success(f"కొత్త ఎంట్రీల కోసం రెడీగా ఉన్న ఫండ్స్: ₹{available_cash:,.2f}")
+
+with top_b4:
+    top_pnl_color = "normal" if total_floating_pnl >= 0 else "inverse"
+    st.markdown(fancy_metric("📈 ఫ్లోటింగ్ లాభం (Live)", f"₹{total_floating_pnl:+,.2f}", f"{total_floating_pnl_pct:+.2f}% Live", top_pnl_color), unsafe_allow_html=True)
+    with st.popover("🔍 Live P&L బ్రేక్‌డౌన్", use_container_width=True):
+        st.markdown("### 📈 ఫ్లోటింగ్ (Unbooked) P&L")
+        st.write("ప్రస్తుతం రన్ అవుతున్న కాయిన్స్ పడిపోవడం లేదా పెరగడం వల్ల వచ్చే లాభ/నష్టాలు (ఇంకా బుక్ చేయలేదు).")
+        if not dca_positions:
+            st.write("ఓపెన్ ట్రేడ్స్ లేవు.")
+        else:
+            for s, p in dca_positions.items():
+                curr_price = prices.get(s, p['avg_price'])
+                pnl = (curr_price - p['avg_price']) * p['total_qty']
+                c = "🟢" if pnl >= 0 else "🔴"
+                st.write(f"{c} **{s}:** ₹{pnl:+.2f}")
+
+with top_b5:
+    live_pf_color = "normal" if live_portfolio_value >= portfolio_value else "inverse"
+    st.markdown(fancy_metric("⚡ లైవ్ టోటల్", f"₹{live_portfolio_value:,.2f}", f"1 USD = ₹{USD_TO_INR:.2f}", live_pf_color), unsafe_allow_html=True)
+    with st.popover("🔍 ఫైనల్ లెక్కలు", use_container_width=True):
+        st.markdown("### ⚡ లైవ్ టోటల్ వివరాలు")
+        st.write("నెట్ పోర్ట్‌ఫోలియో మరియు ప్రస్తుత లైవ్ ఫ్లోటింగ్ లాభం కలిపితే వచ్చే ఫైనల్ ఫిగర్ ఇది.")
+        st.write(f"**నెట్ బ్యాలెన్స్:** ₹{portfolio_value:,.2f}")
+        c = "+" if total_floating_pnl >= 0 else ""
+        st.write(f"**ఫ్లోటింగ్ P&L:** {c}₹{total_floating_pnl:,.2f}")
+        st.divider()
+        st.write(f"**లైవ్ టోటల్:** ₹{live_portfolio_value:,.2f}")
+
 
 st.markdown("</div>", unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
