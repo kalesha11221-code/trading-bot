@@ -1,6 +1,7 @@
 import os
 import json
-from pymongo import MongoClient\nimport certifi
+from pymongo import MongoClient
+import certifi
 
 # Configure MongoDB Connection (Hardcoded for Render/Streamlit sync)
 MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://kalesha11221_db_user:htGdtrwq23PLvQYi@cluster0.ur7meip.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
