@@ -10,9 +10,34 @@ print("Starting 24/7 Trading Bot Backend Worker (Render Web Service)...", flush=
 class DummyHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
-        self.send_header('Content-type', 'text/html')
+        self.send_header("Content-type", "application/json; charset=utf-8")
         self.end_headers()
-        self.wfile.write("<h1>Trading Bot is Running 24/7!</h1>".encode('utf-8'))
+        try:
+            import json
+            import os
+            out = {"status": "Trading Bot is running 24/7 on Render...", "MongoDB_Link": "Failed - Showing Local Data"}
+            
+            if os.path.exists("bot_heartbeat.json"):
+                with open("bot_heartbeat.json", "r") as f:
+                    out["heartbeat"] = json.load(f)
+            else:
+                out["heartbeat"] = "No heartbeat file found locally"
+                
+            if os.path.exists("dca_state.json"):
+                with open("dca_state.json", "r") as f:
+                    out["dca_state"] = json.load(f)
+                    
+            if os.path.exists("fo_state.json"):
+                with open("fo_state.json", "r") as f:
+                    out["fo_state"] = json.load(f)
+                    
+            if os.path.exists("live_scan_status.json"):
+                with open("live_scan_status.json", "r") as f:
+                    out["scan_status"] = json.load(f)
+                    
+            self.wfile.write(json.dumps(out, indent=4).encode('utf-8'))
+        except Exception as e:
+            self.wfile.write(f'{{"error": "{str(e)}"}}'.encode('utf-8'))
 
 def run_dummy_server():
     port = int(os.environ.get("PORT", 10000))
