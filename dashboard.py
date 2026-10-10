@@ -3,11 +3,13 @@ import os
 import db_helper
 
 import requests
+import streamlit as st
 
+@st.cache_data(ttl=5)
 def get_render_state():
     try:
         url = "https://trading-bot-leaw.onrender.com"
-        resp = requests.get(url, timeout=10)
+        resp = requests.get(url, timeout=30)
         if resp.status_code == 200:
             return resp.json()
     except Exception as e:
@@ -15,6 +17,7 @@ def get_render_state():
     return None
 
 RENDER_STATE = get_render_state()
+
 
 def get_state_smart(collection_name, default_val=None):
     if default_val is None: default_val = {}
