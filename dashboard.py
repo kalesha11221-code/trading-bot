@@ -34,7 +34,7 @@ def get_state_smart(collection_name, default_val=None):
             return RENDER_STATE["scan_status"]
             
     # 2. Fallback to MongoDB
-    return get_state_smart(collection_name, default_val)
+    return db_helper.get_state(collection_name, default_val)
 
 import sys
 import time
