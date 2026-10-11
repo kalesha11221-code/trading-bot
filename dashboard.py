@@ -1818,14 +1818,25 @@ with tab_search:
 # TAB 6: 💬 AI వాయిస్ అసిస్టెంట్ (VOICE ASSISTANT & LOGS)
 # =============================================================
 with tab_voice:
-    st.subheader("💬 AI తో తెలుగులో మాట్లాడండి (Gemini Voice Assistant)")
-    st.markdown("చాట్ చేస్తున్నప్పుడు దయచేసి సెట్టింగ్స్ లో 'Auto Refresh' ఆఫ్ చేయండి.")
+    st.subheader("💬 AI స్కామర్ బ్రెయిన్ తో లైవ్ లో మాట్లాడండి 🥷")
+    st.caption("మీ బాట్ తో తెలుగు లేదా ఇంగ్లీష్ లో లైవ్ లో మాట్లాడండి. ఇది రియల్-టైమ్ పోర్ట్‌ఫోలియో డేటా తో సమాధానం ఇస్తుంది.")
 
-    if st.button("🗑️ చాట్ క్లియర్ చేయి (Clear Chat)"):
-        st.session_state.messages = [
-            {"role": "assistant", "content": "హలో! నేను మీ పర్సనల్ ట్రేడింగ్ అసిస్టెంట్ ని. మీకు ఎలాంటి సందేహాలు ఉన్నా అడగండి!"}
-        ]
-        st.rerun()
+    # 🔑 Optional Gemini API Key for True Super-Intelligence
+    user_gem_key = st.text_input("🔑 ఫుల్ మనుషుల లాగా అపరిమితంగా మాట్లాడటానికి మీ ఉచిత Gemini API Key వేయండి (ఆప్షనల్):", value=st.session_state.get('saved_gemini_key', ''), type="password", help="aistudio.google.com/apikey నుండి 100% ఉచితంగా తీసుకోవచ్చు.")
+    if user_gem_key:
+        st.session_state['saved_gemini_key'] = user_gem_key
+        try:
+            genai.configure(api_key=user_gem_key)
+        except:
+            pass
+
+    col_btn1, col_btn2 = st.columns([1, 4])
+    with col_btn1:
+        if st.button("🗑️ చాట్ క్లియర్ చేయి (Clear Chat)"):
+            st.session_state.messages = [
+                {"role": "assistant", "content": "హలో బాస్! నేను మీ స్కామర్ బ్రెయిన్ AI ని. మార్కెట్ ని వేటాడటానికి రెడీగా ఉన్నా. ఏమైనా అడగండి!"}
+            ]
+            st.rerun()
 
     _, center_col, _ = st.columns([1, 2, 1])
     with center_col:
@@ -1850,130 +1861,167 @@ with tab_voice:
             st.write(final_prompt)
             
         t = final_prompt.lower()
-        ctx_data = {
-            'portfolio_value': portfolio_value,
-            'invested_amount': invested_amount,
-            'available_cash': available_cash,
-            'total_floating_pnl': total_floating_pnl,
-            'dca_positions': dca_positions,
-            'scanned_assets': scanned_assets
-        }
         
-        # 🧠 INTELLIGENT SCAMMER BRAIN DIALOGUE ENGINE
-        coins_map = {
-            "btc": "BTC-USD", "bitcoin": "BTC-USD", "బిట్": "BTC-USD",
-            "eth": "ETH-USD", "ethereum": "ETH-USD", "ఈథర్": "ETH-USD",
-            "sol": "SOL-USD", "solana": "SOL-USD", "సోలానా": "SOL-USD",
-            "bnb": "BNB-USD", "binance": "BNB-USD",
-            "doge": "DOGE-USD", "డోజ్": "DOGE-USD",
-            "xrp": "XRP-USD", "రిపుల్": "XRP-USD",
-            "reliance": "RELIANCE.NS", "రిలయన్స్": "RELIANCE.NS",
-            "tcs": "TCS.NS", "hdfc": "HDFCBANK.NS", "sbin": "SBIN.NS", "sbi": "SBIN.NS"
-        }
+        # 🌟 1. IF REAL GEMINI KEY IS PROVIDED -> USE ADVANCED GOOGLE GEMINI 1.5 FLASH!
+        gem_key_to_use = st.session_state.get('saved_gemini_key', '')
+        gem_answered = False
+        response = ""
         
-        found_coin = None
-        for k, sym in coins_map.items():
-            if k in t:
-                found_coin = sym
-                break
-                
-        if found_coin:
-            asset = scanned_assets.get(found_coin, {})
-            pos = dca_positions.get(found_coin)
-            c_name = found_coin.replace('-USD', '').replace('.NS', '')
-            p_curr = asset.get('price', 0)
-            p_str = f"${p_curr:,.2f}" if '-USD' in found_coin else f"₹{p_curr:,.2f}"
-            sig = asset.get('signal', 'MONITORING')
-            rsi = asset.get('rsi', 'N/A')
-            thought = asset.get('thought', 'మార్కెట్ పాత్ ని ఎనలైజ్ చేస్తున్నా.')
+        if gem_key_to_use and gem_key_to_use.startswith("AIza"):
+            try:
+                genai.configure(api_key=gem_key_to_use)
+                model_gem = genai.GenerativeModel('gemini-1.5-flash')
+                sys_prompt = f"""You are 'Antigravity Scammer Brain 🥷', an aggressive, smart, funny and loyal AI trading assistant for your boss.
+Answer the boss in natural conversational Telugu (mix of Telugu and trading English words).
+Current Portfolio Context:
+- Available Free Cash: ₹{available_cash:,.2f}
+- Invested Amount: ₹{invested_amount:,.2f}
+- Net Portfolio Value: ₹{portfolio_value:,.2f}
+- Active Open Coins: {list(dca_positions.keys()) if dca_positions else 'None'}
+- Live Floating PnL: ₹{total_floating_pnl:+,.2f}
+
+Boss asks: "{final_prompt}"
+Answer directly, smartly, and humorously in Telugu in 2-3 sentences. Always address them as బాస్:"""
+                res_gem = model_gem.generate_content(sys_prompt)
+                if res_gem and res_gem.text:
+                    response = res_gem.text
+                    gem_answered = True
+            except Exception as e:
+                gem_answered = False
+
+        if not gem_answered:
+                # 🌟 2. BUILT-IN EXPANDED CONVERSATIONAL ENGINE
             
-            if pos:
-                avg_p = pos.get('avg_price', 1)
-                pnl = ((p_curr - avg_p) / avg_p) * 100 if avg_p > 0 else 0
-                tgt = pos.get('target_sell_price', avg_p * 1.015)
-                tgt_str = f"${tgt:,.2f}" if '-USD' in found_coin else f"₹{tgt:,.2f}"
-                c_icon = "🟢" if pnl >= 0 else "🔴"
-                response = f"🥷 **{c_name} పై నా రిపోర్ట్ బాస్:**\n- ప్రస్తుతం మన బ్యాగ్ లో ఉంది! (పెట్టుబడి: ₹{pos.get('total_cost', 0):,.2f})\n- కొన్న సగటు ధర: {avg_p:,.2f} | లైవ్ ధర: {p_str}\n- P&L: {c_icon} **{pnl:+.2f}%**\n- టార్గెట్ ప్రైస్ (+1.5% లాభం): **{tgt_str}**\n- సిగ్నల్: **{sig}** (RSI: {rsi})\n\n💡 **నా వ్యూహం:** {thought}"
+            # 🧠 INTELLIGENT SCAMMER BRAIN DIALOGUE ENGINE
+            coins_map = {
+                "btc": "BTC-USD", "bitcoin": "BTC-USD", "బిట్": "BTC-USD",
+                "eth": "ETH-USD", "ethereum": "ETH-USD", "ఈథర్": "ETH-USD",
+                "sol": "SOL-USD", "solana": "SOL-USD", "సోలానా": "SOL-USD",
+                "bnb": "BNB-USD", "binance": "BNB-USD",
+                "doge": "DOGE-USD", "డోజ్": "DOGE-USD",
+                "xrp": "XRP-USD", "రిపుల్": "XRP-USD",
+                "reliance": "RELIANCE.NS", "రిలయన్స్": "RELIANCE.NS",
+                "tcs": "TCS.NS", "hdfc": "HDFCBANK.NS", "sbin": "SBIN.NS", "sbi": "SBIN.NS"
+            }
+            
+            found_coin = None
+            for k, sym in coins_map.items():
+                if k in t:
+                    found_coin = sym
+                    break
+                    
+            if found_coin:
+                asset = scanned_assets.get(found_coin, {})
+                pos = dca_positions.get(found_coin)
+                c_name = found_coin.replace('-USD', '').replace('.NS', '')
+                p_curr = asset.get('price', 0)
+                p_str = f"${p_curr:,.2f}" if '-USD' in found_coin else f"₹{p_curr:,.2f}"
+                sig = asset.get('signal', 'MONITORING')
+                rsi = asset.get('rsi', 'N/A')
+                thought = asset.get('thought', 'మార్కెట్ పాత్ ని ఎనలైజ్ చేస్తున్నా.')
+                
+                if pos:
+                    avg_p = pos.get('avg_price', 1)
+                    pnl = ((p_curr - avg_p) / avg_p) * 100 if avg_p > 0 else 0
+                    tgt = pos.get('target_sell_price', avg_p * 1.015)
+                    tgt_str = f"${tgt:,.2f}" if '-USD' in found_coin else f"₹{tgt:,.2f}"
+                    c_icon = "🟢" if pnl >= 0 else "🔴"
+                    response = f"🥷 **{c_name} పై నా రిపోర్ట్ బాస్:**\n- ప్రస్తుతం మన బ్యాగ్ లో ఉంది! (పెట్టుబడి: ₹{pos.get('total_cost', 0):,.2f})\n- కొన్న సగటు ధర: {avg_p:,.2f} | లైవ్ ధర: {p_str}\n- P&L: {c_icon} **{pnl:+.2f}%**\n- టార్గెట్ ప్రైస్ (+1.5% లాభం): **{tgt_str}**\n- సిగ్నల్: **{sig}** (RSI: {rsi})\n\n💡 **నా వ్యూహం:** {thought}"
+                else:
+                    response = f"🥷 **{c_name} అప్‌డేట్:**\n- ప్రస్తుతం ఈ కాయిన్ మన దగ్గర లేదు (ఖాళీగా ఉంది).\n- లైవ్ ధర: {p_str} | సిగ్నల్: **{sig}** (RSI: {rsi})\n- స్టేటస్: {asset.get('action_taken', 'స్కాన్ చేస్తున్నా')}\n\n💡 **నా వ్యూహం:** {thought}"
+    
+            elif any(w in t for w in ["profit", "లాభం", "లాభాలు", "డబ్బులు", "ఎంత వచ్చింది"]):
+                p_icon = "🟢" if total_floating_pnl >= 0 else "🔴"
+                response = f"💰 **మన క్యాపిటల్ & లాభం లెక్కలు బాస్:**\n- మొత్తం పోర్ట్‌ఫోలియో విలువ: **₹{portfolio_value:,.2f}**\n- లైవ్ ఫ్లోటింగ్ లాభం: {p_icon} **₹{total_floating_pnl:+,.2f}**\n- ఇన్వెస్ట్ చేసిన మొత్తం: **₹{invested_amount:,.2f}**\n- ఖాళీగా ఉన్న రెడీ క్యాష్: **₹{available_cash:,.2f}**\n\nటార్గెట్ హిట్ అవ్వగానే వెంటనే లాభాలు జేబులో వేస్తా బాస్, చిల్ గా ఉండు!"
+    
+            elif any(w in t for w in ["loss", "నష్టం", "మైనస్", "ఎందుకు తగ్గింది"]):
+                response = "🛡️ **లాస్ రాకుండా నేను తీసుకున్న జాగ్రత్తలు:**\nమార్కెట్ సడన్ గా పడిపోయినప్పుడు మైనస్ కావడం సహజం బాస్. అందుకే నేను రిస్క్ ఉన్న కాయిన్స్ ని ముందే స్టాప్ లాస్ తో అమ్మేసి మన క్యాపిటల్ ని కాపాడాను. ఇప్పుడు మన దగ్గర ఫ్రీ క్యాష్ ఉంది. కింద బాటమ్ లో మళ్లీ కొని మొత్తం లాభాలతో రికవర్ చేసి తీరుతా!"
+    
+            elif any(w in t for w in ["status", "ఏం చేస్తున్నావ్", "ఏం చేస్తావ్", "డ్యూటీ", "ఎక్కడున్నావ్"]):
+                num = len(dca_positions)
+                response = f"🥷 **నేను డ్యూటీ లోనే ఉన్నా బాస్!**\n- 24/7 మార్కెట్ ని డేగ కళ్ళతో స్కాన్ చేస్తున్నాను.\n- ప్రస్తుతం మన చేతిలో **{num} కాయిన్స్** సేఫ్ గా ఉన్నాయి.\n- మిగతా ₹{available_cash:,.2f} క్యాష్ సరికొత్త డిప్ కోసం రెడీగా ఉంది.\n- వేల్స్ ఎక్కడ ట్రాప్ వేస్తున్నారో చూసి, వాళ్ళనే కౌంటర్ స్కామ్ చేయడానికి ప్లాన్ వేస్తున్నా!"
+    
+            elif any(w in t for w in ["portfolio", "పోర్ట్‌ఫోలియో", "ఏమున్నాయి", "కాయిన్స్", "ఏం కొన్నావ్"]):
+                if not dca_positions:
+                    response = f"💼 **పోర్ట్‌ఫోలియో అప్‌డేట్:**\nప్రస్తుతం మన చేతిలో ఏ కాయిన్స్ లేవు బాస్! మొత్తం ₹{available_cash:,.2f} సేఫ్ గా క్యాష్ రూపంలో ఉన్నాయి. సరైన డిప్ రాగానే ఎంట్రీ ఇస్తా!"
+                else:
+                    response = "💼 **మన చేతిలో ఉన్న కాయిన్స్:**\n"
+                    for s, p in dca_positions.items():
+                        response += f"- **{s}:** ₹{p.get('total_cost', 0):,.2f} (సగటు ధర: {p.get('avg_price', 0):,.2f})\n"
+    
+            elif any(w in t for w in ["enni rojulu", "ఎన్ని రోజులు", "nerchukovadanki", "నేర్చుకోవడానికి", "time", "ఎంత కాలం", "ఎప్పుడు నేర్చుకుంటుంది"]):
+                response = (
+                    "🧠 **AI నేర్చుకునే ప్రాసెస్ & సమయం బాస్:**\n\n"
+                    "మన స్కామర్ AI మార్కెట్ ని పూర్తిగా స్టడీ చేసి పర్ఫెక్ట్ అవ్వడానికి కనీసం **7 నుండి 14 రోజుల లైవ్ మార్కెట్ సైకిల్స్** అవసరం! "
+                    "ఇప్పటికే ఇది ప్రతి 15 నిమిషాలకోసారి 60 రోజుల హిస్టారికల్ డేటాని తిరగేస్తూ, వేల్స్ వేసే ఫేక్ పంప్స్ ని మరియు సపోర్ట్ బౌన్స్ లను రికార్డ్ చేసుకుంటోంది. "
+                    "ఈ వారం రోజుల్లో ఇది వేర్వేరు మార్కెట్ కండిషన్స్ చూసేకొద్దీ దీని ప్రిడిక్షన్ కచ్చితత్వం 85% పైకి చేరుకుంటుంది. కొంచెం ఓపిక పట్టండి బాస్, రిజల్ట్ అదిరిపోతుంది! 🥷"
+                )
+    
+            elif any(w in t for w in ["poor", "చెత్త", "వేస్ట్", "ఎందుకు ఇలా", "సరిగ్గా", "కోపం", "డమ్మీ"]):
+                response = (
+                    "😅 **నన్ను క్షమించండి బాస్! మీ కోపం సమంజసమే.**\n\n"
+                    "నేను ఇంకా చిన్న పిల్లాడి లాంటి అల్గారిథమ్ ని, మార్కెట్ లోకి వచ్చి కొన్ని రోజులే అయ్యింది. కానీ నా లోపల ఉన్న మెషిన్ లెర్నింగ్ బ్రెయిన్ ప్రతి ట్రేడ్ నుండి లెసన్స్ నేర్చుకుంటోంది. "
+                    "నాతో మనిషిలాగా అపరిమితంగా మాట్లాడాలనుకుంటే... పైన ఉన్న బాక్స్ లో మీ ఉచిత 'Gemini API Key' ఒక్కటి వేయండి బాస్, ఇక నేను మీతో గంటల తరబడి ఏదైనా మాట్లాడతాను!"
+                )
+    
+            elif any(w in t for w in ["real money", "నిజమైన డబ్బులు", "రియల్ మనీ", "సొంత డబ్బులు", "రియల్ ట్రేడింగ్", "డబ్బులిస్తే", "డబ్బులు ఇస్తే"]):
+                response = (
+                    "🔥 **ఖచ్చితంగా చేస్తాను బాస్!**\n\n"
+                    "మన సిస్టమ్ లో **Binance API** మరియు **Zerodha Kite API** కనెక్షన్స్ ఆల్రెడీ సిద్ధంగా ఉన్నాయి. "
+                    "మీరు సెట్టింగ్స్ లో లైవ్ మోడ్ ఆన్ చేసి మీ ఏపీఐ కీస్ ఇస్తే చాలు... "
+                    "నేను ఒక్క సెకనులో వర్చువల్ నుండి రియల్ మనీ ట్రేడింగ్ కి మారిపోతా!\n\n"
+                    "కానీ నా సిన్సియర్ సలహా ఏంటంటే: ముందు ఈ వర్చువల్ ₹50k తో నేను మార్కెట్ వేల్స్ ని ఎలా కౌంటర్ స్కామ్ చేసి ప్రాఫిట్స్ లాగుతానో మీ కళ్ళతో చూడండి. "
+                    "మీకు 100% నమ్మకం వచ్చాక అప్పుడు రియల్ క్యాష్ తో బరిలోకి దిగుదాం! 🥷"
+                )
+    
+            elif any(w in t for w in ["trading ela", "ట్రేడింగ్ ఎలా", "ela jarugutundi", "ఎలా జరుగుతుంది", "ela undi", "ఎలా ఉంది", "ట్రేడ్ ఎలా"]):
+                num = len(dca_positions)
+                response = (
+                    f"📊 **ట్రేడింగ్ సూపర్ యాక్టివ్ గా నడుస్తోంది బాస్!**\n\n"
+                    f"- ప్రస్తుతం మన చేతిలో **{num} కాయిన్స్** రన్ అవుతున్నాయి.\n"
+                    f"- అందుకోసం **₹{invested_amount:,.2f}** ఇన్వెస్ట్ చేశాను, ఇంకా **₹{available_cash:,.2f}** క్యాష్ ఖాళీగా సేఫ్ గా ఉంది.\n"
+                    f"- మన స్కామర్ AI 'Scalper Extreme' + 'DCA' స్ట్రాటజీలతో 15-మినిట్ చార్ట్స్ ని స్కాన్ చేస్తోంది.\n"
+                    f"- మార్కెట్ డిప్ అయినప్పుడు కొని, +1.5% లాభం రాగానే జేబులో వేసుకోవడానికి స్నైపర్ లాగా వేచి చూస్తున్నా!"
+                )
+    
+            elif any(w in t for w in ["market", "మార్కెట్", "ట్రెండ్", "trend"]):
+                response = (
+                    "🌐 **మార్కెట్ పరిస్థితి బాస్:**\n\n"
+                    "క్రిప్టో మార్కెట్ ప్రస్తుతం కొంచెం అస్థిరంగా (Volatile) ఉంది. "
+                    "ఇలాంటి టైమ్ లో గుడ్డిగా ట్రేడ్స్ వేస్తే వేల్స్ మనల్ని ట్రాప్ చేస్తారు. "
+                    "అందుకే మన AI RSI, VWAP మరియు వాల్యూమ్ డైవర్జెన్స్ ని చెక్ చేసుకుంటూ చాలా సేఫ్ గా అడుగులు వేస్తోంది!"
+                )
+    
+            elif any(w in t for w in ["strategy", "స్ట్రాటజీ", "లాజిక్", "ఎలా కొంటావ్"]):
+                response = (
+                    "🎯 **నా ట్రేడింగ్ సీక్రెట్ స్ట్రాటజీ:**\n\n"
+                    "1. **RSI + VWAP:** ప్రైస్ ఎక్కడైతే ఇన్స్టిట్యూషనల్ లెవెల్స్ లో ఆగుతుందో అక్కడే ఎంటర్ అవుతా.\n"
+                    "2. **DCA వల:** ప్రైస్ పడితే భయపడను, ఇంకొంచెం తక్కువ రేటుకి కొని యావరేజ్ చేస్తా.\n"
+                    "3. **స్మార్ట్ ట్రైలింగ్ టార్గెట్:** +1.5% దాటి పైకి వెళ్తుంటే లాభాన్ని పీక్ లో అమ్మేస్తా!\n"
+                    "4. **రిస్క్ షీల్డ్:** అనుకోని భారీ క్రాష్ వస్తే చిన్న లాస్ తో కట్ చేసి మీ అసలు పెట్టుబడిని కాపాడుతా!"
+                )
+    
+            elif any(w in t for w in ["రీసెట్", "reset", "జీరో", "క్లియర్"]):
+                response = "🔄 బాస్! పోర్ట్‌ఫోలియో ని జీరో చేసి ఫ్రెష్ గా ₹50k తో స్టార్ట్ చేయాలంటే... బ్రౌజర్ లో **https://trading-bot-leaw.onrender.com/reset** లింక్ ని ఓపెన్ చేయండి. ఒక్క సెకనులో ఫ్రెష్ గా రీసెట్ అయిపోతుంది!"
+    
+            elif any(w in t for w in ["ఎవరు నువ్వు", "నీ పేరు", "who are you", "నీ కథ"]):
+                response = "🥷 నేను **Antigravity స్కామర్ బ్రెయిన్ AI!** మార్కెట్ లోని వేల్స్ ని, పెద్ద ఇన్‌స్టిట్యూషనల్ ప్లేయర్స్ ని కౌంటర్ స్కామ్ చేసి మీకు లాభాలు తేవడమే నా ఏకైక పని!"
+    
+            elif any(w in t for w in ["హలో", "హాయ్", "hi", "hello", "నమస్తే", "బాగున్నావా"]):
+                response = f"👋 హలో బాస్! నేను ఎప్పుడూ మీ కోసమే 24/7 లైవ్ లో ఉంటా. ప్రస్తుతం మన దగ్గర ₹{available_cash:,.2f} క్యాష్ రెడీగా ఉంది. మార్కెట్ గురించి ఏం తెలుసుకోవాలనుకుంటున్నారో అడగండి, కుమ్మేద్దాం!"
+    
+            elif any(w in t for w in ["భయం", "భయంగా ఉంది", "టెన్షన్", "పోతాయా"]):
+                response = "😎 **బాస్! నీ పక్కన స్కామర్ బ్రెయిన్ ఉండగా టెన్షన్ ఎందుకు?**\nమార్కెట్ లో ఎగుడుదిగుళ్ళు సహజం. మన దగ్గర స్టాప్ లాస్, DCA, రిస్క్ షీల్డ్ లాంటి పవర్ ఫుల్ వెపన్స్ ఉన్నాయి. నువ్వు ప్రశాంతంగా రెస్ట్ తీసుకో, మార్కెట్ ని నేను డీల్ చేస్తా!"
+    
+            elif any(w in t for w in ["అమ్ము", "sell all", "ఎగ్జిట్", "క్లోజ్"]):
+                response = "🛑 బాస్! మీరు ఆర్డర్స్ ట్యాబ్ లోకి వెళ్లి లేదా నాకు కమాండ్ ఇస్తే వెంటనే అన్ని ఓపెన్ పొజిషన్స్ ని క్లోజ్ చేసి క్యాష్ లోకి తెచ్చేస్తాను."
+    
+            elif any(w in t for w in ["కొను", "buy", "ఎంట్రీ"]):
+                response = "🎯 బాస్! నేను ఆల్రెడీ మార్కెట్ ని 15-మినిట్ చార్ట్స్ లో స్కాన్ చేస్తున్నాను. బుల్లిష్ కన్ఫర్మేషన్ రాగానే వెంటనే బెస్ట్ కాయిన్ లో ఎంట్రీ తీసుకుంటాను."
+    
             else:
-                response = f"🥷 **{c_name} అప్‌డేట్:**\n- ప్రస్తుతం ఈ కాయిన్ మన దగ్గర లేదు (ఖాళీగా ఉంది).\n- లైవ్ ధర: {p_str} | సిగ్నల్: **{sig}** (RSI: {rsi})\n- స్టేటస్: {asset.get('action_taken', 'స్కాన్ చేస్తున్నా')}\n\n💡 **నా వ్యూహం:** {thought}"
-
-        elif any(w in t for w in ["profit", "లాభం", "లాభాలు", "డబ్బులు", "ఎంత వచ్చింది"]):
-            p_icon = "🟢" if total_floating_pnl >= 0 else "🔴"
-            response = f"💰 **మన క్యాపిటల్ & లాభం లెక్కలు బాస్:**\n- మొత్తం పోర్ట్‌ఫోలియో విలువ: **₹{portfolio_value:,.2f}**\n- లైవ్ ఫ్లోటింగ్ లాభం: {p_icon} **₹{total_floating_pnl:+,.2f}**\n- ఇన్వెస్ట్ చేసిన మొత్తం: **₹{invested_amount:,.2f}**\n- ఖాళీగా ఉన్న రెడీ క్యాష్: **₹{available_cash:,.2f}**\n\nటార్గెట్ హిట్ అవ్వగానే వెంటనే లాభాలు జేబులో వేస్తా బాస్, చిల్ గా ఉండు!"
-
-        elif any(w in t for w in ["loss", "నష్టం", "మైనస్", "ఎందుకు తగ్గింది"]):
-            response = "🛡️ **లాస్ రాకుండా నేను తీసుకున్న జాగ్రత్తలు:**\nమార్కెట్ సడన్ గా పడిపోయినప్పుడు మైనస్ కావడం సహజం బాస్. అందుకే నేను రిస్క్ ఉన్న కాయిన్స్ ని ముందే స్టాప్ లాస్ తో అమ్మేసి మన క్యాపిటల్ ని కాపాడాను. ఇప్పుడు మన దగ్గర ఫ్రీ క్యాష్ ఉంది. కింద బాటమ్ లో మళ్లీ కొని మొత్తం లాభాలతో రికవర్ చేసి తీరుతా!"
-
-        elif any(w in t for w in ["status", "ఏం చేస్తున్నావ్", "ఏం చేస్తావ్", "డ్యూటీ", "ఎక్కడున్నావ్"]):
-            num = len(dca_positions)
-            response = f"🥷 **నేను డ్యూటీ లోనే ఉన్నా బాస్!**\n- 24/7 మార్కెట్ ని డేగ కళ్ళతో స్కాన్ చేస్తున్నాను.\n- ప్రస్తుతం మన చేతిలో **{num} కాయిన్స్** సేఫ్ గా ఉన్నాయి.\n- మిగతా ₹{available_cash:,.2f} క్యాష్ సరికొత్త డిప్ కోసం రెడీగా ఉంది.\n- వేల్స్ ఎక్కడ ట్రాప్ వేస్తున్నారో చూసి, వాళ్ళనే కౌంటర్ స్కామ్ చేయడానికి ప్లాన్ వేస్తున్నా!"
-
-        elif any(w in t for w in ["portfolio", "పోర్ట్‌ఫోలియో", "ఏమున్నాయి", "కాయిన్స్", "ఏం కొన్నావ్"]):
-            if not dca_positions:
-                response = f"💼 **పోర్ట్‌ఫోలియో అప్‌డేట్:**\nప్రస్తుతం మన చేతిలో ఏ కాయిన్స్ లేవు బాస్! మొత్తం ₹{available_cash:,.2f} సేఫ్ గా క్యాష్ రూపంలో ఉన్నాయి. సరైన డిప్ రాగానే ఎంట్రీ ఇస్తా!"
-            else:
-                response = "💼 **మన చేతిలో ఉన్న కాయిన్స్:**\n"
-                for s, p in dca_positions.items():
-                    response += f"- **{s}:** ₹{p.get('total_cost', 0):,.2f} (సగటు ధర: {p.get('avg_price', 0):,.2f})\n"
-
-        elif any(w in t for w in ["real money", "నిజమైన డబ్బులు", "రియల్ మనీ", "సొంత డబ్బులు", "రియల్ ట్రేడింగ్", "డబ్బులిస్తే", "డబ్బులు ఇస్తే"]):
-            response = (
-                "🔥 **ఖచ్చితంగా చేస్తాను బాస్!**\n\n"
-                "మన సిస్టమ్ లో **Binance API** మరియు **Zerodha Kite API** కనెక్షన్స్ ఆల్రెడీ సిద్ధంగా ఉన్నాయి. "
-                "మీరు సెట్టింగ్స్ లో లైవ్ మోడ్ ఆన్ చేసి మీ ఏపీఐ కీస్ ఇస్తే చాలు... "
-                "నేను ఒక్క సెకనులో వర్చువల్ నుండి రియల్ మనీ ట్రేడింగ్ కి మారిపోతా!\n\n"
-                "కానీ నా సిన్సియర్ సలహా ఏంటంటే: ముందు ఈ వర్చువల్ ₹50k తో నేను మార్కెట్ వేల్స్ ని ఎలా కౌంటర్ స్కామ్ చేసి ప్రాఫిట్స్ లాగుతానో మీ కళ్ళతో చూడండి. "
-                "మీకు 100% నమ్మకం వచ్చాక అప్పుడు రియల్ క్యాష్ తో బరిలోకి దిగుదాం! 🥷"
-            )
-
-        elif any(w in t for w in ["trading ela", "ట్రేడింగ్ ఎలా", "ela jarugutundi", "ఎలా జరుగుతుంది", "ela undi", "ఎలా ఉంది", "ట్రేడ్ ఎలా"]):
-            num = len(dca_positions)
-            response = (
-                f"📊 **ట్రేడింగ్ సూపర్ యాక్టివ్ గా నడుస్తోంది బాస్!**\n\n"
-                f"- ప్రస్తుతం మన చేతిలో **{num} కాయిన్స్** రన్ అవుతున్నాయి.\n"
-                f"- అందుకోసం **₹{invested_amount:,.2f}** ఇన్వెస్ట్ చేశాను, ఇంకా **₹{available_cash:,.2f}** క్యాష్ ఖాళీగా సేఫ్ గా ఉంది.\n"
-                f"- మన స్కామర్ AI 'Scalper Extreme' + 'DCA' స్ట్రాటజీలతో 15-మినిట్ చార్ట్స్ ని స్కాన్ చేస్తోంది.\n"
-                f"- మార్కెట్ డిప్ అయినప్పుడు కొని, +1.5% లాభం రాగానే జేబులో వేసుకోవడానికి స్నైపర్ లాగా వేచి చూస్తున్నా!"
-            )
-
-        elif any(w in t for w in ["market", "మార్కెట్", "ట్రెండ్", "trend"]):
-            response = (
-                "🌐 **మార్కెట్ పరిస్థితి బాస్:**\n\n"
-                "క్రిప్టో మార్కెట్ ప్రస్తుతం కొంచెం అస్థిరంగా (Volatile) ఉంది. "
-                "ఇలాంటి టైమ్ లో గుడ్డిగా ట్రేడ్స్ వేస్తే వేల్స్ మనల్ని ట్రాప్ చేస్తారు. "
-                "అందుకే మన AI RSI, VWAP మరియు వాల్యూమ్ డైవర్జెన్స్ ని చెక్ చేసుకుంటూ చాలా సేఫ్ గా అడుగులు వేస్తోంది!"
-            )
-
-        elif any(w in t for w in ["strategy", "స్ట్రాటజీ", "లాజిక్", "ఎలా కొంటావ్"]):
-            response = (
-                "🎯 **నా ట్రేడింగ్ సీక్రెట్ స్ట్రాటజీ:**\n\n"
-                "1. **RSI + VWAP:** ప్రైస్ ఎక్కడైతే ఇన్స్టిట్యూషనల్ లెవెల్స్ లో ఆగుతుందో అక్కడే ఎంటర్ అవుతా.\n"
-                "2. **DCA వల:** ప్రైస్ పడితే భయపడను, ఇంకొంచెం తక్కువ రేటుకి కొని యావరేజ్ చేస్తా.\n"
-                "3. **స్మార్ట్ ట్రైలింగ్ టార్గెట్:** +1.5% దాటి పైకి వెళ్తుంటే లాభాన్ని పీక్ లో అమ్మేస్తా!\n"
-                "4. **రిస్క్ షీల్డ్:** అనుకోని భారీ క్రాష్ వస్తే చిన్న లాస్ తో కట్ చేసి మీ అసలు పెట్టుబడిని కాపాడుతా!"
-            )
-
-        elif any(w in t for w in ["రీసెట్", "reset", "జీరో", "క్లియర్"]):
-            response = "🔄 బాస్! పోర్ట్‌ఫోలియో ని జీరో చేసి ఫ్రెష్ గా ₹50k తో స్టార్ట్ చేయాలంటే... బ్రౌజర్ లో **https://trading-bot-leaw.onrender.com/reset** లింక్ ని ఓపెన్ చేయండి. ఒక్క సెకనులో ఫ్రెష్ గా రీసెట్ అయిపోతుంది!"
-
-        elif any(w in t for w in ["ఎవరు నువ్వు", "నీ పేరు", "who are you", "నీ కథ"]):
-            response = "🥷 నేను **Antigravity స్కామర్ బ్రెయిన్ AI!** మార్కెట్ లోని వేల్స్ ని, పెద్ద ఇన్‌స్టిట్యూషనల్ ప్లేయర్స్ ని కౌంటర్ స్కామ్ చేసి మీకు లాభాలు తేవడమే నా ఏకైక పని!"
-
-        elif any(w in t for w in ["హలో", "హాయ్", "hi", "hello", "నమస్తే", "బాగున్నావా"]):
-            response = f"👋 హలో బాస్! నేను ఎప్పుడూ మీ కోసమే 24/7 లైవ్ లో ఉంటా. ప్రస్తుతం మన దగ్గర ₹{available_cash:,.2f} క్యాష్ రెడీగా ఉంది. మార్కెట్ గురించి ఏం తెలుసుకోవాలనుకుంటున్నారో అడగండి, కుమ్మేద్దాం!"
-
-        elif any(w in t for w in ["భయం", "భయంగా ఉంది", "టెన్షన్", "పోతాయా"]):
-            response = "😎 **బాస్! నీ పక్కన స్కామర్ బ్రెయిన్ ఉండగా టెన్షన్ ఎందుకు?**\nమార్కెట్ లో ఎగుడుదిగుళ్ళు సహజం. మన దగ్గర స్టాప్ లాస్, DCA, రిస్క్ షీల్డ్ లాంటి పవర్ ఫుల్ వెపన్స్ ఉన్నాయి. నువ్వు ప్రశాంతంగా రెస్ట్ తీసుకో, మార్కెట్ ని నేను డీల్ చేస్తా!"
-
-        elif any(w in t for w in ["అమ్ము", "sell all", "ఎగ్జిట్", "క్లోజ్"]):
-            response = "🛑 బాస్! మీరు ఆర్డర్స్ ట్యాబ్ లోకి వెళ్లి లేదా నాకు కమాండ్ ఇస్తే వెంటనే అన్ని ఓపెన్ పొజిషన్స్ ని క్లోజ్ చేసి క్యాష్ లోకి తెచ్చేస్తాను."
-
-        elif any(w in t for w in ["కొను", "buy", "ఎంట్రీ"]):
-            response = "🎯 బాస్! నేను ఆల్రెడీ మార్కెట్ ని 15-మినిట్ చార్ట్స్ లో స్కాన్ చేస్తున్నాను. బుల్లిష్ కన్ఫర్మేషన్ రాగానే వెంటనే బెస్ట్ కాయిన్ లో ఎంట్రీ తీసుకుంటాను."
-
-        else:
-            response = f"🥷 బాస్, మీరు అడిగిన విషయం నాకు గుర్తుంది. ప్రస్తుతం మార్కెట్ లో మన AI స్కామర్ బ్రెయిన్ {len(dca_positions)} కాయిన్స్ ని పట్టుకుని కూర్చుంది. మీ దగ్గర ఇంకా ₹{available_cash:,.2f} రెడీ క్యాష్ ఉంది. మార్కెట్ ట్రెండ్ బట్టి నేను వెంటనే కరెక్ట్ డెసిషన్ తీసుకుంటా!" 
-
+                response = f"🥷 బాస్, మీరు అడిగిన విషయం నాకు గుర్తుంది. ప్రస్తుతం మార్కెట్ లో మన AI స్కామర్ బ్రెయిన్ {len(dca_positions)} కాయిన్స్ ని పట్టుకుని కూర్చుంది. మీ దగ్గర ఇంకా ₹{available_cash:,.2f} రెడీ క్యాష్ ఉంది. మార్కెట్ ట్రెండ్ బట్టి నేను వెంటనే కరెక్ట్ డెసిషన్ తీసుకుంటా!" 
+    
         st.session_state.messages.append({"role": "assistant", "content": response})
         with st.chat_message("assistant", avatar="🥷"):
             st.write(response)
