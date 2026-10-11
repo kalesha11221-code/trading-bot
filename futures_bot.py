@@ -44,12 +44,13 @@ def log_trade(sym, action, side, entry_p, exit_p, margin, lev, profit):
             f.write(f"{timestamp},{sym},{action},{side},{entry_p},{exit_p},{margin},{lev},{profit}\n")
 
 def fetch_binance_data(sym):
-    coin = sym.replace('-USD', '')
-    binance_pair = f'{coin}USDT'
+    # 1. Try Binance Direct API
     try:
+        coin = sym.replace('-USD', '')
+        binance_pair = f'{coin}USDT'
         url = f'https://api.binance.com/api/v3/klines?symbol={binance_pair}&interval=1m&limit=100'
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with urllib.request.urlopen(req, timeout=4) as resp:
             data = json.loads(resp.read().decode())
             rows = []
             for k in data:
@@ -59,12 +60,47 @@ def fetch_binance_data(sym):
                     'low': float(k[3]), 'close': float(k[4]), 'volume': float(k[5])
                 })
             df = pd.DataFrame(rows)
-            return df
-    except:
-        return pd.DataFrame()
+            if not df.empty and len(df) >= 30:
+                return df
+    except Exception:
+        pass
+
+    # 2. Cloud Fallback: Yahoo v8 Direct Chart API (Bypasses all Geo-Blocks & Cloud Bans!)
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'application/json'
+        }
+        url = f'https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1m&range=1d'
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            res = json.loads(resp.read().decode())
+            chart = res['chart']['result'][0]
+            timestamps = chart.get('timestamp', [])
+            quote = chart['indicators']['quote'][0]
+            if timestamps and 'close' in quote:
+                rows = []
+                for i in range(len(timestamps)):
+                    c = quote['close'][i]
+                    if c is not None:
+                        rows.append({
+                            'timestamp': datetime.fromtimestamp(timestamps[i]),
+                            'open': float(quote.get('open', [c])[i] or c),
+                            'high': float(quote.get('high', [c])[i] or c),
+                            'low': float(quote.get('low', [c])[i] or c),
+                            'close': float(c),
+                            'volume': float(quote.get('volume', [100.0])[i] or 100.0)
+                        })
+                df = pd.DataFrame(rows)
+                if not df.empty and len(df) >= 30:
+                    return df
+    except Exception:
+        pass
+
+    return pd.DataFrame()
 
 def generate_futures_signal(df):
-    if df.empty or len(df) < 50: return 'HOLD', 0.0
+    if df.empty or len(df) < 30: return 'HOLD', 0.0
     
     df['EMA_9'] = df['close'].ewm(span=9, adjust=False).mean()
     df['EMA_21'] = df['close'].ewm(span=21, adjust=False).mean()
@@ -79,23 +115,25 @@ def generate_futures_signal(df):
     last = df.iloc[-1]
     prev = df.iloc[-2]
     
-    if last['EMA_9'] > last['EMA_21'] and last['close'] > last['EMA_50']:
-        if prev['RSI'] < 35 and last['RSI'] > prev['RSI']:
-            return 'LONG', last['close']
-        if last['close'] > df['high'].iloc[-20:-1].max() * 0.999: 
-            return 'LONG', last['close']
-
-    if last['EMA_9'] < last['EMA_21'] and last['close'] < last['EMA_50']:
-        if prev['RSI'] > 65 and last['RSI'] < prev['RSI']:
-            return 'SHORT', last['close']
-        if last['close'] < df['low'].iloc[-20:-1].min() * 1.001: 
-            return 'SHORT', last['close']
+    # 🟢 BULLISH MOMENTUM ENTRY (LONG 5x)
+    # EMA 9 crosses above EMA 21 or strong trend with rising RSI
+    if last['EMA_9'] > last['EMA_21']:
+        if (last['close'] > last['EMA_50'] or (prev['RSI'] <= 45 and last['RSI'] > prev['RSI'])):
+            if last['RSI'] < 72: # Avoid chasing at extreme overbought
+                return 'LONG', last['close']
+                
+    # 🔴 BEARISH MOMENTUM ENTRY (SHORT 5x)
+    # EMA 9 crosses below EMA 21 or strong downtrend with falling RSI
+    if last['EMA_9'] < last['EMA_21']:
+        if (last['close'] < last['EMA_50'] or (prev['RSI'] >= 55 and last['RSI'] < prev['RSI'])):
+            if last['RSI'] > 28: # Avoid chasing at extreme oversold
+                return 'SHORT', last['close']
             
     return 'HOLD', last['close']
 
 def run_futures_bot():
     init_files()
-    print("🚀 Futures Paper Bot Started (Leverage: 5x)")
+    print("🚀 Futures Paper Bot Started (Leverage: 5x)", flush=True)
     
     while True:
         try:
@@ -140,7 +178,7 @@ def run_futures_bot():
                         log_trade(sym, "CLOSE", side, entry, current_price, pos['margin'], LEVERAGE, round(pnl_inr, 2))
                         del state[sym]
                         save_state(state)
-                        print(f"[{datetime.now().strftime('%H:%M:%S')}] 🛑 CLOSED {side} {sym} | PnL: ₹{pnl_inr:.2f} ({reason})")
+                        print(f"[{datetime.now().strftime('%H:%M:%S')}] 🛑 CLOSED {side} {sym} | PnL: ₹{pnl_inr:.2f} ({reason})", flush=True)
                         time.sleep(2)
                         
                 elif len(state) < MAX_POSITIONS and signal != 'HOLD':
@@ -157,7 +195,7 @@ def run_futures_bot():
                     }
                     save_state(state)
                     log_trade(sym, "OPEN", signal, current_price, 0, MARGIN_PER_TRADE, LEVERAGE, 0.0)
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🟢 OPENED {signal} {sym} @ ${current_price:.2f}")
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🟢 OPENED {signal} {sym} @ ${current_price:.2f}", flush=True)
                     time.sleep(2)
                     
             time.sleep(10) 

@@ -91,7 +91,7 @@ def send_telegram_message(text):
         if TELEGRAM_BOT_TOKEN != "ఇక్కడ_మీ_టెలిగ్రామ్_టోకెన్_వేయండి":
             url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
             payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text}
-            requests.post(url, json=payload)
+            requests.post(url, json=payload, timeout=5)
     except Exception as e:
         pass
 
@@ -448,7 +448,7 @@ def get_news_sentiment(sym):
             search_term = sym.replace('-USD', '') + " market news crypto"
         url = f"https://news.google.com/rss/search?q={search_term.replace(' ', '+')}&hl=en-US&gl=US&ceid=US:en"
         req = Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urlopen(req) as response:
+        with urlopen(req, timeout=5) as response:
             xml_data = response.read()
         root = ET.fromstring(xml_data)
         
@@ -1048,22 +1048,13 @@ def process_symbol(sym):
             
         peak_gain_pct = ((peak_p - avg_price) / avg_price) * 100.0
         
-        # High Profit / Scalper Triggers:
-        if is_scalp_style:
-            # Scalping exits: fast compounding profit capture
-            # 1. Trailing Exit: Reached >= 1.0% and dipped 0.3% from peak (locks in fast scalp!)
-            # 2. Target Exit: Reached >= 1.8% directly
-            # 3. Base Reversal Exit: Reached >= 0.8% with confirmed SELL reversal signal
-            is_trailing_exit = (peak_gain_pct >= 1.0 and current_price <= (peak_p * 0.997))
-            is_target_exit = (profit_pct >= 1.8)
-            is_reversal_exit = (profit_pct >= 0.8 and signal == 'sell')
-        else:
-            # 1. Trailing Exit: Reached >= 1.5% and dipped 0.4% from peak (locks in maximum profit!)
-            # 2. Big Target: Reached >= 2.8% directly
-            # 3. Base Reversal Exit: Reached >= 1.5% with confirmed SELL reversal signal
-            is_trailing_exit = (peak_gain_pct >= 1.5 and current_price <= (peak_p * 0.996))
-            is_target_exit = (profit_pct >= 2.8)
-            is_reversal_exit = (profit_pct >= 1.5 and signal == 'sell')
+        # 🚀 ONLY PROFIT MAXIMUM ENGINE (Super Tuned by Boss Request)
+        # 1. Smart Trailing Exit: Reached >= 2.5% and dipped 0.4% from peak (Trails 4-5% pumps!)
+        # 2. Explosive Direct Target Exit: Reached >= 4.0% directly
+        # 3. Confirmed Trend Reversal: Reached >= 2.0% with confirmed SELL reversal signal
+        is_trailing_exit = (peak_gain_pct >= 2.5 and current_price <= (peak_p * 0.996))
+        is_target_exit = (profit_pct >= 4.0)
+        is_reversal_exit = (profit_pct >= 2.0 and signal == 'sell')
         
         if is_trailing_exit or is_target_exit or is_reversal_exit:
             profit = (current_price - avg_price) * total_qty
@@ -1133,7 +1124,7 @@ def process_symbol(sym):
                 pos['total_qty'] += slice_qty
                 pos['total_cost'] += slice_cost_inr
                 pos['avg_price'] = pos['total_cost'] / pos['total_qty']
-                pos['target_sell_price'] = pos['avg_price'] * 1.015
+                pos['target_sell_price'] = pos['avg_price'] * 1.035
                 pos['peak_price'] = current_price
                 save_dca_state(dca_state)
                 
@@ -1142,7 +1133,7 @@ def process_symbol(sym):
                 avg_disp = f"₹{pos['avg_price']:,.2f}" if is_indian else f"${pos['avg_price']:,.2f}"
                 target_disp = f"₹{pos['target_sell_price']:,.2f}" if is_indian else f"${pos['target_sell_price']:,.2f}"
                 
-                msg = f"🎯 [{mode_str} స్కామర్ బ్రెయిన్ 🥷 DCA Layer {layer}/3]: {sym} @ {price_disp} ({qty_label})\nకొత్త సగటు ధర: {avg_disp} | టార్గెట్ (+1.5%): {target_disp}\n{thought}"
+                msg = f"🎯 [{mode_str} స్కామర్ బ్రెయిన్ 🥷 DCA Layer {layer}/3]: {sym} @ {price_disp} ({qty_label})\nకొత్త సగటు ధర: {avg_disp} | టార్గెట్ (+3.5% బెస్ట్ ప్రాఫిట్): {target_disp}\n{thought}"
                 voice_msg = f"Alert. Averaging down on {clean_name}."
                 log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[96m')
                 log_trade("BUY", sym, current_price, slice_qty, 0.0)
@@ -1162,7 +1153,7 @@ def process_symbol(sym):
                     if not success:
                         log_status(f"⚠️ Live Binance Buy Warning ({sym}): {res}")
                         
-                target_p = current_price * 1.015
+                target_p = current_price * 1.035
                 dca_state[sym] = {
                     "entries": [{
                         "price": current_price,
@@ -1185,7 +1176,7 @@ def process_symbol(sym):
                 cost_disp = f"₹{slice_cost_inr:,.2f}" if is_indian else f"${slice_cost_usd} / ₹{slice_cost_inr:,.2f}"
                 target_disp = f"₹{target_p:,.2f}" if is_indian else f"${target_p:,.2f}"
                 
-                msg = f"🎯 [{mode_str} స్కామర్ బ్రెయిన్ 🥷 స్నైపర్ DCA]: {sym} డిప్ లో కొన్నాను @ {price_disp} ({cost_disp} | {qty_label})\n🎯 టార్గెట్ (+1.5% లాభం): {target_disp} | టెక్నిక్: {strat_used}\n{thought}"
+                msg = f"🎯 [{mode_str} స్కామర్ బ్రెయిన్ 🥷 స్నైపర్ DCA]: {sym} డిప్ లో కొన్నాను @ {price_disp} ({cost_disp} | {qty_label})\n🎯 టార్గెట్ (+3.5% బెస్ట్ ప్రాఫిట్): {target_disp} | టెక్నిక్: {strat_used}\n{thought}"
                 voice_msg = f"Alert. Buying fractional slice of {clean_name}."
                 log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
                 log_trade("BUY", sym, current_price, slice_qty, 0.0)
@@ -1207,7 +1198,7 @@ def process_symbol(sym):
         "pnl_pct": round(profit_pct, 2) if pos is not None else 0.0,
         "avg_price": round(pos['avg_price'], 2) if pos is not None else 0.0,
         "total_qty": pos['total_qty'] if pos is not None else 0.0,
-        "target_price": round(pos.get('target_sell_price', current_price * 1.015), 2) if pos is not None else 0.0,
+        "target_price": round(pos.get('target_sell_price', current_price * 1.035), 2) if pos is not None else 0.0,
         "peak_price": round(pos.get('peak_price', current_price), 2) if pos is not None else 0.0,
         "invested": round(pos.get('total_cost', 0.0), 2) if pos is not None else 0.0,
         "dca_layer": len(pos.get('entries', [])) if pos is not None else 0,
