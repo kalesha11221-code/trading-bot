@@ -618,10 +618,14 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("🛠️ AI Advanced Settings")
 
 # 1. Trading Style
+style_options = ["Scalping (Fast)", "Swing (Hold for Targets)"]
+current_style = bot_settings.get("trading_style", "Scalping (Fast)")
+style_idx = style_options.index(current_style) if current_style in style_options else 0
+
 new_style = st.sidebar.selectbox(
     "⏱️ Trading Style", 
-    ["Scalping (Fast)", "Swing (Hold for Targets)"], 
-    index=["Scalping (Fast)", "Swing (Hold for Targets)"].index(bot_settings.get("trading_style", "Scalping (Fast)"))
+    style_options, 
+    index=style_idx
 )
 
 # 2. Capital Sizing Engine (భారీ లాభాల కోసం పెద్ద క్యాపిటల్)
