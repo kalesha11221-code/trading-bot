@@ -9,6 +9,38 @@ print("Starting 24/7 Trading Bot Backend Worker (Render Web Service)...", flush=
 
 class DummyHandler(BaseHTTPRequestHandler):
     def do_GET(self):
+        import json
+        import os
+        
+        # 🔄 REMOTE ZERO RESET TRIGGER
+        if self.path == '/reset':
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.end_headers()
+            try:
+                # 1. Reset DCA State
+                with open("dca_state.json", "w") as f:
+                    json.dump({}, f)
+                # 2. Reset Futures State
+                with open("fo_state.json", "w") as f:
+                    json.dump({}, f)
+                # 3. Reset Trades Log
+                with open("trades_log.csv", "w") as f:
+                    f.write("Time,Symbol,Action,Price,Shares,Profit\n")
+                # 4. Reset MongoDB if helper exists
+                try:
+                    import db_helper
+                    db_helper.save_state('dca_state', {})
+                    db_helper.save_state('fo_state', {})
+                except:
+                    pass
+                msg = {"status": "SUCCESS", "message": "పోర్ట్‌ఫోలియో మరియు ట్రేడ్ హిస్టరీ పూర్తిగా జీరో చేసాము! AI కి కొత్తగా ₹50,000 క్యాపిటల్ కేటాయించబడింది. 🔥"}
+                self.wfile.write(json.dumps(msg, ensure_ascii=False, indent=4).encode('utf-8'))
+                return
+            except Exception as e:
+                self.wfile.write(json.dumps({"status": "ERROR", "error": str(e)}).encode('utf-8'))
+                return
+
         self.send_response(200)
         self.send_header("Content-type", "application/json; charset=utf-8")
         self.end_headers()
