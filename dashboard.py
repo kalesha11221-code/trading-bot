@@ -1483,34 +1483,30 @@ with tab_futures:
             pnl_c = "#00e676" if f_pnl_inr >= 0 else "#ff5252"
             side_bg = "#004d40" if f_side == 'LONG' else "#4a148c"
             
-            f_rows.append(f"""
-            <tr>
-              <td><b style="color:#e0e3eb;">{fsym}</b></td>
-              <td><span style="background:{side_bg};padding:3px 6px;border-radius:4px;font-weight:bold;">{f_side}</span> {f_lev}x</td>
-              <td>${f_entry:,.4f}</td>
-              <td style="color:#00bcd4;">${f_live:,.4f}</td>
-              <td>₹{f_margin:,.2f}</td>
-              <td style="color:{pnl_c};font-weight:bold;">₹{f_pnl_inr:+.2f} ({f_roe:+.2f}%)</td>
-            </tr>
-            """)
+            row_html = (
+                f"<tr>"
+                f"<td><b style='color:#e0e3eb;'>{fsym}</b></td>"
+                f"<td><span style='background:{side_bg};padding:3px 6px;border-radius:4px;font-weight:bold;'>{f_side}</span> {f_lev}x</td>"
+                f"<td>${f_entry:,.4f}</td>"
+                f"<td style='color:#00bcd4;'>${f_live:,.4f}</td>"
+                f"<td>₹{f_margin:,.2f}</td>"
+                f"<td style='color:{pnl_c};font-weight:bold;'>₹{f_pnl_inr:+.2f} ({f_roe:+.2f}%)</td>"
+                f"</tr>"
+            )
+            f_rows.append(row_html)
             
-        f_table = f"""
-        <table class="zk-pos-table" style="width:100%;border-collapse:separate;border-spacing:0;background:#131722;border:1px solid #2a2e39;border-radius:10px;overflow:hidden;">
-          <thead>
-            <tr style="background:#181c27;">
-              <th style="padding:11px 12px;color:#787b86;">Symbol</th>
-              <th style="padding:11px 12px;color:#787b86;">Side & Leverage</th>
-              <th style="padding:11px 12px;color:#787b86;">Entry Price</th>
-              <th style="padding:11px 12px;color:#00bcd4;">Live Price</th>
-              <th style="padding:11px 12px;color:#787b86;">Margin (₹)</th>
-              <th style="padding:11px 12px;color:#787b86;">PnL & ROE%</th>
-            </tr>
-          </thead>
-          <tbody style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#e0e3eb;">
-            {''.join(f_rows)}
-          </tbody>
-        </table>
-        """
+        rows_joined = "".join(f_rows)
+        f_table = (
+            "<table class='zk-pos-table' style='width:100%;border-collapse:separate;border-spacing:0;background:#131722;border:1px solid #2a2e39;border-radius:10px;overflow:hidden;'>"
+            "<thead><tr style='background:#181c27;'>"
+            "<th style='padding:11px 12px;color:#787b86;'>Symbol</th>"
+            "<th style='padding:11px 12px;color:#787b86;'>Side & Leverage</th>"
+            "<th style='padding:11px 12px;color:#787b86;'>Entry Price</th>"
+            "<th style='padding:11px 12px;color:#00bcd4;'>Live Price</th>"
+            "<th style='padding:11px 12px;color:#787b86;'>Margin (₹)</th>"
+            "<th style='padding:11px 12px;color:#787b86;'>PnL & ROE%</th>"
+            f"</tr></thead><tbody style='font-family:monospace;font-size:13px;color:#e0e3eb;'>{rows_joined}</tbody></table>"
+        )
         st.markdown(f_table, unsafe_allow_html=True)
         
     st.markdown("---")
