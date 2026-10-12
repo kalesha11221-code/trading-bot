@@ -67,6 +67,14 @@ class DummyHandler(BaseHTTPRequestHandler):
                 with open("live_scan_status.json", "r") as f:
                     out["scan_status"] = json.load(f)
                     
+            if os.path.exists("trades_log.csv"):
+                with open("trades_log.csv", "r") as f:
+                    out["trades_log"] = f.read()
+                    
+            if os.path.exists("fo_trades_log.csv"):
+                with open("fo_trades_log.csv", "r") as f:
+                    out["fo_trades_log"] = f.read()
+                    
             self.wfile.write(json.dumps(out, indent=4).encode('utf-8'))
         except Exception as e:
             self.wfile.write(f'{{"error": "{str(e)}"}}'.encode('utf-8'))

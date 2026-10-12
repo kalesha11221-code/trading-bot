@@ -11,7 +11,19 @@ def get_render_state():
         url = "https://trading-bot-leaw.onrender.com"
         resp = requests.get(url, timeout=30)
         if resp.status_code == 200:
-            return resp.json()
+            data = resp.json()
+            if isinstance(data, dict):
+                if "trades_log" in data and data["trades_log"]:
+                    try:
+                        with open("trades_log.csv", "w") as f_t:
+                            f_t.write(data["trades_log"])
+                    except: pass
+                if "fo_trades_log" in data and data["fo_trades_log"]:
+                    try:
+                        with open("fo_trades_log.csv", "w") as f_fo:
+                            f_fo.write(data["fo_trades_log"])
+                    except: pass
+            return data
     except Exception as e:
         pass
     return None
@@ -1334,118 +1346,6 @@ with tab_pos:
         </div>"""
         st.markdown(textwrap.dedent(positions_table_html), unsafe_allow_html=True)
 
-        # ─── TRADE SELECTOR PILLS ───
-        st.write("**👉 పూర్తి వివరాలు చూడాల్సిన కాయిన్ క్లిక్ చేయండి:**")
-        pill_cols = st.columns(len(trade_keys))
-        for idx_k, t_sym in enumerate(trade_keys):
-            clean_k = t_sym.replace('.NS', '').replace('-USD', '')
-            pnl_d = per_position_pnl.get(t_sym, {})
-            p_pct = pnl_d.get("pnl_pct", 0.0)
-            pill_icon = "🟢" if p_pct >= 0 else "🔴"
-            is_sel = (st.session_state.get('inspect_trade_key') == t_sym)
-            b_type = "primary" if is_sel else "secondary"
-            pill_label = f"{pill_icon} {clean_k} ({p_pct:+.2f}%)"
-            if pill_cols[idx_k].button(pill_label, key=f"sel_pill_btn_{t_sym}", use_container_width=True, type=b_type):
-                st.session_state['inspect_trade_key'] = t_sym
-                st.rerun()
-
-        st.markdown("---")
-
-        # 3. Dedicated Deep-Dive Trade Inspector Panel
-        sel_key = st.session_state.get('inspect_trade_key', trade_keys[0])
-        if sel_key in dca_positions:
-            t_info = dca_positions[sel_key]
-
-            # Use live Binance prices from per_position_pnl
-            pnl_data = per_position_pnl.get(sel_key, {})
-            t_cur    = pnl_data.get("live_price", float(t_info.get("avg_price", 0)))
-            pnl_pct  = pnl_data.get("pnl_pct", 0.0)
-            pnl_inr  = pnl_data.get("pnl_inr", 0.0)
-            cur_val_inr = pnl_data.get("cur_val_inr", float(t_info.get("total_cost", 10140.0)))
-
-            is_ind   = (".NS" in sel_key or ".BO" in sel_key)
-            curr_sym = "₹" if is_ind else "$"
-
-            avg_p    = float(t_info.get('avg_price', 0))
-            target_p = float(t_info.get('target_sell_price', avg_p * 1.015))
-            peak_p   = float(t_info.get('peak_price', t_cur))
-            cost_inr = float(t_info.get('total_cost', 10140.0))
-            expected_net_profit = cost_inr * 0.015
-            
-            # Progress 0 to 100%
-            dist_total = target_p - avg_p
-            if dist_total > 0:
-                progress_raw = ((t_cur - avg_p) / dist_total) * 100.0
-                progress_pct = max(0.0, min(100.0, progress_raw))
-            else:
-                progress_pct = 0.0
-                
-            clean_name = sel_key.replace('.NS', '').replace('-USD', '')
-            
-            st.markdown(f"#### 🔍 {clean_name} ట్రేడ్ పూర్తి జాతకం & లైవ్ రిపోర్ట్")
-            st.caption(f"స్ట్రాటజీ: **{t_info.get('strategy', 'Smart Money Confluence')}** | లేయర్: **L{len(t_info.get('entries', []))}/3 Entry** | స్టేటస్: **🟢 ACTIVE IN TRADE**")
-            
-            # Target Progress Bar
-            st.progress(progress_pct / 100.0)
-            
-            if progress_pct >= 100.0:
-                st.success(f"🎉 **{clean_name} టార్గెట్ (+1.5%) రీచ్ అయ్యింది!** బాట్ ఆటోమేటిక్‌గా లాభం బుక్ చేసి సెల్ ఆర్డర్ పూర్తి చేస్తుంది!")
-            elif progress_pct > 0:
-                rem_pct = ((target_p - t_cur) / avg_p) * 100.0
-                st.info(f"🎯 **టార్గెట్ దిశగా ప్రయాణం:** **{progress_pct:.1f}%** పూర్తయింది! ఇంకా కేవలం **+{rem_pct:.2f}%** పెరిగితే సెల్ అవుతుంది. (ఈ ట్రేడ్ లో మీకు అందే లాభం: **+₹{expected_net_profit:,.2f}**)")
-            else:
-                st.warning(f"⏳ **కన్సాలిడేషన్ లో ఉంది:** ప్రస్తుతం డిప్ లో ఉంది ({pnl_pct:+.2f}%). మార్కెట్ బౌన్స్ కోసం ఎదురుచూస్తోంది. స్టాప్-లాస్ రక్షణ (-6.0%) యాక్టివ్ గా ఉంది.")
-                
-            # Key 4 Financial Metric Cards
-            det_c1, det_c2, det_c3, det_c4 = st.columns(4)
-            det_c1.markdown(fancy_metric("పెట్టుబడి (Invested)", f"₹{cost_inr:,.2f}", "లాక్ అయిన మార్జిన్", "off"), unsafe_allow_html=True)
-            det_c2.markdown(fancy_metric("ప్రస్తుత విలువ (Current Val)", f"₹{cur_val_inr:,.2f}", f"{pnl_inr:+.2f} ఫ్లోటింగ్"), unsafe_allow_html=True)
-            det_pnl_color = "normal" if pnl_inr >= 0 else "inverse"
-            det_c3.markdown(fancy_metric("రన్నింగ్ P&L (Floating)", f"₹{pnl_inr:,.2f}", f"{pnl_pct:+.2f}% Live", det_pnl_color), unsafe_allow_html=True)
-            det_c4.markdown(fancy_metric("టార్గెట్ లాభం (Target Profit)", f"+₹{expected_net_profit:,.2f}", "+1.5% హిట్ కాగానే", "normal"), unsafe_allow_html=True)
-            
-            # Risk & Safety Cards
-            r_col1, r_col2, r_col3 = st.columns(3)
-            with r_col1:
-                st.markdown(f"🚀 **Trailing Stop:** పీక్ ధర `{curr_sym}{peak_p:,.2f}` | 1.5% దాటిన తర్వాత 0.4% తగ్గితే ప్రాఫిట్ లాక్.")
-            with r_col2:
-                hard_sl_price = avg_p * 0.94
-                st.markdown(f"🛑 **Hard Stop-Loss (-6.0%):** ఫ్లోర్ `{curr_sym}{hard_sl_price:,.2f}` | ఆటో-ఎగ్జిట్ సేఫ్టీ.")
-            with r_col3:
-                st.markdown(f"⚡ **DCA Averaging:** `Layer {len(t_info.get('entries', []))} of 3` | డిప్ కొనుగోలు రెడీ.")
-                
-            # Order Entries History Table
-            with st.expander(f"📋 {clean_name} ఆర్డర్ ఎగ్జిక్యూషన్ హిస్టరీ (DCA Entries Log)"):
-                entries = t_info.get('entries', [])
-                if entries:
-                    ent_rows = []
-                    for idx_e, e in enumerate(entries):
-                        ent_rows.append({
-                            "లేయర్ (Layer)": f"Layer {idx_e+1}",
-                            "సమయం (Time)": e.get('time', '-'),
-                            "కొన్న ధర (Price)": f"{curr_sym}{float(e.get('price', 0)):,.2f}",
-                            "క్వాంటిటీ (Shares)": f"{float(e.get('qty', 0)):.5f}",
-                            "పెట్టుబడి (Cost)": f"₹{float(e.get('cost', 0)):,.2f}"
-                        })
-                    safe_dataframe(pd.DataFrame(ent_rows), hide_index=True)
-
-            # Quick Trade Controls
-            st.markdown("##### ⚡ ఈ ట్రేడ్ పై క్విక్ యాక్షన్స్ (Quick Trade Controls):")
-            act_col1, act_col2 = st.columns(2)
-            with act_col1:
-                if st.button(f"🔴 {clean_name} ని ఇప్పుడే అమ్మేయి (Close / Sell Now)", key=f"btn_close_act_{sel_key}", use_container_width=True):
-                    with open('ai_commands.txt', 'w') as f_cmd:
-                        f_cmd.write(f"FORCE_SELL {sel_key}")
-                    st.toast(f"✅ {clean_name} అమ్మేయడానికి సెల్ ఆర్డర్ పంపించాము!", icon="📉")
-                    time.sleep(1)
-                    st.rerun()
-            with act_col2:
-                if st.button(f"⚡ {clean_name} డిప్ లో మరింత ఆవరేజ్ కొను (Buy More)", key=f"btn_dca_act_{sel_key}", use_container_width=True):
-                    with open('ai_commands.txt', 'w') as f_cmd:
-                        f_cmd.write(f"FORCE_BUY {sel_key}")
-                    st.toast(f"✅ {clean_name} బై ఆర్డర్ పంపించాము!", icon="🚀")
-                    time.sleep(1)
-                    st.rerun()
     else:
         st.info("ప్రస్తుతం ఓపెన్ పొజిషన్లు ఏమీ లేవు. పాత ట్రేడ్లన్నీ లాభాలతో క్లోజ్ అయ్యాయి. కొత్త కన్ఫర్మ్డ్ సిగ్నల్ కోసం బాట్ స్కాన్ చేస్తోంది.")
 
@@ -1697,55 +1597,104 @@ with tab_charts:
 # TAB 4: 📋 ఆర్డర్ బుక్ & పెర్ఫార్మెన్స్ (ORDERS & PNL)
 # =============================================================
 with tab_orders:
-    col_h1, col_h2 = st.columns([3, 1])
-    with col_h1:
-        st.subheader("📝 ఆర్డర్ బుక్ & అకౌంట్ స్టేట్‌మెంట్ (Orders & Performance)")
-    with col_h2:
-        if st.button("🗑️ Reset Trade History", help="పాత టెస్ట్ ట్రేడ్స్ క్లియర్ చేసి కొత్తగా ₹50,000 తో క్లీన్ గా మొదలుపెడుతుంది"):
-            if os.path.exists('trades_log.csv'):
-                with open('trades_log.csv', 'w') as f_reset:
-                    f_reset.write("Time,Symbol,Action,Price,Shares,Profit\n")
-            db_helper.save_state('dca_state', {})
-            st.toast("✅ పాత ట్రేడ్ హిస్టరీ రీసెట్ అయ్యింది! ఫ్రెష్ ₹50,000 క్యాపిటల్ రెడీ.", icon="🗑️")
-            st.rerun()
+    st.subheader("📋 ఆర్డర్ బుక్ & అకౌంట్ స్టేట్‌మెంట్ (Orders & Performance)")
+    st.caption("స్పాట్ మరియు ఫ్యూచర్స్ ట్రేడ్స్ హిస్టరీ ఇక్కడ స్పష్టంగా వేరు వేరుగా విభజించబడ్డాయి:")
 
-    if os.path.exists('trades_log.csv'):
-        df_perf = pd.read_csv('trades_log.csv')
-        df_perf_valid = df_perf[df_perf['Symbol'].astype(str).str.endswith(('-USD', '.NS', '.BO'))].copy()
-        sells = df_perf_valid[df_perf_valid['Action'] == 'SELL'].copy()
-        
-        if not sells.empty:
-            def clean_profit(val):
-                if str(val) == '-': return 0.0
-                p_str = str(val).replace('₹', '').replace(',', '').strip()
-                try:
-                    return -float(p_str.replace('-', '')) if p_str.startswith('-') else float(p_str)
-                except: return 0.0
+    hist_tab_spot, hist_tab_fut = st.tabs([
+        "📌 నార్మల్ (Spot) ట్రేడ్స్ హిస్టరీ",
+        "🚀 ఫ్యూచర్స్ (5x Futures) ట్రేడ్స్ హిస్టరీ"
+    ])
 
-            sells['CleanProfit'] = sells['Profit'].apply(clean_profit)
-            total_trades = len(sells)
-            wins = len(sells[sells['CleanProfit'] > 0])
-            losses = len(sells[sells['CleanProfit'] < 0])
-            win_rate = (wins / total_trades) * 100 if total_trades > 0 else 0
-            
-            gross_profit = sells[sells['CleanProfit'] > 0]['CleanProfit'].sum()
-            gross_loss = sells[sells['CleanProfit'] < 0]['CleanProfit'].sum()
-            taxes = round((gross_profit + abs(gross_loss)) * 0.001, 2)
-            net_profit = gross_profit + gross_loss - taxes
-            
-            p1, p2, p3, p4 = st.columns(4)
-            p1.metric("మొత్తం ట్రేడ్స్ (Completed)", f"{total_trades}")
-            p2.metric("విన్ రేట్ (Accuracy)", f"{win_rate:.1f}%", f"{wins}W | {losses}L")
-            p3.metric("గ్రాస్ లాభం (Gross Profit)", f"₹{gross_profit:.2f}")
-            net_col = "normal" if net_profit >= 0 else "inverse"
-            p4.metric("నికర లాభం (Net PNL)", f"₹{net_profit:.2f}", f"{net_profit:+.2f}")
+    with hist_tab_spot:
+        col_s1, col_s2 = st.columns([3, 1])
+        with col_s1:
+            st.markdown("#### 📌 స్పాట్ ఆర్డర్ బుక్ (Spot Orders Log)")
+        with col_s2:
+            if st.button("🗑️ Reset Spot History", key="btn_reset_spot"):
+                if os.path.exists('trades_log.csv'):
+                    with open('trades_log.csv', 'w') as f_reset:
+                        f_reset.write("Time,Symbol,Action,Price,Shares,Profit\n")
+                db_helper.save_state('dca_state', {})
+                st.toast("✅ స్పాట్ ట్రేడ్ హిస్టరీ రీసెట్ అయ్యింది!", icon="🗑️")
+                st.rerun()
 
-        # Complete Orders Table
-        st.subheader("📋 పూర్తి ఆర్డర్ బుక్ లాగ్ (Orders Log)")
-        if not df_perf_valid.empty:
-            safe_dataframe(df_perf_valid.tail(50), hide_index=True)
-    else:
-        st.info("ఇంకా ట్రేడ్ లాగ్స్ ఏమీ లేవు.")
+        if os.path.exists('trades_log.csv'):
+            try:
+                df_perf = pd.read_csv('trades_log.csv')
+                df_perf_valid = df_perf[df_perf['Symbol'].astype(str).str.endswith(('-USD', '.NS', '.BO'))].copy()
+                sells = df_perf_valid[df_perf_valid['Action'] == 'SELL'].copy()
+                
+                if not sells.empty:
+                    def clean_profit(val):
+                        if str(val) == '-': return 0.0
+                        p_str = str(val).replace('₹', '').replace(',', '').strip()
+                        try:
+                            return -float(p_str.replace('-', '')) if p_str.startswith('-') else float(p_str)
+                        except: return 0.0
+
+                    sells['CleanProfit'] = sells['Profit'].apply(clean_profit)
+                    total_trades = len(sells)
+                    wins = len(sells[sells['CleanProfit'] > 0])
+                    losses = len(sells[sells['CleanProfit'] < 0])
+                    win_rate = (wins / total_trades) * 100 if total_trades > 0 else 0
+                    
+                    gross_profit = sells[sells['CleanProfit'] > 0]['CleanProfit'].sum()
+                    gross_loss = sells[sells['CleanProfit'] < 0]['CleanProfit'].sum()
+                    taxes = round((gross_profit + abs(gross_loss)) * 0.001, 2)
+                    net_profit = gross_profit + gross_loss - taxes
+                    
+                    p1, p2, p3, p4 = st.columns(4)
+                    p1.metric("స్పాట్ ట్రేడ్స్ (Completed)", f"{total_trades}")
+                    p2.metric("విన్ రేట్ (Accuracy)", f"{win_rate:.1f}%", f"{wins}W | {losses}L")
+                    p3.metric("గ్రాస్ లాభం (Gross Profit)", f"₹{gross_profit:.2f}")
+                    net_col = "normal" if net_profit >= 0 else "inverse"
+                    p4.metric("నికర లాభం (Net PNL)", f"₹{net_profit:.2f}", f"{net_profit:+.2f}")
+
+                if not df_perf_valid.empty:
+                    safe_dataframe(df_perf_valid.tail(50).iloc[::-1], hide_index=True)
+                else:
+                    st.info("ప్రస్తుతం స్పాట్ ఆర్డర్స్ ఏమీ లేవు.")
+            except Exception as e:
+                st.info("స్పాట్ ట్రేడ్స్ రికార్డ్ అవుతున్నాయి...")
+        else:
+            st.info("ఇంకా స్పాట్ ట్రేడ్ లాగ్స్ ఏమీ లేవు.")
+
+    with hist_tab_fut:
+        col_f1, col_f2 = st.columns([3, 1])
+        with col_f1:
+            st.markdown("#### 🚀 ఫ్యూచర్స్ ఆర్డర్ బుక్ (Futures 5x Orders Log)")
+        with col_f2:
+            if st.button("🗑️ Reset Futures History", key="btn_reset_fut"):
+                if os.path.exists('fo_trades_log.csv'):
+                    with open('fo_trades_log.csv', 'w') as f_reset_fo:
+                        f_reset_fo.write("Timestamp,Symbol,Action,Side,EntryPrice,ExitPrice,Margin,Leverage,Profit_INR\n")
+                db_helper.save_state('fo_state', {})
+                st.toast("✅ ఫ్యూచర్స్ ట్రేడ్ హిస్టరీ రీసెట్ అయ్యింది!", icon="🗑️")
+                st.rerun()
+
+        if os.path.exists('fo_trades_log.csv'):
+            try:
+                df_fo = pd.read_csv('fo_trades_log.csv')
+                if not df_fo.empty:
+                    closed_fo = df_fo[df_fo['Action'] == 'CLOSE'].copy()
+                    if not closed_fo.empty:
+                        fo_pnl_total = closed_fo['Profit_INR'].astype(float).sum()
+                        fo_wins = len(closed_fo[closed_fo['Profit_INR'].astype(float) > 0])
+                        fo_total = len(closed_fo)
+                        fo_win_rate = (fo_wins / fo_total * 100) if fo_total > 0 else 0.0
+                        
+                        fp1, fp2, fp3 = st.columns(3)
+                        fp1.metric("పూర్తయిన ఫ్యూచర్స్ ట్రేడ్స్", f"{fo_total}")
+                        fp2.metric("విన్ రేట్ (Futures)", f"{fo_win_rate:.1f}%")
+                        fp3.metric("ఫ్యూచర్స్ నికర లాభం (Net P&L)", f"₹{fo_pnl_total:,.2f}")
+                    
+                    safe_dataframe(df_fo.tail(50).iloc[::-1], hide_index=True)
+                else:
+                    st.info("ఫ్యూచర్స్ ఆర్డర్స్ ఏమీ లేవు.")
+            except Exception as e:
+                st.info("ఫ్యూచర్స్ ట్రేడ్స్ రికార్డ్ అవుతున్నాయి...")
+        else:
+            st.info("ఇంకా ఫ్యూచర్స్ ట్రేడ్ లాగ్స్ ఏమీ లేవు.")
 
 
 # =============================================================
