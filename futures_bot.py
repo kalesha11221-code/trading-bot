@@ -48,7 +48,7 @@ def fetch_binance_data(sym):
     try:
         coin = sym.replace('-USD', '')
         binance_pair = f'{coin}USDT'
-        url = f'https://api.binance.com/api/v3/klines?symbol={binance_pair}&interval=1m&limit=100'
+        url = f'https://api.binance.com/api/v3/klines?symbol={binance_pair}&interval=5m&limit=100'
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=4) as resp:
             data = json.loads(resp.read().decode())
@@ -71,7 +71,7 @@ def fetch_binance_data(sym):
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             'Accept': 'application/json'
         }
-        url = f'https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1m&range=1d'
+        url = f'https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=5m&range=1d'
         req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=4) as resp:
             res = json.loads(resp.read().decode())

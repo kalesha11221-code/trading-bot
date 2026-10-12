@@ -1135,14 +1135,7 @@ if os.path.exists('trades_log.csv'):
             total_profit = (g_prof - g_loss) - taxes
     except: pass
 
-# Read active DCA positions
-dca_positions = {}
-invested_amount = 0.0
-dca_positions = get_state_smart('dca_state')
-for d_sym, d_info in dca_positions.items():
-    invested_amount += float(d_info.get('total_cost', 0.0))
-
-# USD → INR rate (try Binance USDT→INR equivalent or use constant)
+# USD → INR rate
 USD_TO_INR = 84.5
 try:
     _inr_url = "https://api.exchangerate-api.com/v4/latest/USD"
@@ -1155,34 +1148,43 @@ try:
 except:
     pass
 
+# 1. Read Active Spot (DCA) Positions
+dca_positions = get_state_smart('dca_state')
+spot_invested = 0.0
+for d_sym, d_info in dca_positions.items():
+    spot_invested += float(d_info.get('total_cost', 0.0))
+
+# 2. Read Active Futures (5x) Positions & Margin
+futures_positions = get_state_smart('fo_state')
+futures_invested = 0.0
+for f_sym, f_info in futures_positions.items():
+    futures_invested += float(f_info.get('margin', 5000.0))
+
+# 3. Combined Total Invested & Cash
 portfolio_value = initial_capital + total_profit
-invested_amount = min(portfolio_value, max(0.0, invested_amount))
+total_invested = spot_invested + futures_invested
+invested_amount = min(portfolio_value, max(0.0, total_invested))
 available_cash = max(0.0, portfolio_value - invested_amount)
 roi = (total_profit / initial_capital) * 100 if initial_capital > 0 else 0.0
 
-# ─── Calculate REAL-TIME Floating P&L using live Binance prices ───
-total_floating_pnl = 0.0
-per_position_pnl = {}  # {sym: {"live": price, "pnl_pct": %, "pnl_inr": ₹}}
+# 4. Spot Floating P&L
+spot_floating_pnl = 0.0
+per_position_pnl = {}
 for d_sym, d_info in dca_positions.items():
     avg_p = float(d_info.get('avg_price', 0))
     total_qty = float(d_info.get('total_qty', 0))
     total_cost = float(d_info.get('total_cost', 0))
-    if avg_p <= 0:
-        continue
-    # Use live Binance price first, fallback to scanned_assets, then avg_price
+    if avg_p <= 0: continue
     live_p_info = live_prices.get(d_sym, {})
     live_p = live_p_info.get("price", 0.0)
-    if live_p <= 0:
-        live_p = scanned_assets.get(d_sym, {}).get("price", avg_p)
-    if live_p <= 0:
-        live_p = avg_p
+    if live_p <= 0: live_p = scanned_assets.get(d_sym, {}).get("price", avg_p)
+    if live_p <= 0: live_p = avg_p
     
     pnl_usd = (live_p - avg_p) * total_qty
     pnl_inr = pnl_usd * USD_TO_INR if d_sym.endswith('-USD') else pnl_usd
     pnl_pct = ((live_p - avg_p) / avg_p) * 100.0
     cur_val_inr = total_cost + pnl_inr
-    
-    total_floating_pnl += pnl_inr
+    spot_floating_pnl += pnl_inr
     per_position_pnl[d_sym] = {
         "live_price": live_p,
         "avg_price": avg_p,
@@ -1193,6 +1195,39 @@ for d_sym, d_info in dca_positions.items():
         "total_qty": total_qty,
     }
 
+# 5. Futures Floating P&L
+futures_floating_pnl = 0.0
+per_futures_pnl = {}
+for f_sym, f_info in futures_positions.items():
+    f_entry = float(f_info.get('entry_price', 0))
+    f_qty = float(f_info.get('qty', 0))
+    f_side = f_info.get('side', 'LONG')
+    f_margin = float(f_info.get('margin', 5000.0))
+    
+    f_live_info = live_prices.get(f_sym, {})
+    f_live = f_live_info.get("price", 0.0)
+    if f_live <= 0: f_live = scanned_assets.get(f_sym, {}).get("price", f_entry)
+    if f_live <= 0: f_live = f_entry
+    
+    if f_side == 'LONG':
+        f_pnl_usd = (f_live - f_entry) * f_qty
+    else:
+        f_pnl_usd = (f_entry - f_live) * f_qty
+        
+    f_pnl_inr = f_pnl_usd * USD_TO_INR
+    f_roe = (f_pnl_inr / f_margin) * 100.0 if f_margin > 0 else 0.0
+    futures_floating_pnl += f_pnl_inr
+    per_futures_pnl[f_sym] = {
+        "live_price": f_live,
+        "entry_price": f_entry,
+        "side": f_side,
+        "margin": f_margin,
+        "pnl_inr": f_pnl_inr,
+        "roe_pct": f_roe
+    }
+
+# 6. Combined Live Floating Total
+total_floating_pnl = spot_floating_pnl + futures_floating_pnl
 total_floating_pnl_pct = (total_floating_pnl / invested_amount) * 100 if invested_amount > 0 else 0.0
 live_portfolio_value = portfolio_value + total_floating_pnl
 
@@ -1215,36 +1250,49 @@ with top_b1:
         st.info(f"**మొదటి క్యాపిటల్ (Initial):** ₹50,000.00\n**ఇప్పటివరకు లాభం (Profit):** ₹{portfolio_value - 50000:,.2f}\n**మొత్తం బ్యాలెన్స్:** ₹{portfolio_value:,.2f}")
 
 with top_b2:
-    st.markdown(fancy_metric("🔒 ఇన్వెస్ట్ చేసిన మొత్తం", f"₹{invested_amount:,.2f}", f"{len(dca_positions)} ట్రేడ్స్ ఓపెన్"), unsafe_allow_html=True)
-    with st.popover("🔍 ఏ కాయిన్స్ లో ఉంది?", use_container_width=True):
-        st.markdown("### 🔒 ఇన్వెస్ట్ చేసిన కాయిన్స్")
-        if not dca_positions:
-            st.write("ప్రస్తుతం ఓపెన్ లో ఏ ట్రేడ్స్ లేవు.")
-        else:
+    st_tot_trades = len(dca_positions) + len(futures_positions)
+    st.markdown(fancy_metric("🔒 మొత్తం ఇన్వెస్ట్‌మెంట్", f"₹{invested_amount:,.2f}", f"స్పాట్ + ఫ్యూచర్స్ ({st_tot_trades})"), unsafe_allow_html=True)
+    with st.popover("🔍 ఇన్వెస్ట్ చేసిన వివరాలు (Spot & Futures)", use_container_width=True):
+        st.markdown("### 🔒 ఇన్వెస్ట్‌మెంట్ బ్రేక్‌డౌన్")
+        st.markdown(f"**📌 స్పాట్ ఇన్వెస్ట్‌మెంట్:** ₹{spot_invested:,.2f} ({len(dca_positions)} కాయిన్స్)")
+        if dca_positions:
             for s, p in dca_positions.items():
-                st.write(f"**{s}:** ₹{p.get('total_cost', 0):,.2f}")
+                st.write(f"- {s}: ₹{p.get('total_cost', 0):,.2f}")
+        st.divider()
+        st.markdown(f"**🚀 ఫ్యూచర్స్ మార్జిన్ (5x):** ₹{futures_invested:,.2f} ({len(futures_positions)} ట్రేడ్స్)")
+        if futures_positions:
+            for fs, fp in futures_positions.items():
+                st.write(f"- {fs} ({fp.get('side', 'LONG')} 5x): ₹{fp.get('margin', 5000):,.2f}")
 
 with top_b3:
     st.markdown(fancy_metric("💵 ఉచిత నగదు (Cash)", f"₹{available_cash:,.2f}", "కొత్త ట్రేడ్ కి రెడీ"), unsafe_allow_html=True)
     with st.popover("🔍 ఈ Cash ఎక్కడిది?", use_container_width=True):
-        st.markdown("### 💵 ఫ్రీ క్యాష్")
-        st.write("ఇది ఇంకా ఇన్వెస్ట్ చేయకుండా ఖాళీగా ఉన్న అమౌంట్. కొత్త డిప్ రాగానే మన బాట్ ఈ ఫండ్స్ ని యూజ్ చేసి DCA చేస్తుంది.")
-        st.success(f"కొత్త ఎంట్రీల కోసం రెడీగా ఉన్న ఫండ్స్: ₹{available_cash:,.2f}")
+        st.markdown("### 💵 ఫ్రీ క్యాష్ బ్యాలెన్స్")
+        st.write("స్పాట్ కొనుగోళ్లు మరియు ఫ్యూచర్స్ మార్జిన్ పోను మీ అకౌంట్ లో మిగిలి ఉన్న ఉచిత నగదు.")
+        st.write(f"- మొత్తం క్యాపిటల్: ₹{portfolio_value:,.2f}")
+        st.write(f"- స్పాట్ వాడిన మొత్తం: ₹{spot_invested:,.2f}")
+        st.write(f"- ఫ్యూచర్స్ మార్జిన్: ₹{futures_invested:,.2f}")
+        st.divider()
+        st.success(f"మిగిలిన ఫ్రీ క్యాష్: ₹{available_cash:,.2f}")
 
 with top_b4:
     top_pnl_color = "normal" if total_floating_pnl >= 0 else "inverse"
-    st.markdown(fancy_metric("📈 ఫ్లోటింగ్ లాభం (Live)", f"₹{total_floating_pnl:+,.2f}", f"{total_floating_pnl_pct:+.2f}% Live", top_pnl_color), unsafe_allow_html=True)
-    with st.popover("🔍 Live P&L బ్రేక్‌డౌన్", use_container_width=True):
+    st.markdown(fancy_metric("📈 ఫ్లోటింగ్ లాభం (Live)", f"₹{total_floating_pnl:+,.2f}", f"{total_floating_pnl_pct:+.2f}% Total", top_pnl_color), unsafe_allow_html=True)
+    with st.popover("🔍 Live P&L బ్రేక్‌డౌన్ (Spot + Futures)", use_container_width=True):
         st.markdown("### 📈 ఫ్లోటింగ్ (Unbooked) P&L")
-        st.write("ప్రస్తుతం రన్ అవుతున్న కాయిన్స్ పడిపోవడం లేదా పెరగడం వల్ల వచ్చే లాభ/నష్టాలు (ఇంకా బుక్ చేయలేదు).")
-        if not dca_positions:
-            st.write("ఓపెన్ ట్రేడ్స్ లేవు.")
-        else:
-            for s, p in dca_positions.items():
-                curr_price = live_prices.get(s, {}).get('price', p['avg_price'])
-                pnl = (curr_price - p['avg_price']) * p['total_qty']
+        st.markdown(f"**📌 స్పాట్ ఫ్లోటింగ్ P&L:** ₹{spot_floating_pnl:+.2f}")
+        if dca_positions:
+            for s, pd_info in per_position_pnl.items():
+                pnl = pd_info['pnl_inr']
                 c = "🟢" if pnl >= 0 else "🔴"
-                st.write(f"{c} **{s}:** ₹{pnl:+.2f}")
+                st.write(f"- {c} {s}: ₹{pnl:+.2f} ({pd_info['pnl_pct']:+.2f}%)")
+        st.divider()
+        st.markdown(f"**🚀 ఫ్యూచర్స్ ఫ్లోటింగ్ P&L (5x):** ₹{futures_floating_pnl:+.2f}")
+        if futures_positions:
+            for fs, fpd in per_futures_pnl.items():
+                fpnl = fpd['pnl_inr']
+                fc = "🟢" if fpnl >= 0 else "🔴"
+                st.write(f"- {fc} {fs} ({fpd['side']} 5x): ₹{fpnl:+.2f} ({fpd['roe_pct']:+.2f}% ROE)")
 
 with top_b5:
     live_pf_color = "normal" if live_portfolio_value >= portfolio_value else "inverse"
@@ -1622,36 +1670,71 @@ with tab_orders:
             try:
                 df_perf = pd.read_csv('trades_log.csv')
                 df_perf_valid = df_perf[df_perf['Symbol'].astype(str).str.endswith(('-USD', '.NS', '.BO'))].copy()
-                sells = df_perf_valid[df_perf_valid['Action'] == 'SELL'].copy()
                 
-                if not sells.empty:
-                    def clean_profit(val):
-                        if str(val) == '-': return 0.0
-                        p_str = str(val).replace('₹', '').replace(',', '').strip()
-                        try:
-                            return -float(p_str.replace('-', '')) if p_str.startswith('-') else float(p_str)
-                        except: return 0.0
-
-                    sells['CleanProfit'] = sells['Profit'].apply(clean_profit)
-                    total_trades = len(sells)
-                    wins = len(sells[sells['CleanProfit'] > 0])
-                    losses = len(sells[sells['CleanProfit'] < 0])
-                    win_rate = (wins / total_trades) * 100 if total_trades > 0 else 0
+                # Enrich Spot with Fees & Net PnL per trade
+                enriched_spot = []
+                total_spot_fees = 0.0
+                gross_spot_profit = 0.0
+                gross_spot_loss = 0.0
+                closed_count = 0
+                wins = 0
+                losses = 0
+                
+                for idx, r in df_perf_valid.iterrows():
+                    pr = float(r.get('Price', 0))
+                    sh = float(r.get('Shares', 0))
+                    sym = str(r.get('Symbol', ''))
+                    is_c = sym.endswith('-USD')
+                    val_inr = pr * sh * (USD_TO_INR if is_c else 1.0)
+                    act = str(r.get('Action', '')).upper()
                     
-                    gross_profit = sells[sells['CleanProfit'] > 0]['CleanProfit'].sum()
-                    gross_loss = sells[sells['CleanProfit'] < 0]['CleanProfit'].sum()
-                    taxes = round((gross_profit + abs(gross_loss)) * 0.001, 2)
-                    net_profit = gross_profit + gross_loss - taxes
+                    # 0.1% fee on turnover (₹10 on ₹10,000)
+                    trade_fee = round(val_inr * 0.001, 2)
+                    total_spot_fees += trade_fee
                     
-                    p1, p2, p3, p4 = st.columns(4)
-                    p1.metric("స్పాట్ ట్రేడ్స్ (Completed)", f"{total_trades}")
-                    p2.metric("విన్ రేట్ (Accuracy)", f"{win_rate:.1f}%", f"{wins}W | {losses}L")
-                    p3.metric("గ్రాస్ లాభం (Gross Profit)", f"₹{gross_profit:.2f}")
-                    net_col = "normal" if net_profit >= 0 else "inverse"
-                    p4.metric("నికర లాభం (Net PNL)", f"₹{net_profit:.2f}", f"{net_profit:+.2f}")
+                    raw_prof = str(r.get('Profit', '0')).replace('₹', '').replace(',', '').strip()
+                    try:
+                        g_prof = float(raw_prof)
+                    except:
+                        g_prof = 0.0
+                        
+                    if act == 'SELL':
+                        closed_count += 1
+                        if g_prof > 0:
+                            gross_spot_profit += g_prof
+                            wins += 1
+                        elif g_prof < 0:
+                            gross_spot_loss += abs(g_prof)
+                            losses += 1
+                        net_p = round(g_prof - (trade_fee * 2), 2) # Roundtrip fees
+                    else:
+                        net_p = 0.0
+                        
+                    pr_disp = f"${pr:,.2f}" if is_c else f"₹{pr:,.2f}"
+                    enriched_spot.append({
+                        "సమయం (Time)": r.get('Time'),
+                        "కాయిన్ (Symbol)": sym.replace('-USD', '').replace('.NS', ''),
+                        "ఆర్డర్ (Action)": act,
+                        "ధర (Price)": pr_disp,
+                        "క్వాంటిటీ (Qty)": f"{sh:.4f}",
+                        "ఆర్డర్ విలువ (Turnover)": f"₹{val_inr:,.2f}",
+                        "ఛార్జీలు (Fees 0.1%)": f"₹{trade_fee:.2f}",
+                        "గ్రాస్ లాభం (Gross)": f"₹{g_prof:+.2f}" if act == 'SELL' else "-",
+                        "నికర లాభం (Net P&L)": f"₹{net_p:+.2f}" if act == 'SELL' else "-"
+                    })
+                    
+                net_spot_total = gross_spot_profit - gross_spot_loss - total_spot_fees
+                win_rate = (wins / closed_count * 100) if closed_count > 0 else 0.0
+                
+                p1, p2, p3, p4 = st.columns(4)
+                p1.metric("పూర్తయిన స్పాట్ ట్రేడ్స్", f"{closed_count}")
+                p2.metric("విన్ రేట్ (Spot)", f"{win_rate:.1f}%", f"{wins}W | {losses}L")
+                p3.metric("కట్ అయిన ఛార్జీలు (Fees)", f"₹{total_spot_fees:,.2f}", "0.1% Exchange Fee")
+                net_col = "normal" if net_spot_total >= 0 else "inverse"
+                p4.metric("చేతికి వచ్చిన నికర లాభం (Net)", f"₹{net_spot_total:,.2f}", f"{net_spot_total:+.2f}", net_col)
 
-                if not df_perf_valid.empty:
-                    safe_dataframe(df_perf_valid.tail(50).iloc[::-1], hide_index=True)
+                if enriched_spot:
+                    safe_dataframe(pd.DataFrame(enriched_spot).iloc[::-1], hide_index=True)
                 else:
                     st.info("ప్రస్తుతం స్పాట్ ఆర్డర్స్ ఏమీ లేవు.")
             except Exception as e:
@@ -1676,19 +1759,60 @@ with tab_orders:
             try:
                 df_fo = pd.read_csv('fo_trades_log.csv')
                 if not df_fo.empty:
-                    closed_fo = df_fo[df_fo['Action'] == 'CLOSE'].copy()
-                    if not closed_fo.empty:
-                        fo_pnl_total = closed_fo['Profit_INR'].astype(float).sum()
-                        fo_wins = len(closed_fo[closed_fo['Profit_INR'].astype(float) > 0])
-                        fo_total = len(closed_fo)
-                        fo_win_rate = (fo_wins / fo_total * 100) if fo_total > 0 else 0.0
-                        
-                        fp1, fp2, fp3 = st.columns(3)
-                        fp1.metric("పూర్తయిన ఫ్యూచర్స్ ట్రేడ్స్", f"{fo_total}")
-                        fp2.metric("విన్ రేట్ (Futures)", f"{fo_win_rate:.1f}%")
-                        fp3.metric("ఫ్యూచర్స్ నికర లాభం (Net P&L)", f"₹{fo_pnl_total:,.2f}")
+                    enriched_fut = []
+                    total_fut_fees = 0.0
+                    total_fut_gross = 0.0
+                    closed_fo_count = 0
+                    fo_wins = 0
+                    fo_losses = 0
                     
-                    safe_dataframe(df_fo.tail(50).iloc[::-1], hide_index=True)
+                    for idx, r in df_fo.iterrows():
+                        margin = float(r.get('Margin', 5000.0))
+                        lev = int(r.get('Leverage', 5))
+                        notional = margin * lev # ₹25,000 position
+                        act = str(r.get('Action', '')).upper()
+                        gross_pnl = float(r.get('Profit_INR', 0.0))
+                        
+                        # Binance Futures 0.05% taker fee = ₹12.50 per leg, ₹25 roundtrip
+                        per_trade_fee = round(notional * 0.0005, 2) if act == 'OPEN' else round(notional * 0.001, 2)
+                        total_fut_fees += per_trade_fee
+                        
+                        if act == 'CLOSE':
+                            closed_fo_count += 1
+                            total_fut_gross += gross_pnl
+                            if gross_pnl > 0: fo_wins += 1
+                            elif gross_pnl < 0: fo_losses += 1
+                            net_fo_pnl = round(gross_pnl - per_trade_fee, 2)
+                        else:
+                            net_fo_pnl = 0.0
+                            
+                        entry_val = float(r.get('EntryPrice', 0))
+                        exit_val = float(r.get('ExitPrice', 0))
+                        
+                        enriched_fut.append({
+                            "సమయం (Time)": r.get('Timestamp'),
+                            "కాయిన్ (Symbol)": str(r.get('Symbol', '')).replace('-USD', ''),
+                            "యాక్షన్ (Action)": act,
+                            "సైడ్ (Side)": f"{r.get('Side')} {lev}x",
+                            "ఎంట్రీ ధర (Entry)": f"${entry_val:,.2f}",
+                            "ఎగ్జిట్ ధర (Exit)": f"${exit_val:,.2f}" if exit_val > 0 else "-",
+                            "మార్జిన్ (Margin)": f"₹{margin:,.2f}",
+                            "ఛార్జీలు (Fees 0.05%)": f"₹{per_trade_fee:.2f}",
+                            "గ్రాస్ PnL (Gross)": f"₹{gross_pnl:+.2f}" if act == 'CLOSE' else "-",
+                            "నికర లాభం (Net P&L)": f"₹{net_fo_pnl:+.2f}" if act == 'CLOSE' else "-"
+                        })
+                        
+                    fo_win_rate = (fo_wins / closed_fo_count * 100) if closed_fo_count > 0 else 0.0
+                    net_fut_total = total_fut_gross - total_fut_fees
+                    
+                    fp1, fp2, fp3, fp4 = st.columns(4)
+                    fp1.metric("పూర్తయిన ఫ్యూచర్స్ ట్రేడ్స్", f"{closed_fo_count}")
+                    fp2.metric("విన్ రేట్ (Futures)", f"{fo_win_rate:.1f}%", f"{fo_wins}W | {fo_losses}L")
+                    fp3.metric("ఫ్యూచర్స్ ఛార్జీలు (Fees)", f"₹{total_fut_fees:,.2f}", "0.05% Taker Fee")
+                    f_net_col = "normal" if net_fut_total >= 0 else "inverse"
+                    fp4.metric("చేతికి వచ్చిన నికర లాభం (Net)", f"₹{net_fut_total:,.2f}", f"{net_fut_total:+.2f}", f_net_col)
+                    
+                    safe_dataframe(pd.DataFrame(enriched_fut).iloc[::-1], hide_index=True)
                 else:
                     st.info("ఫ్యూచర్స్ ఆర్డర్స్ ఏమీ లేవు.")
             except Exception as e:
