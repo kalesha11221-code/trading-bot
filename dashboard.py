@@ -9,7 +9,7 @@ import streamlit as st
 def get_render_state():
     try:
         url = "https://trading-bot-leaw.onrender.com"
-        resp = requests.get(url, timeout=30)
+        resp = requests.get(url, timeout=5)
         if resp.status_code == 200:
             data = resp.json()
             if isinstance(data, dict):
@@ -249,6 +249,54 @@ st.markdown("""
     }
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
+    
+    /* 🚫 Disable Streamlit page dimming/fading during auto-refresh */
+    div[data-testid="stAppViewBlockContainer"],
+    [data-testid="stAppViewContainer"],
+    [data-testid="stAppViewContainer"] > .main,
+    [data-testid="stMain"],
+    [data-testid="stMainBlockContainer"],
+    div.stApp,
+    section.main,
+    .main,
+    .block-container,
+    div[data-testid="stVerticalBlock"],
+    div[data-testid="stHorizontalBlock"],
+    div[data-testid="element-container"],
+    [data-test-script-state="running"] [data-testid="stAppViewContainer"],
+    [data-test-script-state="running"] [data-testid="stAppViewBlockContainer"],
+    [data-test-script-state="running"] [data-testid="stMainBlockContainer"],
+    [data-test-script-state="running"] .main,
+    [data-test-script-state="running"] .block-container,
+    [data-test-script-state="running"] div[data-testid="stVerticalBlock"],
+    [data-test-script-state="running"] div[data-testid="stHorizontalBlock"],
+    [data-test-script-state="running"] div[data-testid="element-container"],
+    [data-test-script-state="running"] div.stApp {
+        opacity: 1 !important;
+        filter: none !important;
+        -webkit-filter: none !important;
+        transition: none !important;
+        -webkit-transition: none !important;
+    }
+
+    /* Keep all content 100% solid and crisp during auto-refresh */
+    *, *::before, *::after {
+        transition-property: background-color, border-color, color, fill, stroke !important;
+    }
+
+    /* Hide Streamlit status widget (running spinner / Stop icon) */
+    [data-testid="stStatusWidget"],
+    div[data-testid="stStatusWidget"],
+    div.stStatusWidget {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+    }
+
+    /* Hide top decoration header */
+    [data-testid="stDecoration"] {
+        display: none !important;
+    }
     
     /* Top Navbar Header */
     .zk-navbar {
@@ -1723,7 +1771,7 @@ with tab_orders:
                         "నికర లాభం (Net P&L)": f"₹{net_p:+.2f}" if act == 'SELL' else "-"
                     })
                     
-                net_spot_total = gross_spot_profit - gross_spot_loss - total_spot_fees
+                net_spot_total = (gross_spot_profit - gross_spot_loss - total_spot_fees) if closed_count > 0 else 0.0
                 win_rate = (wins / closed_count * 100) if closed_count > 0 else 0.0
                 
                 p1, p2, p3, p4 = st.columns(4)
@@ -1803,7 +1851,7 @@ with tab_orders:
                         })
                         
                     fo_win_rate = (fo_wins / closed_fo_count * 100) if closed_fo_count > 0 else 0.0
-                    net_fut_total = total_fut_gross - total_fut_fees
+                    net_fut_total = (total_fut_gross - total_fut_fees) if closed_fo_count > 0 else 0.0
                     
                     fp1, fp2, fp3, fp4 = st.columns(4)
                     fp1.metric("పూర్తయిన ఫ్యూచర్స్ ట్రేడ్స్", f"{closed_fo_count}")

@@ -133,6 +133,7 @@ def generate_futures_signal(df):
 
 def run_futures_bot():
     init_files()
+    cooldown_dict = {}
     print("🚀 Futures Paper Bot Started (Leverage: 5x)", flush=True)
     
     while True:
@@ -161,27 +162,30 @@ def run_futures_bot():
                     roe_pct = (pnl_inr / pos['margin']) * 100
                     
                     should_close = False
-                    if roe_pct >= 15.0:
+                    if roe_pct >= 10.0:
                         should_close = True
                         reason = "TAKE_PROFIT"
                     elif roe_pct <= -10.0:
                         should_close = True
                         reason = "STOP_LOSS"
-                    elif side == 'LONG' and signal == 'SHORT':
+                    elif side == 'LONG' and signal == 'SHORT' and roe_pct >= 5.0:
                         should_close = True
-                        reason = "REVERSAL_SHORT"
-                    elif side == 'SHORT' and signal == 'LONG':
+                        reason = "REVERSAL_PROFIT_LOCK"
+                    elif side == 'SHORT' and signal == 'LONG' and roe_pct >= 5.0:
                         should_close = True
-                        reason = "REVERSAL_LONG"
+                        reason = "REVERSAL_PROFIT_LOCK"
                         
                     if should_close:
                         log_trade(sym, "CLOSE", side, entry, current_price, pos['margin'], LEVERAGE, round(pnl_inr, 2))
                         del state[sym]
                         save_state(state)
+                        cooldown_dict[sym] = time.time() + 300
                         print(f"[{datetime.now().strftime('%H:%M:%S')}] 🛑 CLOSED {side} {sym} | PnL: ₹{pnl_inr:.2f} ({reason})", flush=True)
                         time.sleep(2)
                         
                 elif len(state) < MAX_POSITIONS and signal != 'HOLD':
+                    if time.time() < cooldown_dict.get(sym, 0):
+                        continue
                     qty_usd = (MARGIN_PER_TRADE / USD_TO_INR) * LEVERAGE
                     coin_qty = qty_usd / current_price
                     
