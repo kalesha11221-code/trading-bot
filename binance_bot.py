@@ -1048,13 +1048,13 @@ def process_symbol(sym):
             
         peak_gain_pct = ((peak_p - avg_price) / avg_price) * 100.0
         
-        # 🚀 ONLY PROFIT MAXIMUM ENGINE (Super Tuned by Boss Request)
-        # 1. Smart Trailing Exit: Reached >= 2.5% and dipped 0.4% from peak (Trails 4-5% pumps!)
-        # 2. Explosive Direct Target Exit: Reached >= 4.0% directly
-        # 3. Confirmed Trend Reversal: Reached >= 2.0% with confirmed SELL reversal signal
-        is_trailing_exit = (peak_gain_pct >= 2.5 and current_price <= (peak_p * 0.996))
-        is_target_exit = (profit_pct >= 4.0)
-        is_reversal_exit = (profit_pct >= 2.0 and signal == 'sell')
+        # 🚀 QUICK SCALP PROFIT ENGINE: Take money off the table fast!
+        # 1. Quick Target Exit: Reached >= 1.5% profit directly (Fast & realistic!)
+        # 2. Smart Trailing Exit: Reached >= 1.2% and dipped 0.3% from peak (Locks quick pumps)
+        # 3. Confirmed Trend Reversal: Reached >= 0.8% with confirmed SELL reversal signal
+        is_trailing_exit = (peak_gain_pct >= 1.2 and current_price <= (peak_p * 0.997))
+        is_target_exit = (profit_pct >= 1.5)
+        is_reversal_exit = (profit_pct >= 0.8 and signal == 'sell')
         
         if is_trailing_exit or is_target_exit or is_reversal_exit:
             profit = (current_price - avg_price) * total_qty
@@ -1105,7 +1105,7 @@ def process_symbol(sym):
         # -------------------------------------------------------------
         # 2. ADDITIONAL DCA DIP BUY (AVERAGING DOWN)
         # -------------------------------------------------------------
-        elif len(pos.get('entries', [])) < 3 and current_price <= (avg_price * 0.982) and signal == 'buy' and ml_brain.get_ml_signal(sym) == 1:
+        elif len(pos.get('entries', [])) < 3 and current_price <= (avg_price * 0.982) and signal == 'buy' and ml_brain.get_ml_signal(sym) == 1 and ml_brain.get_smc_analysis(sym).get('bias') != 'BEARISH':
             # Capital Protection Guard
             current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
             if (current_invested + slice_cost_inr) <= portfolio_cap:
@@ -1124,7 +1124,7 @@ def process_symbol(sym):
                 pos['total_qty'] += slice_qty
                 pos['total_cost'] += slice_cost_inr
                 pos['avg_price'] = pos['total_cost'] / pos['total_qty']
-                pos['target_sell_price'] = pos['avg_price'] * 1.035
+                pos['target_sell_price'] = pos['avg_price'] * 1.015
                 pos['peak_price'] = current_price
                 save_dca_state(dca_state)
                 
@@ -1133,7 +1133,7 @@ def process_symbol(sym):
                 avg_disp = f"₹{pos['avg_price']:,.2f}" if is_indian else f"${pos['avg_price']:,.2f}"
                 target_disp = f"₹{pos['target_sell_price']:,.2f}" if is_indian else f"${pos['target_sell_price']:,.2f}"
                 
-                msg = f"🎯 [{mode_str} స్కామర్ బ్రెయిన్ 🥷 DCA Layer {layer}/3]: {sym} @ {price_disp} ({qty_label})\nకొత్త సగటు ధర: {avg_disp} | టార్గెట్ (+3.5% బెస్ట్ ప్రాఫిట్): {target_disp}\n{thought}"
+                msg = f"🎯 [{mode_str} స్కామర్ బ్రెయిన్ 🥷 DCA Layer {layer}/3 | 🏛️ SMC OrderBlock]: {sym} @ {price_disp} ({qty_label})\nకొత్త సగటు ధర: {avg_disp} | టార్గెట్ (+1.5% క్విక్ ప్రాఫిట్): {target_disp}\n{thought}"
                 voice_msg = f"Alert. Averaging down on {clean_name}."
                 log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[96m')
                 log_trade("BUY", sym, current_price, slice_qty, 0.0)
@@ -1143,7 +1143,7 @@ def process_symbol(sym):
     # -------------------------------------------------------------
     # 3. FIRST DIP ENTRY (INITIAL FRACTIONAL SLICE)
     # -------------------------------------------------------------
-    elif pos is None and signal == 'buy' and ml_brain.get_ml_signal(sym) == 1:
+    elif pos is None and signal == 'buy' and ml_brain.get_ml_signal(sym) == 1 and ml_brain.get_smc_analysis(sym).get('bias') != 'BEARISH':
         max_positions = 4 if is_scalp_style else MAX_ACTIVE_POSITIONS
         if len(dca_state) < max_positions:
             current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
@@ -1153,7 +1153,7 @@ def process_symbol(sym):
                     if not success:
                         log_status(f"⚠️ Live Binance Buy Warning ({sym}): {res}")
                         
-                target_p = current_price * 1.035
+                target_p = current_price * 1.015
                 dca_state[sym] = {
                     "entries": [{
                         "price": current_price,
@@ -1176,7 +1176,7 @@ def process_symbol(sym):
                 cost_disp = f"₹{slice_cost_inr:,.2f}" if is_indian else f"${slice_cost_usd} / ₹{slice_cost_inr:,.2f}"
                 target_disp = f"₹{target_p:,.2f}" if is_indian else f"${target_p:,.2f}"
                 
-                msg = f"🎯 [{mode_str} స్కామర్ బ్రెయిన్ 🥷 స్నైపర్ DCA]: {sym} డిప్ లో కొన్నాను @ {price_disp} ({cost_disp} | {qty_label})\n🎯 టార్గెట్ (+3.5% బెస్ట్ ప్రాఫిట్): {target_disp} | టెక్నిక్: {strat_used}\n{thought}"
+                msg = f"🎯 [{mode_str} స్కామర్ బ్రెయిన్ 🥷 స్నైపర్ DCA | 🏛️ SMC Institutional Confluence]: {sym} డిప్ లో కొన్నాను @ {price_disp} ({cost_disp} | {qty_label})\n🎯 టార్గెట్ (+3.5% బెస్ట్ ప్రాఫిట్): {target_disp} | టెక్నిక్: {strat_used}\n{thought}"
                 voice_msg = f"Alert. Buying fractional slice of {clean_name}."
                 log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
                 log_trade("BUY", sym, current_price, slice_qty, 0.0)

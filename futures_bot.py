@@ -99,7 +99,7 @@ def fetch_binance_data(sym):
 
     return pd.DataFrame()
 
-def generate_futures_signal(df):
+def generate_futures_signal(df, sym="BTC-USD"):
     if df.empty or len(df) < 30: return 'HOLD', 0.0
     
     df['EMA_9'] = df['close'].ewm(span=9, adjust=False).mean()
@@ -115,18 +115,23 @@ def generate_futures_signal(df):
     last = df.iloc[-1]
     prev = df.iloc[-2]
     
-    # 🟢 BULLISH MOMENTUM ENTRY (LONG 5x)
-    # EMA 9 crosses above EMA 21 or strong trend with rising RSI
-    if last['EMA_9'] > last['EMA_21']:
+    # 🏛️ Institutional Confluence: Consult ml_brain (SMC + Machine Learning)
+    ml_sig = ml_brain.get_ml_signal(sym)
+    smc_info = ml_brain.get_smc_analysis(sym)
+    smc_bias = smc_info.get("bias", "NEUTRAL")
+    
+    # 🟢 INSTITUTIONAL BULLISH ENTRY (LONG 5x)
+    # EMA 9 > 21 + RSI momentum + ML == 1 + (SMC Bullish or Neutral)
+    if last['EMA_9'] > last['EMA_21'] and last['RSI'] < 72:
         if (last['close'] > last['EMA_50'] or (prev['RSI'] <= 45 and last['RSI'] > prev['RSI'])):
-            if last['RSI'] < 72: # Avoid chasing at extreme overbought
+            if ml_sig == 1 and smc_bias != "BEARISH":
                 return 'LONG', last['close']
                 
-    # 🔴 BEARISH MOMENTUM ENTRY (SHORT 5x)
-    # EMA 9 crosses below EMA 21 or strong downtrend with falling RSI
-    if last['EMA_9'] < last['EMA_21']:
+    # 🔴 INSTITUTIONAL BEARISH ENTRY (SHORT 5x)
+    # EMA 9 < 21 + RSI dropping + ML == 0 + (SMC Bearish or Neutral)
+    if last['EMA_9'] < last['EMA_21'] and last['RSI'] > 28:
         if (last['close'] < last['EMA_50'] or (prev['RSI'] >= 55 and last['RSI'] < prev['RSI'])):
-            if last['RSI'] > 28: # Avoid chasing at extreme oversold
+            if ml_sig == 0 and smc_bias != "BULLISH":
                 return 'SHORT', last['close']
             
     return 'HOLD', last['close']
@@ -134,7 +139,7 @@ def generate_futures_signal(df):
 def run_futures_bot():
     init_files()
     cooldown_dict = {}
-    print("🚀 Futures Paper Bot Started (Leverage: 5x)", flush=True)
+    print("🚀 Institutional Futures Paper Bot Started (Leverage: 5x | SMC & Trailing Engine)", flush=True)
     
     while True:
         try:
@@ -145,13 +150,14 @@ def run_futures_bot():
                 df = fetch_binance_data(sym)
                 if df.empty: continue
                 
-                signal, current_price = generate_futures_signal(df)
+                signal, current_price = generate_futures_signal(df, sym)
                 
                 if sym in state:
                     pos = state[sym]
                     side = pos['side']
                     entry = pos['entry_price']
                     qty = pos['qty']
+                    margin = float(pos['margin'])
                     
                     if side == 'LONG':
                         pnl_usd = (current_price - entry) * qty
@@ -159,24 +165,46 @@ def run_futures_bot():
                         pnl_usd = (entry - current_price) * qty
                         
                     pnl_inr = pnl_usd * USD_TO_INR
-                    roe_pct = (pnl_inr / pos['margin']) * 100
+                    roe_pct = (pnl_inr / margin) * 100.0
+                    
+                    # Track Peak ROE for trailing profit
+                    peak_roe = max(pos.get('peak_roe', 0.0), roe_pct)
+                    pos['peak_roe'] = peak_roe
+                    save_state(state)
                     
                     should_close = False
-                    if roe_pct >= 10.0:
+                    reason = ""
+                    
+                    # 1. 🎯 QUICK TAKE PROFIT (+6.0% ROE = ₹300 profit on ₹5,000 margin)
+                    if roe_pct >= 6.0:
                         should_close = True
-                        reason = "TAKE_PROFIT"
-                    elif roe_pct <= -10.0:
+                        reason = "TAKE_PROFIT_QUICK_SCALP (+6.0% ROE)"
+                    
+                    # 2. 🛡️ DYNAMIC TRAILING PROFIT LOCK (Reached +4.0% ROE and dipped 1.2%)
+                    elif peak_roe >= 4.0 and roe_pct <= (peak_roe - 1.2):
                         should_close = True
-                        reason = "STOP_LOSS"
-                    elif side == 'LONG' and signal == 'SHORT' and roe_pct >= 5.0:
+                        reason = f"TRAILING_PROFIT_LOCK (Peak: +{peak_roe:.1f}%, Exit: +{roe_pct:.1f}%)"
+                        
+                    # 3. 🔒 BREAKEVEN LOCK (Reached +2.5% ROE earlier, exit before loss)
+                    elif peak_roe >= 2.5 and roe_pct <= 0.6:
+                        should_close = True
+                        reason = "BREAKEVEN_FEE_PROTECT (+0.6% ROE)"
+                        
+                    # 4. 🔄 REVERSAL SIGNAL EXIT WITH PROFIT (>= +2.0% ROE)
+                    elif side == 'LONG' and signal == 'SHORT' and roe_pct >= 2.0:
                         should_close = True
                         reason = "REVERSAL_PROFIT_LOCK"
-                    elif side == 'SHORT' and signal == 'LONG' and roe_pct >= 5.0:
+                    elif side == 'SHORT' and signal == 'LONG' and roe_pct >= 2.0:
                         should_close = True
                         reason = "REVERSAL_PROFIT_LOCK"
                         
+                    # 5. 🛑 TIGHT RISK-MANAGED STOP LOSS (-5.0% ROE = ₹250 max loss)
+                    elif peak_roe < 2.5 and roe_pct <= -5.0:
+                        should_close = True
+                        reason = "STOP_LOSS (-5.0% ROE)"
+                        
                     if should_close:
-                        log_trade(sym, "CLOSE", side, entry, current_price, pos['margin'], LEVERAGE, round(pnl_inr, 2))
+                        log_trade(sym, "CLOSE", side, entry, current_price, margin, LEVERAGE, round(pnl_inr, 2))
                         del state[sym]
                         save_state(state)
                         cooldown_dict[sym] = time.time() + 300
@@ -195,11 +223,12 @@ def run_futures_bot():
                         "qty": coin_qty,
                         "margin": MARGIN_PER_TRADE,
                         "leverage": LEVERAGE,
+                        "peak_roe": 0.0,
                         "timestamp": datetime.now().isoformat()
                     }
                     save_state(state)
                     log_trade(sym, "OPEN", signal, current_price, 0, MARGIN_PER_TRADE, LEVERAGE, 0.0)
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🟢 OPENED {signal} {sym} @ ${current_price:.2f}", flush=True)
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🏛️ OPENED {signal} {sym} @ ${current_price:.2f} [Institutional Confluence]", flush=True)
                     time.sleep(2)
                     
             time.sleep(10) 
