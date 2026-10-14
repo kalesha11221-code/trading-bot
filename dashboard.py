@@ -15,13 +15,11 @@ def get_render_state():
             if isinstance(data, dict):
                 if "trades_log" in data and data["trades_log"]:
                     try:
-                        with open("trades_log.csv", "w") as f_t:
-                            f_t.write(data["trades_log"])
+                        db_helper.merge_csv_data(data["trades_log"], is_futures=False)
                     except: pass
                 if "fo_trades_log" in data and data["fo_trades_log"]:
                     try:
-                        with open("fo_trades_log.csv", "w") as f_fo:
-                            f_fo.write(data["fo_trades_log"])
+                        db_helper.merge_csv_data(data["fo_trades_log"], is_futures=True)
                     except: pass
             return data
     except Exception as e:
@@ -1389,27 +1387,26 @@ st.markdown("<br>", unsafe_allow_html=True)
 initial_capital = 50000.00
 total_profit = 0.0
 
-if os.path.exists('trades_log.csv'):
-    try:
-        hist_df = pd.read_csv('trades_log.csv')
-        if 'Profit' in hist_df.columns:
-            g_prof = 0.0
-            g_loss = 0.0
-            taxes = 0.0
-            for idx, row in hist_df.iterrows():
-                sym_r = str(row.get('Symbol', ''))
-                if not (sym_r.endswith('-USD') or sym_r.endswith('.NS') or sym_r.endswith('.BO')):
-                    continue
-                if row['Action'] == 'SELL' and str(row['Profit']) != '-':
-                    p_str = str(row['Profit']).replace('₹', '').replace('$', '').replace(',', '').strip()
-                    try:
-                        p = -float(p_str.replace('-', '')) if p_str.startswith('-') else float(p_str)
-                        if p > 0: g_prof += p
-                        elif p < 0: g_loss += abs(p)
-                        taxes += abs(p) * 0.001
-                    except: pass
-            total_profit = (g_prof - g_loss) - taxes
-    except: pass
+try:
+    hist_df = db_helper.get_trade_history_df(is_futures=False)
+    if not hist_df.empty and 'Profit' in hist_df.columns:
+        g_prof = 0.0
+        g_loss = 0.0
+        taxes = 0.0
+        for idx, row in hist_df.iterrows():
+            sym_r = str(row.get('Symbol', ''))
+            if not (sym_r.endswith('-USD') or sym_r.endswith('.NS') or sym_r.endswith('.BO')):
+                continue
+            if row['Action'] == 'SELL' and str(row['Profit']) != '-':
+                p_str = str(row['Profit']).replace('₹', '').replace('$', '').replace(',', '').strip()
+                try:
+                    p = -float(p_str.replace('-', '')) if p_str.startswith('-') else float(p_str)
+                    if p > 0: g_prof += p
+                    elif p < 0: g_loss += abs(p)
+                    taxes += abs(p) * 0.001
+                except: pass
+        total_profit = (g_prof - g_loss) - taxes
+except: pass
 
 # USD → INR rate
 USD_TO_INR = 84.5
@@ -1755,12 +1752,12 @@ with tab_futures:
         
     st.markdown("---")
     st.markdown("#### 📋 Futures Closed Trades History")
-    if os.path.exists('fo_trades_log.csv'):
-        try:
-            f_df = pd.read_csv('fo_trades_log.csv')
+    try:
+        f_df = db_helper.get_trade_history_df(is_futures=True)
+        if not f_df.empty:
             safe_dataframe(f_df.tail(15).iloc[::-1], hide_index=True)
-        except:
-            pass
+    except:
+        pass
 
 
 # =============================================================
@@ -2139,9 +2136,9 @@ with tab_orders:
                 st.toast("✅ Spot trade history reset!", icon="🗑️")
                 st.rerun()
 
-        if os.path.exists('trades_log.csv'):
+        df_perf = db_helper.get_trade_history_df(is_futures=False)
+        if not df_perf.empty:
             try:
-                df_perf = pd.read_csv('trades_log.csv')
                 df_perf_valid = df_perf[df_perf['Symbol'].astype(str).str.endswith(('-USD', '.NS', '.BO'))].copy()
                 
                 # Enrich Spot with Fees & Net PnL per trade
@@ -2228,9 +2225,9 @@ with tab_orders:
                 st.toast("✅ Futures trade history reset successfully!", icon="🗑️")
                 st.rerun()
 
-        if os.path.exists('fo_trades_log.csv'):
+        df_fo = db_helper.get_trade_history_df(is_futures=True)
+        if not df_fo.empty:
             try:
-                df_fo = pd.read_csv('fo_trades_log.csv')
                 if not df_fo.empty:
                     enriched_fut = []
                     total_fut_fees = 0.0

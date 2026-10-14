@@ -4,8 +4,14 @@ import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import binance_bot
 import futures_bot
+import db_helper
 
 print("Starting 24/7 Trading Bot Backend Worker (Render Web Service)...", flush=True)
+try:
+    db_helper.sync_cloud_to_local(is_futures=False)
+    db_helper.sync_cloud_to_local(is_futures=True)
+except Exception as e:
+    print(f"Startup cloud restore info: {e}", flush=True)
 
 class DummyHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -47,7 +53,11 @@ class DummyHandler(BaseHTTPRequestHandler):
         try:
             import json
             import os
-            out = {"status": "Trading Bot is running 24/7 on Render...", "MongoDB_Link": "Failed - Showing Local Data"}
+            import db_helper
+            
+            db_conn = db_helper.get_mongo_db()
+            mongo_link = "Connected - Cloud Persistent Storage (Zero Data Loss)" if db_conn is not None else "Local Storage Fallback"
+            out = {"status": "Trading Bot is running 24/7 on Render...", "MongoDB_Link": mongo_link}
             
             if os.path.exists("bot_heartbeat.json"):
                 with open("bot_heartbeat.json", "r") as f:
@@ -67,13 +77,9 @@ class DummyHandler(BaseHTTPRequestHandler):
                 with open("live_scan_status.json", "r") as f:
                     out["scan_status"] = json.load(f)
                     
-            if os.path.exists("trades_log.csv"):
-                with open("trades_log.csv", "r") as f:
-                    out["trades_log"] = f.read()
-                    
-            if os.path.exists("fo_trades_log.csv"):
-                with open("fo_trades_log.csv", "r") as f:
-                    out["fo_trades_log"] = f.read()
+            # Always return complete, authoritative persistent trade logs
+            out["trades_log"] = db_helper.get_trade_history_csv(is_futures=False)
+            out["fo_trades_log"] = db_helper.get_trade_history_csv(is_futures=True)
                     
             self.wfile.write(json.dumps(out, indent=4).encode('utf-8'))
         except Exception as e:

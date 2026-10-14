@@ -27,6 +27,8 @@ def init_files():
         if not os.path.exists(STATE_FILE):
             with open(STATE_FILE, 'w') as f:
                 json.dump({}, f)
+        # Restore full trade history from MongoDB Cloud so restarts never lose history
+        db_helper.sync_cloud_to_local(is_futures=True)
         if not os.path.exists(LOG_FILE):
             with open(LOG_FILE, 'w') as f:
                 f.write("Timestamp,Symbol,Action,Side,EntryPrice,ExitPrice,Margin,Leverage,Profit_INR\n")
@@ -39,9 +41,19 @@ def save_state(state):
 
 def log_trade(sym, action, side, entry_p, exit_p, margin, lev, profit):
     with file_lock:
-        with open(LOG_FILE, 'a') as f:
-            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            f.write(f"{timestamp},{sym},{action},{side},{entry_p},{exit_p},{margin},{lev},{profit}\n")
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        trade_data = {
+            'Timestamp': timestamp,
+            'Symbol': sym,
+            'Action': action,
+            'Side': side,
+            'EntryPrice': entry_p,
+            'ExitPrice': exit_p,
+            'Margin': margin,
+            'Leverage': lev,
+            'Profit_INR': profit
+        }
+        db_helper.log_trade_persistent(trade_data, is_futures=True)
 
 def fetch_binance_data(sym):
     # 1. Try Binance Direct API

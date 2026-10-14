@@ -178,17 +178,19 @@ def update_ai_brain_after_trade(sym, profit, strategy_key=None):
 
 
 def log_trade(action, sym, price, quantity, profit=0.0, strategy_key=None):
-    file_name = 'trades_log.csv'
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    profit_str = f"{profit:.4f}" if profit != 0.0 else "0.0"
     
-    if not os.path.exists(file_name):
-        with open(file_name, 'w') as f:
-            f.write("Time,Symbol,Action,Price,Shares,Profit\n")
-
     with file_lock:
-        with open(file_name, 'a') as f:
-            profit_str = f"{profit:.4f}" if profit != 0.0 else "0.0"
-            f.write(f"{timestamp},{sym},{action.upper()},{price:.2f},{quantity},{profit_str}\n")
+        trade_data = {
+            'Time': timestamp,
+            'Symbol': sym,
+            'Action': action.upper(),
+            'Price': f"{price:.2f}",
+            'Shares': quantity,
+            'Profit': profit_str
+        }
+        db_helper.log_trade_persistent(trade_data, is_futures=False)
             
     # 🧠 ADAPTIVE LEARNING UPDATE
     if action.upper() == 'SELL':
@@ -1222,6 +1224,11 @@ def run_bot_loop():
         _bot_loop_active = True
     log_status(f"[{datetime.now().strftime('%H:%M:%S')}] 🔥 Advanced AI Trading Robot is now ONLINE!", voice_alert="Advanced AI Robot is now online.", color_code="[95m")
     send_telegram_message("🤖 AI మల్టిపుల్ ట్రేడింగ్ బాట్ ఆన్ అయ్యింది!")
+    # Restore complete spot trade history from MongoDB Cloud so restarts never lose history
+    try:
+        db_helper.sync_cloud_to_local(is_futures=False)
+    except Exception:
+        pass
     loop_count = 0
     while True:
         loop_count += 1
