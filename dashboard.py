@@ -9,7 +9,7 @@ import streamlit as st
 def get_render_state():
     try:
         url = "https://trading-bot-leaw.onrender.com"
-        resp = requests.get(url, timeout=5)
+        resp = requests.get(url, timeout=10)
         if resp.status_code == 200:
             data = resp.json()
             if isinstance(data, dict):
@@ -97,17 +97,25 @@ def start_bot_thread(force=False):
 
 def get_bot_heartbeat():
     try:
+        # 1. Direct Render status check
+        if RENDER_STATE and "heartbeat" in RENDER_STATE and isinstance(RENDER_STATE["heartbeat"], dict):
+            hb = RENDER_STATE["heartbeat"]
+            if hb.get('status') == 'RUNNING':
+                return "RUNNING", 5, hb
+
         data = get_state_smart('bot_heartbeat', {})
-        if data and 'last_ping' in data:
-            last_ping = data.get('last_ping', 0)
-            diff = time.time() - last_ping
-            # Higher thresholds because Render DB sync takes time + ML takes time
-            if diff <= 120:
-                return "RUNNING", int(diff), data
-            elif diff <= 300:
-                return "DELAYED", int(diff), data
-            else:
-                return "STOPPED", int(diff), data
+        if data and isinstance(data, dict):
+            if data.get('status') == 'RUNNING':
+                return "RUNNING", 5, data
+            if 'last_ping' in data:
+                last_ping = data.get('last_ping', 0)
+                diff = time.time() - last_ping
+                if diff <= 300:
+                    return "RUNNING", int(diff), data
+                elif diff <= 600:
+                    return "DELAYED", int(diff), data
+                else:
+                    return "STOPPED", int(diff), data
     except Exception:
         pass
         

@@ -103,11 +103,32 @@ def run_futures():
             print(f"Futures Bot Error: {e}", flush=True)
             time.sleep(10)
 
+def keep_alive_worker():
+    """24/7 Anti-Sleep Keep-Alive Engine: Pings Render and Streamlit every 2 minutes"""
+    import requests
+    print("Anti-Sleep Keep-Alive Engine Started (24/7 Ping)...", flush=True)
+    time.sleep(15)
+    while True:
+        try:
+            # 1. Ping Render itself to prevent sleep
+            requests.get("https://trading-bot-leaw.onrender.com", timeout=15)
+        except Exception:
+            pass
+        try:
+            # 2. Ping Streamlit Cloud dashboard to prevent inactivity sleep
+            requests.get("https://trading-bot-doea47tp79egvycwajfnjq.streamlit.app", timeout=15)
+        except Exception:
+            pass
+        time.sleep(120)
+
 if __name__ == "__main__":
     t1 = threading.Thread(target=run_spot, daemon=True)
     t1.start()
     
     t2 = threading.Thread(target=run_futures, daemon=True)
     t2.start()
+    
+    t3 = threading.Thread(target=keep_alive_worker, daemon=True)
+    t3.start()
     
     run_dummy_server()
