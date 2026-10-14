@@ -1110,6 +1110,206 @@ def fetch_and_analyze(sym):
         st.error(f"డేటా తేవడంలో ఎర్రర్: {e}")
         return None, "HOLD", None
 
+# -------------------------------------------------------------
+# 🕯️ ADVANCED CANDLESTICK PATTERN DETECTION ENGINE
+# -------------------------------------------------------------
+def detect_candlestick_patterns(df):
+    """
+    Scans candlestick OHLC data for professional price-action patterns:
+    Hammer, Shooting Star, Bullish/Bearish Engulfing, Doji, Dragonfly/Gravestone,
+    Morning Star, Evening Star, Marubozu.
+    Returns:
+      markers: list of dicts for plotting annotations on chart
+      latest_pat: dict describing the latest detected pattern with Telugu insights
+    """
+    default_pat = {
+        'type': 'Consolidation',
+        'sentiment': 'NEUTRAL',
+        'icon': '🕯️',
+        'confidence': '65%',
+        'telugu_title': 'కన్సాలిడేషన్ క్యాండిల్ (స్థిరమైన పరిధి)',
+        'telugu_desc': 'ప్రస్తుతం మార్కెట్‌లో కొనుగోలుదారులు మరియు అమ్మకందారుల మధ్య తీవ్రమైన ఒత్తిడి లేదు. ప్రైస్ ఒక శ్రేణిలో కదులుతోంది.',
+        'action': 'వేచి చూడండి (WAIT / HOLD)'
+    }
+    if df is None or len(df) < 3:
+        return [], default_pat
+
+    markers = []
+    latest_pat = None
+    start_idx = max(2, len(df) - 35)
+
+    for i in range(start_idx, len(df)):
+        curr = df.iloc[i]
+        prev = df.iloc[i-1]
+        prev2 = df.iloc[i-2] if i >= 2 else prev
+
+        o = float(curr['open'])
+        h = float(curr['high'])
+        l = float(curr['low'])
+        c = float(curr['close'])
+
+        body = abs(c - o)
+        crange = h - l
+        if crange <= 1e-6:
+            continue
+
+        upper_wick = h - max(o, c)
+        lower_wick = min(o, c) - l
+        is_green = c >= o
+        is_red = c < o
+
+        prev_o = float(prev['open'])
+        prev_c = float(prev['close'])
+        prev_body = abs(prev_c - prev_o)
+        prev_green = prev_c >= prev_o
+        prev_red = prev_c < prev_o
+
+        prev2_o = float(prev2['open'])
+        prev2_c = float(prev2['close'])
+        prev2_body = abs(prev2_c - prev2_o)
+        prev2_green = prev2_c >= prev2_o
+        prev2_red = prev2_c < prev2_o
+
+        pat = None
+
+        # 1. Doji Family (Body <= 10% of total candle range)
+        if body <= (crange * 0.10):
+            if lower_wick >= (crange * 0.65) and upper_wick <= (crange * 0.15):
+                pat = {
+                    'index': i, 'timestamp': curr['timestamp'], 'price': l,
+                    'type': 'Dragonfly Doji', 'sentiment': 'BULLISH', 'icon': '🐉',
+                    'confidence': '82%',
+                    'telugu_title': 'డ్రాగన్‌ఫ్లై డోజీ (Dragonfly Doji)',
+                    'telugu_desc': 'సెల్లర్స్ ప్రైస్‌ను భారీగా కిందకు దించారు, కానీ చివరి నిమిషంలో బలమైన బయ్యర్స్ దూసుకొచ్చి ప్రైస్‌ను పైకి లేపారు. బలమైన బౌన్స్ సంకేతం!',
+                    'action': 'BUY (బౌన్స్ లాంగ్ ఎంట్రీ)'
+                }
+            elif upper_wick >= (crange * 0.65) and lower_wick <= (crange * 0.15):
+                pat = {
+                    'index': i, 'timestamp': curr['timestamp'], 'price': h,
+                    'type': 'Gravestone Doji', 'sentiment': 'BEARISH', 'icon': '🪦',
+                    'confidence': '80%',
+                    'telugu_title': 'గ్రేవ్‌స్టోన్ డోజీ (Gravestone Doji)',
+                    'telugu_desc': 'బయ్యర్స్ ప్రైస్‌ను పైకి తీసుకెళ్లడానికి ప్రయత్నించారు కానీ సెల్లర్స్ తీవ్రమైన రిజెక్షన్ ఇచ్చారు. ప్రైస్ పడిపోయే అవకాశం ఉంది.',
+                    'action': 'SELL (షార్ట్ లేదా ఎగ్జిట్)'
+                }
+            else:
+                pat = {
+                    'index': i, 'timestamp': curr['timestamp'], 'price': c,
+                    'type': 'Doji', 'sentiment': 'NEUTRAL', 'icon': '⚖️',
+                    'confidence': '70%',
+                    'telugu_title': 'డోజీ ప్యాటర్న్ (మార్కెట్ డైలమా)',
+                    'telugu_desc': 'బయ్యర్స్ మరియు సెల్లర్స్ సమాన బలంతో ఉన్నారు. మార్కెట్ త్వరలో ఒకవైపు భారీ విస్ఫోటనం లేదా బ్రేక్‌అవుట్ ఇవ్వనుంది.',
+                    'action': 'వేచి చూడండి (HOLD)'
+                }
+
+        # 2. 🔨 Hammer (Bullish Reversal: Lower wick >= 1.8x body, tiny upper wick)
+        elif lower_wick >= (1.8 * body) and upper_wick <= (0.35 * body) and body > 0:
+            pat = {
+                'index': i, 'timestamp': curr['timestamp'], 'price': l,
+                'type': 'Hammer', 'sentiment': 'BULLISH', 'icon': '🔨',
+                'confidence': '85%',
+                'telugu_title': 'హ్యామర్ (Hammer Bullish Reversal)',
+                'telugu_desc': 'డౌన్‌ట్రెండ్ అడుగున సుత్తి లాంటి ఆకారం ఏర్పడింది! సెల్లర్స్ ఆధిపత్యం ముగిసింది, బయ్యర్స్ భారీగా వాల్యూమ్‌తో కొనుగోలు చేస్తున్నారు.',
+                'action': 'STRONG BUY (కొనుగోలు అనుకూలం)'
+            }
+
+        # 3. 🌠 Shooting Star (Bearish Reversal: Upper wick >= 1.8x body, tiny lower wick)
+        elif upper_wick >= (1.8 * body) and lower_wick <= (0.35 * body) and body > 0:
+            pat = {
+                'index': i, 'timestamp': curr['timestamp'], 'price': h,
+                'type': 'Shooting Star', 'sentiment': 'BEARISH', 'icon': '🌠',
+                'confidence': '84%',
+                'telugu_title': 'షూటింగ్ స్టార్ (Shooting Star Bearish)',
+                'telugu_desc': 'అప్‌ట్రెండ్ శిఖరాన షూటింగ్ స్టార్ ఏర్పడింది! పై స్థాయిలో తీవ్రమైన అమ్మకాల ఒత్తిడి కనిపించింది, ప్రైస్ కిందకి పడిపోయే అవకాశం ఉంది.',
+                'action': 'SELL / SHORT (లాభాల స్వీకరణ)'
+            }
+
+        # 4. 🟩 Bullish Engulfing (Current Green engulfs Previous Red)
+        elif prev_red and is_green and (c >= prev_o) and (o <= prev_c):
+            pat = {
+                'index': i, 'timestamp': curr['timestamp'], 'price': l,
+                'type': 'Bullish Engulfing', 'sentiment': 'BULLISH', 'icon': '🟩',
+                'confidence': '88%',
+                'telugu_title': 'బుల్లిష్ ఎంగల్ఫింగ్ (Bullish Engulfing)',
+                'telugu_desc': 'క్రితం నాటి రెడ్ క్యాండిల్‌ను సరికొత్త పెద్ద గ్రీన్ క్యాండిల్ పూర్తిగా మింగేసింది! బయ్యర్స్ మార్కెట్‌ను పూర్తిగా తమ ఆధీనంలోకి తీసుకున్నారు.',
+                'action': 'STRONG BUY (లాంగ్ సిగ్నల్)'
+            }
+
+        # 5. 🟥 Bearish Engulfing (Current Red engulfs Previous Green)
+        elif prev_green and is_red and (c <= prev_o) and (o >= prev_c):
+            pat = {
+                'index': i, 'timestamp': curr['timestamp'], 'price': h,
+                'type': 'Bearish Engulfing', 'sentiment': 'BEARISH', 'icon': '🟥',
+                'confidence': '86%',
+                'telugu_title': 'బేరిష్ ఎంగల్ఫింగ్ (Bearish Engulfing)',
+                'telugu_desc': 'క్రితం నాటి గ్రీన్ క్యాండిల్‌ను సరికొత్త పెద్ద రెడ్ క్యాండిల్ మింగేసింది! సెల్లర్స్ పెద్ద ఎత్తున మార్కెట్‌ను డంప్ చేస్తున్నారు.',
+                'action': 'STRONG SELL (షార్ట్ సిగ్నల్)'
+            }
+
+        # 6. 🌅 Morning Star (3-Candle Reversal: Red -> Small -> Green)
+        elif prev2_red and (prev_body < prev2_body * 0.45) and is_green and (c > (prev2_o + prev2_c) / 2):
+            pat = {
+                'index': i, 'timestamp': curr['timestamp'], 'price': l,
+                'type': 'Morning Star', 'sentiment': 'BULLISH', 'icon': '🌅',
+                'confidence': '90%',
+                'telugu_title': 'మార్నింగ్ స్టార్ (Morning Star 3-Candle)',
+                'telugu_desc': '3 క్యాండిల్స్ కలిపి క్లాసిక్ బాటమ్ రివర్సల్ ఏర్పాటు చేశాయి! పతనం ఆగిపోయింది, సరికొత్త అప్‌ట్రెండ్ ప్రారంభమైంది.',
+                'action': 'STRONG BUY (ఖచ్చితమైన కొనుగోలు)'
+            }
+
+        # 7. 🌇 Evening Star (3-Candle Reversal: Green -> Small -> Red)
+        elif prev2_green and (prev_body < prev2_body * 0.45) and is_red and (c < (prev2_o + prev2_c) / 2):
+            pat = {
+                'index': i, 'timestamp': curr['timestamp'], 'price': h,
+                'type': 'Evening Star', 'sentiment': 'BEARISH', 'icon': '🌇',
+                'confidence': '89%',
+                'telugu_title': 'ఈవెనింగ్ స్టార్ (Evening Star 3-Candle)',
+                'telugu_desc': '3 క్యాండిల్స్ కలిపి క్లాసిక్ టాప్ రివర్సల్ ఏర్పాటు చేశాయి! ర్యాలీ ముగిసింది, డౌన్‌ట్రెండ్ ప్రారంభమైంది.',
+                'action': 'STRONG SELL (స్టాప్ లాస్ లేదా ఎగ్జిట్)'
+            }
+
+        # 8. 🐂 Bullish Marubozu (Solid Green, no wicks)
+        elif is_green and upper_wick <= (0.05 * body) and lower_wick <= (0.05 * body) and body > (crange * 0.85):
+            pat = {
+                'index': i, 'timestamp': curr['timestamp'], 'price': l,
+                'type': 'Bullish Marubozu', 'sentiment': 'BULLISH', 'icon': '🐂',
+                'confidence': '86%',
+                'telugu_title': 'బుల్లిష్ మారుబోజు (Bullish Marubozu)',
+                'telugu_desc': 'ఎటువంటి విక్స్ లేని స్వచ్ఛమైన పెద్ద గ్రీన్ క్యాండిల్! మార్కెట్ ఓపెన్ అయినప్పటి నుండి క్లోజ్ అయ్యే వరకు నిర్విరామంగా కొనుగోళ్లు జరిగాయి.',
+                'action': 'BUY (మొమెంటమ్ రైడింగ్)'
+            }
+
+        if pat is not None:
+            markers.append(pat)
+            latest_pat = pat
+
+    if latest_pat is None:
+        last_candle = df.iloc[-1]
+        c = float(last_candle['close'])
+        o = float(last_candle['open'])
+        if c >= o:
+            latest_pat = {
+                'type': 'Bullish Candle',
+                'sentiment': 'BULLISH',
+                'icon': '📈',
+                'confidence': '72%',
+                'telugu_title': 'బుల్లిష్ క్యాండిల్ (అప్‌ట్రెండ్ కొనసాగింపు)',
+                'telugu_desc': 'ప్రైస్ మునుపటి కంటే పెరుగుతూ గ్రీన్ క్యాండిల్ ఏర్పడింది. మార్కెట్ బుల్లిష్ ఆధిక్యంలో కొనసాగుతోంది.',
+                'action': 'BUY / HOLD'
+            }
+        else:
+            latest_pat = {
+                'type': 'Bearish Candle',
+                'sentiment': 'BEARISH',
+                'icon': '📉',
+                'confidence': '70%',
+                'telugu_title': 'బేరిష్ క్యాండిల్ (స్వల్ప దిద్దుబాటు)',
+                'telugu_desc': 'ప్రైస్ స్వల్పంగా తగ్గి రెడ్ క్యాండిల్ ఏర్పడింది. సపోర్ట్ లెవెల్ వద్ద రివర్సల్ కోసం చూడండి.',
+                'action': 'WAIT / HOLD'
+            }
+
+    return markers, latest_pat
+
 
 # -------------------------------------------------------------
 # 🌐 1. FULLY INTERACTIVE CLICKABLE LIVE TICKER TAPE
@@ -1159,6 +1359,7 @@ for idx, (sym_t, long_nm, short_nm) in enumerate(_TICKER_META):
     btn_type = "primary" if is_active_tick else "secondary"
     if tick_cols[idx].button(btn_label, key=f"btn_tick_{sym_t}", use_container_width=True, type=btn_type):
         st.session_state['inspect_trade_key'] = sym_t
+        st.session_state['selected_chart_sym'] = sym_t
         st.rerun()
 
 st.markdown("<br>", unsafe_allow_html=True)
@@ -1450,6 +1651,16 @@ with tab_pos:
         </div>"""
         st.markdown(textwrap.dedent(positions_table_html), unsafe_allow_html=True)
 
+        st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+        st.markdown("##### 🔍 కాయిన్ క్యాండిల్‌స్టిక్ చార్ట్ & AI ప్యాటర్న్ చూడటానికి క్లిక్ చేయండి:")
+        s_cols = st.columns(max(1, len(dca_positions)))
+        for s_idx, ssym_btn in enumerate(dca_positions.keys()):
+            with s_cols[s_idx]:
+                if st.button(f"📊 {ssym_btn} చార్ట్ & ప్యాటర్న్", key=f"btn_spot_chart_{ssym_btn}", use_container_width=True):
+                    st.session_state['selected_chart_sym'] = ssym_btn
+                    st.toast(f"✅ {ssym_btn} చార్ట్ లోడ్ చేయబడింది! '📊 ప్రో చార్ట్స్' ట్యాబ్‌లో చూడండి.", icon="🕯️")
+                    st.rerun()
+
     else:
         st.info("ప్రస్తుతం ఓపెన్ పొజిషన్లు ఏమీ లేవు. పాత ట్రేడ్లన్నీ లాభాలతో క్లోజ్ అయ్యాయి. కొత్త కన్ఫర్మ్డ్ సిగ్నల్ కోసం బాట్ స్కాన్ చేస్తోంది.")
 
@@ -1512,6 +1723,16 @@ with tab_futures:
             f"</tr></thead><tbody style='font-family:monospace;font-size:13px;color:#e0e3eb;'>{rows_joined}</tbody></table>"
         )
         st.markdown(f_table, unsafe_allow_html=True)
+        
+        st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+        st.markdown("##### 🔍 కాయిన్ క్యాండిల్‌స్టిక్ చార్ట్ & AI ప్యాటర్న్ చూడటానికి క్లిక్ చేయండి:")
+        f_cols = st.columns(max(1, len(futures_state)))
+        for f_idx, fsym_btn in enumerate(futures_state.keys()):
+            with f_cols[f_idx]:
+                if st.button(f"📊 {fsym_btn} చార్ట్ & ప్యాటర్న్", key=f"btn_fut_chart_{fsym_btn}", use_container_width=True):
+                    st.session_state['selected_chart_sym'] = fsym_btn
+                    st.toast(f"✅ {fsym_btn} చార్ట్ లోడ్ చేయబడింది! '📊 ప్రో చార్ట్స్' ట్యాబ్‌లో చూడండి.", icon="🕯️")
+                    st.rerun()
         
     st.markdown("---")
     st.markdown("#### 📋 ఫ్యూచర్స్ ట్రేడ్స్ హిస్టరీ (Futures Trades History)")
@@ -1638,18 +1859,138 @@ with tab_mind:
 # TAB 3: 📊 ట్రేడింగ్ వ్యూ ప్రో చార్ట్స్ (PRO ANALYTICS)
 # =============================================================
 with tab_charts:
-    sel_chart_sym = st.selectbox("చార్ట్ చూడాల్సిన స్టాక్ లేదా కాయిన్ ఎంచుకోండి:", list(symbol_options.values()), index=0, key="chart_sym_select")
-    df, signal, last = fetch_and_analyze(sel_chart_sym)
+    st.markdown("### 📊 లైవ్ క్యాండిల్‌స్టిక్ చార్ట్స్ & AI ప్యాటర్న్ డిటెక్టర్")
+    st.caption("క్రింది కాయిన్స్ లేదా స్టాక్స్ పై **ఒక్క క్లిక్ చేయండి** — తక్షణమే లైవ్ క్యాండిల్‌స్టిక్ చార్ట్, గుర్తించిన ప్యాటర్న్ (Hammer, Engulfing, Star), మరియు ట్రేడింగ్ సిగ్నల్ కనిపిస్తాయి:")
+    
+    if "selected_chart_sym" not in st.session_state:
+        st.session_state["selected_chart_sym"] = "BTC-USD"
+
+    # ─── QUICK 1-CLICK COIN BUTTONS ───
+    st.markdown("##### 🪙 పాపులర్ క్రిప్టో కాయిన్స్ (Crypto 24/7):")
+    crypto_chips = [
+        ("🪙 BTC", "BTC-USD"),
+        ("🪙 ETH", "ETH-USD"),
+        ("🪙 SOL", "SOL-USD"),
+        ("🪙 BNB", "BNB-USD"),
+        ("🪙 DOGE", "DOGE-USD"),
+        ("🪙 XRP", "XRP-USD")
+    ]
+    cols_c = st.columns(6)
+    for idx, (label, sym_val) in enumerate(crypto_chips):
+        with cols_c[idx]:
+            is_active = (st.session_state["selected_chart_sym"] == sym_val)
+            btn_txt = f"👉 {label}" if is_active else label
+            btn_type = "primary" if is_active else "secondary"
+            if st.button(btn_txt, key=f"chip_c_{sym_val}", use_container_width=True, type=btn_type):
+                st.session_state["selected_chart_sym"] = sym_val
+                st.rerun()
+
+    st.markdown("##### 🇮🇳 టాప్ ఇండియన్ స్టాక్స్ (NSE Zerodha):")
+    nse_chips = [
+        ("🇮🇳 RELIANCE", "RELIANCE.NS"),
+        ("🇮🇳 TATA MOTORS", "TMCV.NS"),
+        ("🇮🇳 HDFC BANK", "HDFCBANK.NS"),
+        ("🇮🇳 INFY", "INFY.NS"),
+        ("🇮🇳 SBIN", "SBIN.NS"),
+        ("🇮🇳 TCS", "TCS.NS")
+    ]
+    cols_n = st.columns(6)
+    for idx, (label, sym_val) in enumerate(nse_chips):
+        with cols_n[idx]:
+            is_active = (st.session_state["selected_chart_sym"] == sym_val)
+            btn_txt = f"👉 {label}" if is_active else label
+            btn_type = "primary" if is_active else "secondary"
+            if st.button(btn_txt, key=f"chip_n_{sym_val}", use_container_width=True, type=btn_type):
+                st.session_state["selected_chart_sym"] = sym_val
+                st.rerun()
+
+    st.markdown("<div style='margin-top: 6px;'></div>", unsafe_allow_html=True)
+
+    # Custom Asset Search / Selectbox dropdown
+    all_symbols = list(symbol_options.values())
+    curr_sym = st.session_state["selected_chart_sym"]
+    curr_idx = all_symbols.index(curr_sym) if curr_sym in all_symbols else 0
+
+    col_sel1, col_sel2 = st.columns([3, 1])
+    with col_sel1:
+        sel_chart_sym = st.selectbox(
+            "లేదా లిస్ట్ నుండి ఇతర స్టాక్ లేదా కాయిన్ ఎంచుకోండి:",
+            all_symbols,
+            index=curr_idx,
+            key="chart_sym_select_box"
+        )
+        if sel_chart_sym != st.session_state["selected_chart_sym"]:
+            st.session_state["selected_chart_sym"] = sel_chart_sym
+            st.rerun()
+
+    with col_sel2:
+        if st.button("🔄 చార్ట్ రీఫ్రెష్ (Refresh)", key="btn_refresh_chart", use_container_width=True):
+            st.rerun()
+
+    # Load data & Candlestick analysis
+    active_sym = st.session_state["selected_chart_sym"]
+    df, signal, last = fetch_and_analyze(active_sym)
     current_price = last['close'] if last is not None else 65000.0
     signal = signal if signal else "HOLD"
-    
-    st.markdown("### 📈 టెక్నికల్ అనాలసిస్ (Live Candlestick & Indicators)")
-    
-    # Speedometer Gauge Chart
+
+    # 🕯️ Detect Candlestick Patterns
+    markers, latest_pat = detect_candlestick_patterns(df)
+
+    # ─── CANDLESTICK PATTERN CARD ───
+    pat_sent = latest_pat['sentiment']
+    pat_color = "#00e676" if pat_sent == "BULLISH" else ("#ff3b30" if pat_sent == "BEARISH" else "#ffcc00")
+    pat_bg = "rgba(0, 230, 118, 0.12)" if pat_sent == "BULLISH" else ("rgba(255, 59, 48, 0.12)" if pat_sent == "BEARISH" else "rgba(255, 204, 0, 0.12)")
+    is_inr = (".NS" in active_sym or ".BO" in active_sym or "^NSE" in active_sym)
+    curr_prefix = "₹" if is_inr else "$"
+
+    card_html = f"""
+    <div style="background: linear-gradient(135deg, rgba(20,24,35,0.95), rgba(15,18,28,0.98)); border: 1.5px solid {pat_color}; border-radius: 14px; padding: 18px 22px; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.4);">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-bottom: 12px; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <span style="font-size: 32px;">{latest_pat['icon']}</span>
+                <div>
+                    <div style="font-size: 20px; font-weight: 800; color: #ffffff;">{latest_pat['telugu_title']}</div>
+                    <div style="font-size: 13px; color: #90caf9;">అసెట్: <b style="color:#ffffff;">{active_sym}</b> | లైవ్ ప్రైస్: <b style="color:#ffffff;">{curr_prefix}{current_price:,.2f}</b></div>
+                </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="background: {pat_bg}; color: {pat_color}; border: 1px solid {pat_color}; padding: 6px 14px; border-radius: 20px; font-size: 14px; font-weight: 800; letter-spacing: 0.5px;">
+                    {latest_pat['icon']} {pat_sent} ({latest_pat['confidence']})
+                </span>
+            </div>
+        </div>
+        <div style="background: rgba(255,255,255,0.04); border-radius: 10px; padding: 12px 16px; margin-bottom: 12px; border-left: 4px solid {pat_color};">
+            <div style="color: #e0e0e0; font-size: 14px; line-height: 1.6;">
+                <b>🔍 ప్యాటర్న్ వివరణ:</b> {latest_pat['telugu_desc']}
+            </div>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 10px;">
+            <div style="background: rgba(0,0,0,0.3); padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
+                <div style="color: #9e9e9e; font-size: 11px; text-transform: uppercase;">🤖 AI సిఫార్సు</div>
+                <div style="color: {pat_color}; font-size: 15px; font-weight: 700; margin-top: 2px;">{latest_pat['action']}</div>
+            </div>
+            <div style="background: rgba(0,0,0,0.3); padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
+                <div style="color: #9e9e9e; font-size: 11px; text-transform: uppercase;">🎯 టార్గెట్ (+1.5% Scalp)</div>
+                <div style="color: #00e676; font-size: 15px; font-weight: 700; margin-top: 2px;">{curr_prefix}{current_price * 1.015:,.2f}</div>
+            </div>
+            <div style="background: rgba(0,0,0,0.3); padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
+                <div style="color: #9e9e9e; font-size: 11px; text-transform: uppercase;">🛑 స్టాప్-లాస్ (-2.5% Safe)</div>
+                <div style="color: #ff3b30; font-size: 15px; font-weight: 700; margin-top: 2px;">{curr_prefix}{current_price * 0.975:,.2f}</div>
+            </div>
+            <div style="background: rgba(0,0,0,0.3); padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
+                <div style="color: #9e9e9e; font-size: 11px; text-transform: uppercase;">📊 RSI (14) మోమెంటమ్</div>
+                <div style="color: #64b5f6; font-size: 15px; font-weight: 700; margin-top: 2px;">{last['RSI']:.1f if (last is not None and 'RSI' in last and not pd.isna(last['RSI'])) else '50.0'}</div>
+            </div>
+        </div>
+    </div>
+    """
+    st.markdown(card_html, unsafe_allow_html=True)
+
+    # Speedometer Gauge & Metrics
     gauge_val = 50
     if signal == "BUY": gauge_val = 85
     elif signal == "SELL": gauge_val = 15
-    
+
     fig_gauge = go.Figure(go.Indicator(
         mode = "gauge",
         value = gauge_val,
@@ -1668,33 +2009,89 @@ with tab_charts:
         }
     ))
     fig_gauge.update_layout(height=240, margin=dict(l=10, r=10, t=40, b=10), template='plotly_dark')
-    
+
     col_g1, col_g2 = st.columns([1, 2])
     with col_g1:
         safe_plotly_chart(fig_gauge)
     with col_g2:
         m1, m2, m3 = st.columns(3)
-        m1.markdown(fancy_metric("ట్రేడింగ్ పెయిర్", sel_chart_sym), unsafe_allow_html=True)
-        m2.markdown(fancy_metric("లైవ్ ప్రైస్", f"₹{current_price:,.2f}"), unsafe_allow_html=True)
-        m3.markdown(fancy_metric("RSI (14)", f"{last['RSI']:.1f}", "Normal", "inverse"), unsafe_allow_html=True)
+        m1.markdown(fancy_metric("ట్రేడింగ్ పెయిర్", active_sym), unsafe_allow_html=True)
+        m2.markdown(fancy_metric("లైవ్ ప్రైస్", f"{curr_prefix}{current_price:,.2f}"), unsafe_allow_html=True)
+        rsi_str = f"{last['RSI']:.1f}" if (last is not None and 'RSI' in last and not pd.isna(last['RSI'])) else "50.0"
+        m3.markdown(fancy_metric("RSI (14)", rsi_str, "Normal", "inverse"), unsafe_allow_html=True)
 
-    # Candlestick chart
+    # ─── CANDLESTICK CHART WITH PATTERN ANNOTATIONS ───
     if df is not None and not df.empty:
-        fig_pro = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.6, 0.2, 0.2])
-        fig_pro.add_trace(go.Candlestick(x=df['timestamp'], open=df['open'], high=df['high'], low=df['low'], close=df['close'], name='Price'), row=1, col=1)
-        fig_pro.add_trace(go.Scatter(x=df['timestamp'], y=df['EMA_50'], line=dict(color='cyan', width=1.5), name='EMA 50'), row=1, col=1)
-        fig_pro.add_trace(go.Scatter(x=df['timestamp'], y=df['EMA_200'], line=dict(color='orange', width=2), name='EMA 200 (Trend)'), row=1, col=1)
-        
-        fig_pro.add_trace(go.Scatter(x=df['timestamp'], y=df['MACD_Line'], line=dict(color='blue', width=1.5), name='MACD'), row=2, col=1)
-        fig_pro.add_trace(go.Scatter(x=df['timestamp'], y=df['MACD_Signal'], line=dict(color='orange', width=1.5), name='Signal'), row=2, col=1)
-        macd_colors = ['green' if val >= 0 else 'red' for val in (df['MACD_Line'] - df['MACD_Signal'])]
-        fig_pro.add_trace(go.Bar(x=df['timestamp'], y=(df['MACD_Line'] - df['MACD_Signal']), marker_color=macd_colors, name='Histogram'), row=2, col=1)
-        
-        fig_pro.add_trace(go.Scatter(x=df['timestamp'], y=df['RSI'], line=dict(color='purple', width=1.5), name='RSI'), row=3, col=1)
-        fig_pro.add_hline(y=70, line_dash="dash", line_color="red", row=3, col=1)
-        fig_pro.add_hline(y=30, line_dash="dash", line_color="green", row=3, col=1)
-        fig_pro.update_layout(template='plotly_dark', height=750, xaxis_rangeslider_visible=False, margin=dict(l=0, r=0, t=30, b=0))
+        fig_pro = make_subplots(
+            rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.04,
+            row_heights=[0.62, 0.20, 0.18],
+            subplot_titles=(f"🕯️ {active_sym} Live Candlestick & Pattern Markers", "📊 MACD (12, 26, 9)", "📈 RSI Momentum (14)")
+        )
+        # Main Candlesticks
+        fig_pro.add_trace(go.Candlestick(
+            x=df['timestamp'], open=df['open'], high=df['high'], low=df['low'], close=df['close'],
+            name=f'{active_sym} Price',
+            increasing_line_color='#00e676', decreasing_line_color='#ff3b30'
+        ), row=1, col=1)
+        # EMAs
+        fig_pro.add_trace(go.Scatter(x=df['timestamp'], y=df['EMA_50'], line=dict(color='cyan', width=1.5), name='EMA 50 (Short Trend)'), row=1, col=1)
+        fig_pro.add_trace(go.Scatter(x=df['timestamp'], y=df['EMA_200'], line=dict(color='orange', width=2), name='EMA 200 (Macro Trend)'), row=1, col=1)
+
+        # 🕯️ Annotate detected patterns directly on candles
+        for m in markers[-6:]:
+            is_bull = (m['sentiment'] == 'BULLISH')
+            fig_pro.add_annotation(
+                x=m['timestamp'],
+                y=m['price'],
+                text=f"{m['icon']} {m['type']}",
+                showarrow=True,
+                arrowhead=2,
+                arrowsize=1.2,
+                arrowwidth=2,
+                arrowcolor="#00e676" if is_bull else "#ff3b30",
+                ay=35 if is_bull else -35,
+                font=dict(color="#ffffff", size=10, family="Arial"),
+                bgcolor="rgba(20, 24, 35, 0.9)",
+                bordercolor="#00e676" if is_bull else "#ff3b30",
+                borderwidth=1,
+                borderpad=4,
+                row=1, col=1
+            )
+
+        # MACD
+        fig_pro.add_trace(go.Scatter(x=df['timestamp'], y=df['MACD_Line'], line=dict(color='#2962ff', width=1.5), name='MACD'), row=2, col=1)
+        fig_pro.add_trace(go.Scatter(x=df['timestamp'], y=df['MACD_Signal'], line=dict(color='#ff9800', width=1.5), name='Signal'), row=2, col=1)
+        macd_colors = ['#00e676' if val >= 0 else '#ff3b30' for val in (df['MACD_Line'] - df['MACD_Signal'])]
+        fig_pro.add_trace(go.Bar(x=df['timestamp'], y=(df['MACD_Line'] - df['MACD_Signal']), marker_color=macd_colors, name='MACD Hist'), row=2, col=1)
+
+        # RSI
+        fig_pro.add_trace(go.Scatter(x=df['timestamp'], y=df['RSI'], line=dict(color='#ba68c8', width=1.8), name='RSI'), row=3, col=1)
+        fig_pro.add_hline(y=70, line_dash="dash", line_color="#ff5252", row=3, col=1)
+        fig_pro.add_hline(y=30, line_dash="dash", line_color="#69f0ae", row=3, col=1)
+
+        fig_pro.update_layout(
+            template='plotly_dark',
+            height=780,
+            xaxis_rangeslider_visible=False,
+            margin=dict(l=10, r=10, t=35, b=10),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
         safe_plotly_chart(fig_pro)
+
+    # ─── CANDLESTICK PATTERNS CHEAT SHEET ───
+    with st.expander("📚 క్యాండిల్‌స్టిక్ ప్యాటర్న్స్ గైడ్ & మీనింగ్స్ (Candlestick Cheat Sheet)", expanded=False):
+        st.markdown("""
+        | ప్యాటర్న్ పేరు | రకం | సెంటిమెంట్ | వివరణ & ట్రేడింగ్ వ్యూహం |
+        |---|---|---|---|
+        | 🔨 **హ్యామర్ (Hammer)** | సింగిల్ క్యాండిల్ | 🟢 బుల్లిష్ (Bullish) | మార్కెట్ అడుగున ఏర్పడుతుంది. సెల్లర్స్ ని బయ్యర్స్ అధిగమించారు. **BUY సిగ్నల్**. |
+        | 🌠 **షూటింగ్ స్టార్ (Shooting Star)** | సింగిల్ క్యాండిల్ | 🔴 బేరిష్ (Bearish) | మార్కెట్ పైభాగంలో ఏర్పడుతుంది. అమ్మకాల ఒత్తిడితో ప్రైస్ పడిపోతుంది. **SELL సిగ్నల్**. |
+        | 🟩 **బుల్లిష్ ఎంగల్ఫింగ్ (Bullish Engulfing)** | డబుల్ క్యాండిల్ | 🟢 స్ట్రాంగ్ బుల్లిష్ | చిన్న రెడ్ క్యాండిల్ తర్వాత పెద్ద గ్రీన్ క్యాండిల్ ఏర్పడుతుంది. **ఖచ్చితమైన BUY**. |
+        | 🟥 **బేరిష్ ఎంగల్ఫింగ్ (Bearish Engulfing)** | డబుల్ క్యాండిల్ | 🔴 స్ట్రాంగ్ బేరిష్ | చిన్న గ్రీన్ క్యాండిల్ తర్వాత పెద్ద రెడ్ క్యాండిల్ ఏర్పడుతుంది. **ఖచ్చితమైన SELL**. |
+        | 🌅 **మార్నింగ్ స్టార్ (Morning Star)** | 3-క్యాండిల్ ప్యాటర్న్ | 🟢 సూపర్ బుల్లిష్ | రెడ్ -> చిన్న డోజీ -> పెద్ద గ్రీన్ క్యాండిల్. డౌన్‌ట్రెండ్ ముగిసి కొత్త ర్యాలీ షురూ. |
+        | 🌇 **ఈవెనింగ్ స్టార్ (Evening Star)** | 3-క్యాండిల్ ప్యాటర్న్ | 🔴 సూపర్ బేరిష్ | గ్రీన్ -> చిన్న డోజీ -> పెద్ద రెడ్ క్యాండిల్. అప్‌ట్రెండ్ ముగిసి భారీ పతనం. |
+        | ⚖️ **డోజీ (Doji)** | సింగిల్ క్యాండిల్ | 🟡 న్యూట్రల్ (Neutral) | ఓపెన్ మరియు క్లోజ్ సమానం. బయ్యర్స్, సెల్లర్స్ పోటీ పడుతున్నారు. బ్రేక్‌అవుట్ రెడీ. |
+        | 🐂 **బుల్లిష్ మారుబోజు (Marubozu)** | సింగిల్ క్యాండిల్ | 🟢 మొమెంటమ్ | ఎటువంటి విక్స్ లేని ఘనమైన గ్రీన్ క్యాండిల్. నిరంతర కొనుగోలు ర్యాలీ. |
+        """)
 
 
 # =============================================================

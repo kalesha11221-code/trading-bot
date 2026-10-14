@@ -1,7 +1,13 @@
 import os
 import json
-from pymongo import MongoClient
-import certifi
+
+try:
+    from pymongo import MongoClient
+    import certifi
+    HAS_PYMONGO = True
+except ImportError:
+    HAS_PYMONGO = False
+    MongoClient = None
 
 # Configure MongoDB Connection (Hardcoded for Render/Streamlit sync)
 MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://kalesha11221_db_user:htGdtrwq23PLvQYi@cluster0.ur7meip.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
@@ -17,7 +23,7 @@ except Exception:
 client = None
 db = None
 
-if MONGO_URI:
+if MONGO_URI and HAS_PYMONGO:
     try:
         client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tlsAllowInvalidCertificates=True)
         # Test connection

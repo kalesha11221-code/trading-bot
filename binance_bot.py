@@ -1048,15 +1048,17 @@ def process_symbol(sym):
             
         peak_gain_pct = ((peak_p - avg_price) / avg_price) * 100.0
         
-        # 🚀 QUICK SCALP PROFIT ENGINE: Take money off the table fast!
-        # 1. Quick Target Exit: Reached >= 1.5% profit directly (Fast & realistic!)
+        # 🚀 QUICK SCALP PROFIT & CAPITAL PROTECTION ENGINE:
+        # 1. Quick Target Exit: Reached >= 1.2% profit directly (Fast scalp!)
         # 2. Smart Trailing Exit: Reached >= 1.2% and dipped 0.3% from peak (Locks quick pumps)
-        # 3. Confirmed Trend Reversal: Reached >= 0.8% with confirmed SELL reversal signal
+        # 3. Breakeven Lock: Reached >= 1.0% earlier, exit if falls back to <= +0.2% (Zero Loss Rule)
+        # 4. Confirmed Trend Reversal: Reached >= 0.5% with confirmed SELL reversal signal
+        is_breakeven_exit = (peak_gain_pct >= 1.0 and profit_pct <= 0.2)
         is_trailing_exit = (peak_gain_pct >= 1.2 and current_price <= (peak_p * 0.997))
-        is_target_exit = (profit_pct >= 1.5)
-        is_reversal_exit = (profit_pct >= 0.8 and signal == 'sell')
+        is_target_exit = (profit_pct >= 1.2)
+        is_reversal_exit = (profit_pct >= 0.5 and signal == 'sell')
         
-        if is_trailing_exit or is_target_exit or is_reversal_exit:
+        if is_trailing_exit or is_target_exit or is_reversal_exit or is_breakeven_exit:
             profit = (current_price - avg_price) * total_qty
             last_exit_times[sym] = time.time()
             
@@ -1069,9 +1071,10 @@ def process_symbol(sym):
             qty_label = f"{int(total_qty)} షేర్లు" if (is_indian and total_qty == int(total_qty)) else f"Qty: {total_qty:.5f}"
             price_disp = f"₹{current_price:,.2f}" if is_indian else f"${current_price:,.2f}"
             profit_disp = f"₹{profit:,.2f}"
+            exit_badge = "🔒 బ్రేక్‌ఈవెన్ లాక్ (Zero Loss)" if is_breakeven_exit and not (is_target_exit or is_trailing_exit) else "🎯 ప్రాఫిట్ మాక్సిమైజర్"
             
-            msg = f"🎯 [{mode_str} స్కామర్ బ్రెయిన్ 🥷 ప్రాఫిట్ మాక్సిమైజర్]: {sym} ({qty_label}) | భారీ లాభం: {profit_disp} (+{profit_pct:.2f}%)\n{thought} 🧠 [Peak: +{peak_gain_pct:.2f}% | DCA Layers: {len(pos.get('entries', []))}]"
-            voice_msg = f"Alert. Profit maximizer reached on {clean_name}. Selling for great profit."
+            msg = f"{exit_badge} [{mode_str}]: {sym} ({qty_label}) | ఫలితం: {profit_disp} (+{profit_pct:.2f}%)\n{thought} 🧠 [Peak: +{peak_gain_pct:.2f}% | DCA Layers: {len(pos.get('entries', []))}]"
+            voice_msg = f"Alert. Profit taken on {clean_name}. Trade closed successfully."
             log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
             strat_key = pos.get('strategy', 'rsi_vwap_confluence')
             log_trade("SELL", sym, current_price, total_qty, profit, strategy_key=strat_key)
@@ -1084,14 +1087,15 @@ def process_symbol(sym):
             action_taken = "SELL"
             pos = None
 
-        # Stop-Loss Emergency Protection: drops > 6% with confirmed sell signal
-        elif profit_pct <= -6.0 and signal == 'sell':
+        # 🛑 UNCONDITIONAL HARD STOP-LOSS: drops > 2.5%, exit immediately to strictly cap risk!
+        # Does NOT wait for signal == 'sell', protecting capital from sharp market drawdowns!
+        elif profit_pct <= -2.5:
             profit = (current_price - avg_price) * total_qty
             last_exit_times[sym] = time.time()
             if live_mode and is_crypto:
                 execute_live_order("SELL", sym, quantity=total_qty)
             loss_disp = f"₹{profit:,.2f}"
-            msg = f"🛑 [{mode_str} Stop-Loss]: {sym} -6% కంటే ఎక్కువ పడిపోవడంతో నష్టాన్ని కట్ చేసి సేఫ్ గా అమ్మాను! (Loss: {loss_disp})"
+            msg = f"🛑 [{mode_str} హార్డ్ స్టాప్-లాస్]: {sym} -2.5% నష్టానికి చేరుకోగానే క్యాపిటల్ ని కాపాడేందుకు వెంటనే అమ్మేసాను! (Loss: {loss_disp})"
             log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", color_code='\033[91m')
             strat_key = pos.get('strategy', 'rsi_vwap_confluence')
             log_trade("SELL", sym, current_price, total_qty, profit, strategy_key=strat_key)

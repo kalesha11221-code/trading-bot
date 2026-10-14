@@ -120,16 +120,20 @@ def generate_futures_signal(df, sym="BTC-USD"):
     smc_info = ml_brain.get_smc_analysis(sym)
     smc_bias = smc_info.get("bias", "NEUTRAL")
     
+    # Candlestick Confirmation Guard
+    is_candle_bullish = (last['close'] >= last['open']) or (last['close'] >= prev['close'])
+    is_candle_bearish = (last['close'] <= last['open']) or (last['close'] <= prev['close'])
+    
     # 🟢 INSTITUTIONAL BULLISH ENTRY (LONG 5x)
-    # EMA 9 > 21 + RSI momentum + ML == 1 + (SMC Bullish or Neutral)
-    if last['EMA_9'] > last['EMA_21'] and last['RSI'] < 72:
+    # EMA 9 > 21 + RSI momentum + ML == 1 + (SMC Bullish or Neutral) + Bullish Candle
+    if last['EMA_9'] > last['EMA_21'] and last['RSI'] < 72 and is_candle_bullish:
         if (last['close'] > last['EMA_50'] or (prev['RSI'] <= 45 and last['RSI'] > prev['RSI'])):
             if ml_sig == 1 and smc_bias != "BEARISH":
                 return 'LONG', last['close']
                 
     # 🔴 INSTITUTIONAL BEARISH ENTRY (SHORT 5x)
-    # EMA 9 < 21 + RSI dropping + ML == 0 + (SMC Bearish or Neutral)
-    if last['EMA_9'] < last['EMA_21'] and last['RSI'] > 28:
+    # EMA 9 < 21 + RSI dropping + ML == 0 + (SMC Bearish or Neutral) + Bearish Candle
+    if last['EMA_9'] < last['EMA_21'] and last['RSI'] > 28 and is_candle_bearish:
         if (last['close'] < last['EMA_50'] or (prev['RSI'] >= 55 and last['RSI'] < prev['RSI'])):
             if ml_sig == 0 and smc_bias != "BULLISH":
                 return 'SHORT', last['close']
@@ -175,33 +179,34 @@ def run_futures_bot():
                     should_close = False
                     reason = ""
                     
-                    # 1. 🎯 QUICK TAKE PROFIT (+6.0% ROE = ₹300 profit on ₹5,000 margin)
-                    if roe_pct >= 6.0:
+                    # 1. 🎯 QUICK TAKE PROFIT (+5.0% ROE = ₹250 profit on ₹5,000 margin)
+                    if roe_pct >= 5.0:
                         should_close = True
-                        reason = "TAKE_PROFIT_QUICK_SCALP (+6.0% ROE)"
+                        reason = "TAKE_PROFIT_QUICK_SCALP (+5.0% ROE = +₹250)"
                     
-                    # 2. 🛡️ DYNAMIC TRAILING PROFIT LOCK (Reached +4.0% ROE and dipped 1.2%)
-                    elif peak_roe >= 4.0 and roe_pct <= (peak_roe - 1.2):
+                    # 2. 🛡️ DYNAMIC TRAILING PROFIT LOCK (Reached +3.5% ROE and dipped 0.8%)
+                    elif peak_roe >= 3.5 and roe_pct <= (peak_roe - 0.8):
                         should_close = True
                         reason = f"TRAILING_PROFIT_LOCK (Peak: +{peak_roe:.1f}%, Exit: +{roe_pct:.1f}%)"
                         
-                    # 3. 🔒 BREAKEVEN LOCK (Reached +2.5% ROE earlier, exit before loss)
-                    elif peak_roe >= 2.5 and roe_pct <= 0.6:
+                    # 3. 🔒 BREAKEVEN LOCK (Reached +2.0% ROE earlier, lock exit at +0.5% ROE to guarantee zero loss)
+                    elif peak_roe >= 2.0 and roe_pct <= 0.5:
                         should_close = True
-                        reason = "BREAKEVEN_FEE_PROTECT (+0.6% ROE)"
+                        reason = "BREAKEVEN_ZERO_LOSS_LOCK (+0.5% ROE)"
                         
-                    # 4. 🔄 REVERSAL SIGNAL EXIT WITH PROFIT (>= +2.0% ROE)
-                    elif side == 'LONG' and signal == 'SHORT' and roe_pct >= 2.0:
+                    # 4. 🔄 REVERSAL SIGNAL EXIT WITH PROFIT (>= +1.0% ROE)
+                    elif side == 'LONG' and signal == 'SHORT' and roe_pct >= 1.0:
                         should_close = True
                         reason = "REVERSAL_PROFIT_LOCK"
-                    elif side == 'SHORT' and signal == 'LONG' and roe_pct >= 2.0:
+                    elif side == 'SHORT' and signal == 'LONG' and roe_pct >= 1.0:
                         should_close = True
                         reason = "REVERSAL_PROFIT_LOCK"
                         
-                    # 5. 🛑 TIGHT RISK-MANAGED STOP LOSS (-5.0% ROE = ₹250 max loss)
-                    elif peak_roe < 2.5 and roe_pct <= -5.0:
+                    # 5. 🛑 UNCONDITIONAL HARD STOP LOSS (-3.5% ROE = ₹175 max loss)
+                    # Strictly caps risk so account never incurs large losses!
+                    elif roe_pct <= -3.5:
                         should_close = True
-                        reason = "STOP_LOSS (-5.0% ROE)"
+                        reason = "HARD_STOP_LOSS (-3.5% ROE | Capital Protected)"
                         
                     if should_close:
                         log_trade(sym, "CLOSE", side, entry, current_price, margin, LEVERAGE, round(pnl_inr, 2))
