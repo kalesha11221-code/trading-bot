@@ -239,11 +239,30 @@ import time
 import base64
 from gtts import gTTS
 from streamlit_mic_recorder import speech_to_text
-import google.generativeai as genai
+# 🧠 Robust Gemini SDK Loader: Support both new `google.genai` and legacy `google.generativeai`
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="google.generativeai")
+warnings.filterwarnings("ignore", message=".*google.genai.*")
+
+HAS_NEW_GENAI = False
+genai = None
+try:
+    from google import genai
+    HAS_NEW_GENAI = True
+except ImportError:
+    try:
+        import google.generativeai as genai
+        HAS_NEW_GENAI = False
+    except ImportError:
+        genai = None
 
 # గూగుల్ జెమినీ API కీ సెటప్
 GEMINI_API_KEY = "AQ.Ab8RN6KSOIMcia4BvnmtR5CxhuTrDJ7jQxe9MmwfCPXIDRQ_Ig"
-genai.configure(api_key=GEMINI_API_KEY)
+if not HAS_NEW_GENAI and genai is not None:
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+    except Exception:
+        pass
 
 st.set_page_config(page_title="AI Trading Master Dashboard", layout="wide", initial_sidebar_state="expanded")
 
@@ -1942,6 +1961,7 @@ with tab_charts:
     pat_bg = "rgba(0, 230, 118, 0.12)" if pat_sent == "BULLISH" else ("rgba(255, 59, 48, 0.12)" if pat_sent == "BEARISH" else "rgba(255, 204, 0, 0.12)")
     is_inr = (".NS" in active_sym or ".BO" in active_sym or "^NSE" in active_sym)
     curr_prefix = "₹" if is_inr else "$"
+    rsi_disp_val = f"{float(last['RSI']):.1f}" if (last is not None and 'RSI' in last and not pd.isna(last['RSI'])) else "50.0"
 
     card_html = f"""
     <div style="background: linear-gradient(135deg, rgba(20,24,35,0.95), rgba(15,18,28,0.98)); border: 1.5px solid {pat_color}; border-radius: 14px; padding: 18px 22px; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.4);">
@@ -1979,7 +1999,7 @@ with tab_charts:
             </div>
             <div style="background: rgba(0,0,0,0.3); padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
                 <div style="color: #9e9e9e; font-size: 11px; text-transform: uppercase;">📊 RSI (14) మోమెంటమ్</div>
-                <div style="color: #64b5f6; font-size: 15px; font-weight: 700; margin-top: 2px;">{last['RSI']:.1f if (last is not None and 'RSI' in last and not pd.isna(last['RSI'])) else '50.0'}</div>
+                <div style="color: #64b5f6; font-size: 15px; font-weight: 700; margin-top: 2px;">{rsi_disp_val}</div>
             </div>
         </div>
     </div>
@@ -2395,8 +2415,6 @@ with tab_voice:
         
         if gem_key_to_use and gem_key_to_use.startswith("AIza"):
             try:
-                genai.configure(api_key=gem_key_to_use)
-                model_gem = genai.GenerativeModel('gemini-1.5-flash')
                 sys_prompt = f"""You are 'Antigravity Scammer Brain 🥷', an aggressive, smart, funny and loyal AI trading assistant for your boss.
 Answer the boss in natural conversational Telugu (mix of Telugu and trading English words).
 Current Portfolio Context:
@@ -2408,11 +2426,24 @@ Current Portfolio Context:
 
 Boss asks: "{final_prompt}"
 Answer directly, smartly, and humorously in Telugu in 2-3 sentences. Always address them as బాస్:"""
-                res_gem = model_gem.generate_content(sys_prompt)
-                if res_gem and res_gem.text:
-                    response = res_gem.text
-                    gem_answered = True
+                if HAS_NEW_GENAI:
+                    client_gem = genai.Client(api_key=gem_key_to_use)
+                    res_gem = client_gem.models.generate_content(
+                        model='gemini-1.5-flash',
+                        contents=sys_prompt
+                    )
+                    if res_gem and hasattr(res_gem, 'text') and res_gem.text:
+                        response = res_gem.text
+                        gem_answered = True
+                elif genai is not None:
+                    genai.configure(api_key=gem_key_to_use)
+                    model_gem = genai.GenerativeModel('gemini-1.5-flash')
+                    res_gem = model_gem.generate_content(sys_prompt)
+                    if res_gem and hasattr(res_gem, 'text') and res_gem.text:
+                        response = res_gem.text
+                        gem_answered = True
             except Exception as e:
+                gem_answered = False
                 gem_answered = False
 
         if not gem_answered:

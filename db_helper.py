@@ -24,15 +24,32 @@ client = None
 db = None
 
 if MONGO_URI and HAS_PYMONGO:
+    # 1. Primary Attempt: Standard Atlas connection with official certifi CA bundle
     try:
-        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tlsAllowInvalidCertificates=True)
-        # Test connection
+        ca_file = certifi.where() if ('certifi' in globals() and certifi) else None
+        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=3000, tlsCAFile=ca_file)
         client.server_info()
         db = client["trading_bot_db"]
-        print("✅ MongoDB Connected Successfully!")
-    except Exception as e:
-        print(f"❌ MongoDB Connection Failed: {e}")
-        db = None
+        print("✅ MongoDB Connected Successfully with Certifi TLS!")
+    except Exception as e1:
+        # 2. Secondary Attempt: Default TLS without custom CA
+        try:
+            client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=3000)
+            client.server_info()
+            db = client["trading_bot_db"]
+            print("✅ MongoDB Connected Successfully with Default TLS!")
+        except Exception as e2:
+            # 3. Tertiary Attempt: Fallback with tlsAllowInvalidCertificates
+            try:
+                client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=2000, tlsAllowInvalidCertificates=True)
+                client.server_info()
+                db = client["trading_bot_db"]
+                print("✅ MongoDB Connected Successfully with Fallback TLS!")
+            except Exception as e3:
+                # Graceful Local Fallback: Never crash, store state in local JSON files
+                print("ℹ️ MongoDB Cloud unreachable. Seamlessly using local state storage (dca_state.json, fo_state.json).")
+                client = None
+                db = None
 
 def get_state(collection_name, default_val=None):
     if default_val is None:
