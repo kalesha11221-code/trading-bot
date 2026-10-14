@@ -119,7 +119,7 @@ def get_bot_heartbeat():
     except Exception:
         pass
         
-    return "STOPPED", 999, {"loop_count": 0, "last_action": "బాట్ ఇంకా స్టార్ట్ కాలేదు"}
+    return "STOPPED", 999, {"loop_count": 0, "last_action": "Bot not started yet"}
 
 
 import streamlit as st
@@ -208,15 +208,15 @@ def fancy_metric(label, value, delta="", delta_color="normal"):
         formatted_val = val_str
         
     color_map = {
-        "normal": "#00ff00" if ("-" not in str(delta) and "నష్టం" not in str(delta) and "Loss" not in str(delta)) else "#ff3333",
+        "normal": "#00ff00" if ("-" not in str(delta) and "Loss" not in str(delta) and "Loss" not in str(delta)) else "#ff3333",
         "inverse": "#ff3333" if ("-" not in str(delta)) else "#00ff00",
         "off": "gray"
     }
     
     # Overrides based on text content
     if delta:
-        if any(w in str(delta).lower() for w in ["సూపర్", "లాభం", "bullish", "profit", "up"]): color = "#00ff00"
-        elif any(w in str(delta).lower() for w in ["నష్టం", "loss", "bearish", "down", "risk", "రిస్క్"]): color = "#ff3333"
+        if any(w in str(delta).lower() for w in ["profit", "bullish", "up", "gain", "win"]): color = "#00ff00"
+        elif any(w in str(delta).lower() for w in ["loss", "bearish", "down", "risk"]): color = "#ff3333"
         else: color = color_map.get(delta_color, "gray")
         
         delta_html = f"<div style='font-size: 0.9em; color: {color}; margin-top: 4px;'>{delta}</div>"
@@ -256,7 +256,7 @@ except ImportError:
     except ImportError:
         genai = None
 
-# గూగుల్ జెమినీ API కీ సెటప్
+# Google Gemini API Key Setup
 GEMINI_API_KEY = "AQ.Ab8RN6KSOIMcia4BvnmtR5CxhuTrDJ7jQxe9MmwfCPXIDRQ_Ig"
 if not HAS_NEW_GENAI and genai is not None:
     try:
@@ -472,7 +472,7 @@ if os.path.exists('bot_logs.txt'):
                         st.toast(last_line, icon="📉")
                     elif "ONLINE" in last_line:
                         st.toast(last_line, icon="🔥")
-                    elif "ఎర్రర్" in last_line:
+                    elif "error" in last_line.lower():
                         st.toast(last_line, icon="⚠️")
                     elif "HOLD" not in last_line:
                         st.toast(last_line, icon="🤖")
@@ -483,7 +483,7 @@ if os.path.exists('bot_logs.txt'):
 # 🌟 Zerodha Kite Pro Top Navigation Header
 bot_status, bot_diff, bot_meta = get_bot_heartbeat()
 loop_num = bot_meta.get('loop_count', '-')
-last_act = bot_meta.get('last_action', 'స్కానింగ్')
+last_act = bot_meta.get('last_action', 'Scanning')
 active_syms = bot_meta.get('active_symbols', [])
 
 from datetime import datetime
@@ -507,10 +507,10 @@ navbar_html = f"""<div class="zk-navbar">
 st.markdown(navbar_html, unsafe_allow_html=True)
 
 if bot_status != "RUNNING":
-    st.error("🔴 బాట్ ప్రస్తుతం ఆగిపోయింది. వెంటనే స్టార్ట్ చేయడానికి క్రింది బటన్ నొక్కండి.")
-    if st.button("▶️ బాట్ ని వెంటనే ఆన్ చేయండి (Restart Bot Now)"):
+    st.error("🔴 Trading Bot is currently stopped. Click below to start immediately.")
+    if st.button("▶️ Start Trading Bot Now"):
         start_bot_thread(force=True)
-        st.toast("🚀 బాట్ ఆన్ అయ్యింది!", icon="🟢")
+        st.toast("🚀 Trading Bot Started Successfully!", icon="🟢")
         time.sleep(1)
         st.rerun()
 
@@ -522,7 +522,7 @@ st.markdown('''
 </div>
 ''', unsafe_allow_html=True)
 
-st.markdown("ప్రొఫెషనల్ ట్రేడర్స్ ఉపయోగించే అడ్వాన్స్డ్ టెక్నికల్ అనాలసిస్ (EMA, RSI, MACD) ఆధారంగా పనిచేసే AI బాట్.")
+st.markdown("Institutional AI Trading Engine driven by advanced technical analysis (EMA, RSI, MACD, and Smart Money Concepts).")
 
 # Live Refresh Button
 colA, colB = st.columns([8, 2])
@@ -530,19 +530,19 @@ with colA:
     pass # Title is already above
 with colB:
     if safe_button("🔄 Get Live Updates"):
-        st.toast("✅ లాగ్స్ అప్‌డేట్ అయ్యాయి!", icon="🔄")
+        st.toast("✅ Logs Updated Successfully!", icon="🔄")
 
 
 # Sidebar options & Bot Status Widget
 if bot_status == "RUNNING":
-    st.sidebar.success(f"🟢 బాట్ ఆన్ లో ఉంది (లైవ్: {bot_diff}s క్రితం)")
+    st.sidebar.success(f"🟢 Bot Online (Heartbeat: {bot_diff}s ago)")
 elif bot_status == "DELAYED":
-    st.sidebar.warning(f"🟡 బాట్ ఆలస్యం ({bot_diff}s)")
+    st.sidebar.warning(f"🟡 Bot Delayed ({bot_diff}s)")
 else:
-    st.sidebar.error("🔴 బాట్ ఆగిపోయింది (Offline)")
+    st.sidebar.error("🔴 Bot Stopped (Offline)")
     if st.sidebar.button("▶️ Start Trading Bot"):
         start_bot_thread(force=True)
-        st.toast("🚀 బాట్ స్టార్ట్ అయ్యింది!", icon="🟢")
+        st.toast("🚀 Trading Bot Started!", icon="🟢")
         time.sleep(1)
         st.rerun()
 
@@ -646,7 +646,7 @@ if os.path.exists('trading_mode.txt'):
     except: pass
 
 mode_idx = mode_options.index(saved_mode) if saved_mode in mode_options else 0
-trading_mode = st.sidebar.radio("స్విచ్ (Mode Switch)", mode_options, index=mode_idx)
+trading_mode = st.sidebar.radio("Trading Mode Switch", mode_options, index=mode_idx)
 st.sidebar.markdown("---")
 
 is_dual_mode = "Dual" in trading_mode
@@ -670,21 +670,21 @@ except Exception:
 
 if is_dual_mode:
     st.sidebar.success("🌐🇮🇳 **Dual Trading Active!**")
-    st.sidebar.info("🚀 క్రిప్టో 24/7 నాన్-స్టాప్ & ఇండియన్ స్టాక్స్ (NSE) సైమల్టేనియస్ గా ఒకేసారి రన్ అవుతాయి.")
-    st.sidebar.markdown(f"**💰 క్యాపిటల్:** ₹50,000 (NSE) + " + (f"${live_usdt_balance:.2f} (Binance Live)" if live_usdt_balance > 0 else "$10,000 (Crypto Virtual)"))
+    st.sidebar.info("🚀 24/7 Crypto Spot and Indian NSE Stocks running concurrently.")
+    st.sidebar.markdown(f"**💰 Capital:** ₹50,000 (NSE) + " + (f"${live_usdt_balance:.2f} (Binance Live)" if live_usdt_balance > 0 else "$10,000 (Crypto Virtual)"))
 elif "Zerodha" in trading_mode:
-    st.sidebar.success("🇮🇳 **Zerodha Kite Virtual:** ₹50,000.00 క్యాపిటల్")
-    st.sidebar.info("భారతీయ స్టాక్స్ (NSE - Reliance, Tata Motors, HDFC Bank, Infosys, SBI, etc.) పై వర్చువల్ మనీతో రిస్క్ లేకుండా ట్రేడింగ్ జరుగుతుంది.")
+    st.sidebar.success("🇮🇳 **Zerodha Kite Virtual:** ₹50,000.00 Capital")
+    st.sidebar.info("Risk-free virtual paper trading on top Indian NSE stocks (Reliance, Tata Motors, HDFC Bank, Infosys, SBI, etc.).")
 else:
     if "Live" in trading_mode:
         if live_usdt_balance > 0:
             st.sidebar.success(f"✅ Real Binance Balance: **${live_usdt_balance:.2f}**")
-            st.sidebar.warning("⚠️ Live Trading On! బాట్ బైనాన్స్ లో నిజమైన ట్రేడ్స్ చేస్తుంది.")
+            st.sidebar.warning("⚠️ Live Trading Active! Bot executes real orders on Binance Spot.")
         else:
-            st.sidebar.error("⚠️ బినాన్స్ కనెక్ట్ అవ్వలేదు. (Keys Check చేయండి)")
+            st.sidebar.error("⚠️ Binance connection failed. (Please check API keys)")
             trading_mode = "📝 Paper Trading (Crypto - Binance Virtual)"
     else:
-        st.sidebar.info("ప్రస్తుతం Crypto ప్రాక్టీస్ (Virtual) మోడ్ లో ఉంది. మీ రియల్ బినాన్స్ మనీ కట్ అవ్వదు.")
+        st.sidebar.info("Crypto Virtual Practice Mode is active. No real funds are at risk.")
 
 # Save mode to file for binance_bot.py to read
 with open('trading_mode.txt', 'w') as f:
@@ -715,11 +715,11 @@ new_style = st.sidebar.selectbox(
     index=style_idx
 )
 
-# 2. Capital Sizing Engine (భారీ లాభాల కోసం పెద్ద క్యాపిటల్)
+# 2. Capital Sizing Engine
 cap_options = [
-    "🚀 High Profit (పెద్ద క్యాపిటల్ & భారీ లాభాలు - ₹5,000-₹10,000 / $35-$50)",
-    "⚖️ Smart Dynamic (AI కాన్ఫిడెన్స్ స్కేలింగ్ - $20 / 2-5 షేర్లు)",
-    "🛡️ Micro Safe (చిన్న రిస్క్ - $10 / 1-2 షేర్లు)"
+    "🚀 High Profit (Large Position Sizing - ₹5,000-₹10,000 / $35-$50)",
+    "⚖️ Smart Dynamic (AI Confidence Scaling - $20 / 2-5 shares)",
+    "🛡️ Micro Safe (Conservative Risk - $10 / 1-2 shares)"
 ]
 current_cap = bot_settings.get("capital_mode", "High Profit")
 cap_idx = 0
@@ -727,10 +727,10 @@ if "Dynamic" in current_cap: cap_idx = 1
 elif "Micro" in current_cap: cap_idx = 2
 
 new_cap_label = st.sidebar.selectbox(
-    "💰 క్యాపిటల్ సైజ్ (Capital Sizing)",
+    "💰 Capital Sizing Mode",
     cap_options,
     index=cap_idx,
-    help="లాభాలు వేగంగా మరియు భారీగా రావడానికి బాట్ పెద్ద సైజ్ తో ట్రేడ్ చేస్తుంది!"
+    help="Bot adjusts order position sizes to optimize scalp returns."
 )
 if "High" in new_cap_label: selected_cap_mode = "High Profit"
 elif "Dynamic" in new_cap_label: selected_cap_mode = "Smart Dynamic"
@@ -753,10 +753,10 @@ new_risk = st.sidebar.select_slider(
 
 # 5. Panic Button & Balance Reset
 st.sidebar.markdown("<br>", unsafe_allow_html=True)
-panic = safe_button("🛑 EMERGENCY PANIC STOP", is_sidebar=True, help="కొన్న కాయిన్స్ అన్నీ వెంటనే అమ్మేసి బాట్ ని ఆపేస్తుంది!")
+panic = safe_button("🛑 EMERGENCY PANIC STOP", is_sidebar=True, help="Immediately liquidates all open positions and halts the trading bot!")
 
 st.sidebar.markdown("<br>", unsafe_allow_html=True)
-if st.sidebar.button("🔄 బ్యాలెన్స్ ₹50,000 కి రీసెట్ చేయి", help="పాత టెస్టింగ్ ఆర్డర్లని క్లియర్ చేసి వర్చువల్ బ్యాలెన్స్ ని ఖచ్చితంగా ₹50,000 కి సెట్ చేస్తుంది"):
+if st.sidebar.button("🔄 Reset Balance to ₹50,000", help="Clears old test orders and resets virtual balance to ₹50,000.00"):
     if os.path.exists('trades_log.csv'):
         try:
             import time
@@ -766,7 +766,7 @@ if st.sidebar.button("🔄 బ్యాలెన్స్ ₹50,000 కి ర�
             f_res.write("Time,Symbol,Action,Price,Shares,Profit\n")
     with open('dca_state.json', 'w') as f_dres:
         f_dres.write("{}\n")
-    st.toast("✅ బ్యాలెన్స్ సరిగ్గా ₹50,000 కి రీసెట్ అయ్యింది!", icon="💰")
+    st.toast("✅ Balance reset to ₹50,000.00!", icon="💰")
     st.rerun()
 
 # Update settings if changed
@@ -779,14 +779,14 @@ if (new_style != bot_settings.get("trading_style") or
     bot_settings["capital_mode"] = selected_cap_mode
     if panic:
         bot_settings["panic_mode"] = True
-        st.sidebar.error("🚨 Panic Mode Activated! అన్నీ అమ్మేస్తోంది...")
+        st.sidebar.error("🚨 Panic Mode Activated! Liquidating all open positions...")
     
     with open('settings.json', 'w') as f:
         json.dump(bot_settings, f)
     st.toast("✅ Settings Updated Successfully!", icon="⚙️")
     
 if bot_settings.get("panic_mode"):
-    st.sidebar.warning("⚠️ ప్రస్తుతం బాట్ PANIC STOP లో ఉంది. రీస్టార్ట్ చేయడానికి కింద బటన్ నొక్కండి.")
+    st.sidebar.warning("⚠️ Bot is currently in PANIC STOP mode. Click restart below to resume trading.")
     if st.sidebar.button("▶️ Resume Trading"):
         bot_settings["panic_mode"] = False
         with open('settings.json', 'w') as f:
@@ -806,17 +806,17 @@ try:
     iters = brain.get('learning_iterations', 0)
     comp = brain.get('small_capital_compounding', {})
     streak = comp.get('streak', 0)
-    tier = comp.get('current_tier', 'Level 2 (గ్రోత్ మోడ్)')
+    tier = comp.get('current_tier', 'Level 2 (Growth Mode)')
     conf_mult = comp.get('confidence_multiplier', 1.15)
     
-    st.sidebar.markdown(f"**AI IQ స్కోరు:** `{iq}` | **విన్నింగ్ రేట్:** `{wr:.1f}%`")
-    st.sidebar.caption(f"🔄 విశ్లేషించిన ట్రేడ్లు: {iters} | 🎯 మోడ్: {tier}")
-    st.sidebar.markdown(f"**⚡ కాంపౌండింగ్ గుణకం:** `{conf_mult:.2f}x` (స్ట్రీక్: {streak} 🔥)")
+    st.sidebar.markdown(f"**AI IQ Score:** `{iq}` | **Win Rate:** `{wr:.1f}%`")
+    st.sidebar.caption(f"🔄 Analyzed Trades: {iters} | 🎯 Mode: {tier}")
+    st.sidebar.markdown(f"**⚡ Compounding Factor:** `{conf_mult:.2f}x` (Streak: {streak} 🔥)")
 
     # New Pro Techniques Win-rates & Weights
     strats = brain.get('strategies', {})
     if strats:
-        st.sidebar.markdown("##### 💎 ప్రొఫెషనల్ టెక్నిక్స్ (Pro Techniques):")
+        st.sidebar.markdown("##### 💎 Institutional Techniques:")
         for s_key, s_data in strats.items():
             name = s_data.get('name', s_key)
             w = s_data.get('weight', 1.0)
@@ -832,7 +832,7 @@ try:
     # Recent Real-time Lessons learned
     lessons = brain.get('recent_lessons', [])
     if lessons:
-        with st.sidebar.expander("📜 AI నేర్చుకున్న తాజా పాఠాలు (Lessons)", expanded=False):
+        with st.sidebar.expander("📜 AI Trade Lessons & Adaptations", expanded=False):
             for l in lessons[:3]:
                 st.caption(l)
 except Exception:
@@ -863,18 +863,18 @@ is_zerodha_mode = ("Zerodha" in trading_mode and not is_dual_mode)
 
 if is_dual_mode:
     focus_options = [
-        "🌐🇮🇳 ఆల్-ఇన్-వన్ డ్యూయల్ ట్రేడింగ్ (Dual Multi-Asset - All Crypto + NSE Stocks)",
-        "🎯 సింగిల్ అసెట్ ఫోకస్ (Single Asset Focus)"
+        "🌐🇮🇳 Dual Multi-Asset (All Crypto + NSE Stocks)",
+        "🎯 Single Asset Focus"
     ]
 elif is_zerodha_mode:
     focus_options = [
-        "🇮🇳 మల్టీ-స్టాక్స్ ట్రేడింగ్ (Multi-Stock NSE - Reliance, Tata Motors, HDFC, Infosys, SBI, TCS, ICICI, ITC)",
-        "🎯 సింగిల్ స్టాక్ ఫోకస్ (Single Stock Focus)"
+        "🇮🇳 Multi-Stock NSE (Top 8 Indian Stocks)",
+        "🎯 Single Stock Focus"
     ]
 else:
     focus_options = [
-        "🌐 మల్టీ-కాయిన్ ట్రేడింగ్ (Multi-Coin 24/7 - BTC, ETH, SOL, BNB, DOGE, XRP)",
-        "🎯 సింగిల్ అసెట్ ఫోకస్ (Single Selected Asset Only)"
+        "🌐 Multi-Coin 24/7 (BTC, ETH, SOL, BNB, DOGE, XRP)",
+        "🎯 Single Selected Asset Only"
     ]
 
 # If saved_scope is a specific symbol, default to Single mode
@@ -882,7 +882,7 @@ is_single_mode = (saved_scope not in ["ALL", "ALL_CRYPTO", "ALL_NSE", "ALL_DUAL"
 default_focus_idx = 1 if is_single_mode else 0
 
 trade_scope = st.sidebar.radio(
-    "🎯 ట్రేడింగ్ ఫోకస్ (Trading Focus):",
+    "🎯 Trading Focus:",
     focus_options,
     index=default_focus_idx,
     key="app_trading_focus"
@@ -899,29 +899,29 @@ else:
 if not sym_keys:
     sym_keys = list(symbol_options.keys())
 
-if "సింగిల్" in trade_scope or "Single" in trade_scope:
+if "Single" in trade_scope:
     default_sym_idx = 0
     for idx_k, k in enumerate(sym_keys):
         if symbol_options[k] == saved_scope:
             default_sym_idx = idx_k
             break
-    label_text = "అసెట్ (Stock/Coin) ఎంచుకోండి:" if is_dual_mode else ("స్టాక్ (Stock) ఎంచుకోండి:" if is_zerodha_mode else "కాయిన్ (Coin) ఎంచుకోండి:")
+    label_text = "Select Asset (Stock/Coin):" if is_dual_mode else ("Select Stock:" if is_zerodha_mode else "Select Coin:")
     selected_name = st.sidebar.selectbox(label_text, sym_keys, index=default_sym_idx, key="app_single_pair")
     symbol = symbol_options[selected_name]
     active_bot_symbol = symbol
-    st.sidebar.info(f"🎯 బాట్ కేవలం **{selected_name}** పై మాత్రమే ట్రేడ్స్ చేస్తుంది.")
+    st.sidebar.info(f"🎯 Bot is trading exclusively on **{selected_name}**.")
 else:
     if is_dual_mode:
         active_bot_symbol = "ALL_DUAL"
-        st.sidebar.success("🚀 **Dual Multi-Asset యాక్టివ్!** బాట్ ఒకేసారి అన్ని క్రిప్టో కాయిన్స్ (24/7) మరియు ఇండియన్ స్టాక్స్ (NSE) ని స్కాన్ చేస్తూ ట్రేడ్స్ చేస్తుంది.")
+        st.sidebar.success("🚀 **Dual Multi-Asset Active!** Bot is simultaneously scanning all 24/7 Cryptos and Indian NSE Stocks.")
     elif is_zerodha_mode:
         active_bot_symbol = "ALL_NSE"
-        st.sidebar.success("🚀 **Zerodha మల్టీ-స్టాక్స్ యాక్టివ్!** బాట్ ఒకేసారి Reliance, Tata Motors, HDFC Bank, Infosys, SBI, TCS అన్నింటినీ స్కాన్ చేస్తూ ట్రేడ్స్ చేస్తుంది.")
+        st.sidebar.success("🚀 **Zerodha Multi-Stock Active!** Bot is scanning Reliance, Tata Motors, HDFC Bank, Infosys, SBI, TCS simultaneously.")
     else:
         active_bot_symbol = "ALL_CRYPTO"
-        st.sidebar.success("🚀 **మల్టీ-కాయిన్ ట్రేడింగ్ యాక్టివ్!** బాట్ ఒకేసారి BTC, ETH, SOL, BNB, DOGE, XRP అన్నింటినీ స్కాన్ చేస్తూ ట్రేడ్స్ చేస్తుంది.")
+        st.sidebar.success("🚀 **Multi-Coin Trading Active!** Bot is scanning BTC, ETH, SOL, BNB, DOGE, XRP simultaneously.")
     default_chart_idx = 0
-    chart_label = "📊 లైవ్ చార్ట్ కోసం అసెట్ ఎంచుకోండి:" if is_dual_mode else ("📊 లైవ్ చార్ట్ కోసం స్టాక్ ఎంచుకోండి:" if is_zerodha_mode else "📊 లైవ్ చార్ట్ కోసం కాయిన్ ఎంచుకోండి:")
+    chart_label = "📊 Select Asset for Live Chart:" if is_dual_mode else ("📊 Select Stock for Live Chart:" if is_zerodha_mode else "📊 Select Coin for Live Chart:")
     selected_name = st.sidebar.selectbox(chart_label, sym_keys, index=default_chart_idx, key="app_chart_pair")
     symbol = symbol_options[selected_name]
 
@@ -933,15 +933,15 @@ except Exception:
     pass
 
 timeframe = '1m'
-auto_refresh = st.sidebar.checkbox("🟢 లైవ్ ఆటో-అప్‌డేట్ (Live Stream 5s)", value=True, help="ఆటోమేటిక్ గా ప్రతి 5 సెకన్లకు రిఫ్రెష్ అవుతూ లైవ్ ప్రైసెస్, సిగ్నల్స్ & లాభాలు అప్‌డేట్ చేస్తుంది")
-enable_voice = st.sidebar.checkbox("🔊 బాట్ వాయిస్ (Voice Output)", value=True)
+auto_refresh = st.sidebar.checkbox("🟢 Live Auto-Refresh (5s Stream)", value=True, help="Automatically refreshes every 5 seconds to update real-time prices, signals, and floating PnL")
+enable_voice = st.sidebar.checkbox("🔊 Voice Output Alerts", value=True)
 st.sidebar.markdown("---")
 
-with st.sidebar.expander("🔍 త్వరిత అసెట్ సెర్చ్ & యాడ్ (Quick Add)", expanded=False):
-    st.caption("ఏదైనా స్టాక్ (ఉదా: ZOMATO) లేదా కాయిన్ (ఉదా: PEPE) టైప్ చేసి యాడ్ చేయండి:")
-    quick_q = st.text_input("సింబల్ / టిక్కర్:", key="sb_quick_sym", placeholder="e.g. ZOMATO or PEPE")
-    quick_market = st.selectbox("మార్కెట్:", ["🇮🇳 NSE Stock", "🪙 Crypto (USD)"], key="sb_quick_mkt")
-    if st.button("➕ వాచ్‌లిస్ట్‌కి యాడ్ చేయి", key="sb_btn_quick_add"):
+with st.sidebar.expander("🔍 Quick Asset Search & Add", expanded=False):
+    st.caption("Type any stock (e.g. ZOMATO) or coin (e.g. PEPE) to add to watchlist:")
+    quick_q = st.text_input("Symbol / Ticker:", key="sb_quick_sym", placeholder="e.g. ZOMATO or PEPE")
+    quick_market = st.selectbox("Market Segment:", ["🇮🇳 NSE Stock", "🪙 Crypto (USD)"], key="sb_quick_mkt")
+    if st.button("➕ Add to Watchlist", key="sb_btn_quick_add"):
         if quick_q.strip():
             raw_sym = quick_q.strip().upper()
             if "NSE" in quick_market:
@@ -968,7 +968,7 @@ with st.sidebar.expander("🔍 త్వరిత అసెట్ సెర్�
                 "added_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
             save_custom_watchlist(curr_wl)
-            st.success(f"✅ {c_n} ({final_sym}) యాడ్ అయ్యింది!")
+            st.success(f"✅ {c_n} ({final_sym}) added to Watchlist!")
             time.sleep(1)
             st.rerun()
 
@@ -1070,7 +1070,7 @@ def fetch_and_analyze(sym):
         df['EMA_50'] = df['close'].ewm(span=50, adjust=False).mean()
         df['EMA_200'] = df['close'].ewm(span=200, adjust=False).mean()
         
-        # సపోర్ట్ అండ్ రెసిస్టెన్స్
+        # Support & Resistance
         df['Support'] = df['low'].rolling(window=200).min()
         df['Resistance'] = df['high'].rolling(window=200).max()
         
@@ -1126,7 +1126,7 @@ def fetch_and_analyze(sym):
 
 
     except Exception as e:
-        st.error(f"డేటా తేవడంలో ఎర్రర్: {e}")
+        st.error(f"Error fetching data: {e}")
         return None, "HOLD", None
 
 # -------------------------------------------------------------
@@ -1146,9 +1146,9 @@ def detect_candlestick_patterns(df):
         'sentiment': 'NEUTRAL',
         'icon': '🕯️',
         'confidence': '65%',
-        'telugu_title': 'కన్సాలిడేషన్ క్యాండిల్ (స్థిరమైన పరిధి)',
-        'telugu_desc': 'ప్రస్తుతం మార్కెట్‌లో కొనుగోలుదారులు మరియు అమ్మకందారుల మధ్య తీవ్రమైన ఒత్తిడి లేదు. ప్రైస్ ఒక శ్రేణిలో కదులుతోంది.',
-        'action': 'వేచి చూడండి (WAIT / HOLD)'
+        'title': 'Consolidation Candle (Range Bound)', 'telugu_title': 'Consolidation Candle (Range Bound)',
+        'desc': 'Market is in equilibrium between buyers and sellers. Price is moving sideways in a tight range.', 'telugu_desc': 'Market is in equilibrium between buyers and sellers. Price is moving sideways in a tight range.',
+        'action': 'WAIT / HOLD'
     }
     if df is None or len(df) < 3:
         return [], default_pat
@@ -1198,27 +1198,27 @@ def detect_candlestick_patterns(df):
                     'index': i, 'timestamp': curr['timestamp'], 'price': l,
                     'type': 'Dragonfly Doji', 'sentiment': 'BULLISH', 'icon': '🐉',
                     'confidence': '82%',
-                    'telugu_title': 'డ్రాగన్‌ఫ్లై డోజీ (Dragonfly Doji)',
-                    'telugu_desc': 'సెల్లర్స్ ప్రైస్‌ను భారీగా కిందకు దించారు, కానీ చివరి నిమిషంలో బలమైన బయ్యర్స్ దూసుకొచ్చి ప్రైస్‌ను పైకి లేపారు. బలమైన బౌన్స్ సంకేతం!',
-                    'action': 'BUY (బౌన్స్ లాంగ్ ఎంట్రీ)'
+                    'title': 'Dragonfly Doji (Bullish Reversal)', 'telugu_title': 'Dragonfly Doji (Bullish Reversal)',
+                    'desc': 'Sellers pushed price down sharply, but aggressive buyers stepped in before the close to drive it back up. Strong bounce signal!', 'telugu_desc': 'Sellers pushed price down sharply, but aggressive buyers stepped in before the close to drive it back up. Strong bounce signal!',
+                    'action': 'BUY (Bounce Long Entry)'
                 }
             elif upper_wick >= (crange * 0.65) and lower_wick <= (crange * 0.15):
                 pat = {
                     'index': i, 'timestamp': curr['timestamp'], 'price': h,
                     'type': 'Gravestone Doji', 'sentiment': 'BEARISH', 'icon': '🪦',
                     'confidence': '80%',
-                    'telugu_title': 'గ్రేవ్‌స్టోన్ డోజీ (Gravestone Doji)',
-                    'telugu_desc': 'బయ్యర్స్ ప్రైస్‌ను పైకి తీసుకెళ్లడానికి ప్రయత్నించారు కానీ సెల్లర్స్ తీవ్రమైన రిజెక్షన్ ఇచ్చారు. ప్రైస్ పడిపోయే అవకాశం ఉంది.',
-                    'action': 'SELL (షార్ట్ లేదా ఎగ్జిట్)'
+                    'title': 'Gravestone Doji (Bearish Reversal)', 'telugu_title': 'Gravestone Doji (Bearish Reversal)',
+                    'desc': 'Buyers attempted to push price higher, but faced heavy rejection from sellers. High probability of downside reversal.', 'telugu_desc': 'Buyers attempted to push price higher, but faced heavy rejection from sellers. High probability of downside reversal.',
+                    'action': 'SELL (Exit / Short)'
                 }
             else:
                 pat = {
                     'index': i, 'timestamp': curr['timestamp'], 'price': c,
                     'type': 'Doji', 'sentiment': 'NEUTRAL', 'icon': '⚖️',
                     'confidence': '70%',
-                    'telugu_title': 'డోజీ ప్యాటర్న్ (మార్కెట్ డైలమా)',
-                    'telugu_desc': 'బయ్యర్స్ మరియు సెల్లర్స్ సమాన బలంతో ఉన్నారు. మార్కెట్ త్వరలో ఒకవైపు భారీ విస్ఫోటనం లేదా బ్రేక్‌అవుట్ ఇవ్వనుంది.',
-                    'action': 'వేచి చూడండి (HOLD)'
+                    'title': 'Doji Pattern (Market Indecision)', 'telugu_title': 'Doji Pattern (Market Indecision)',
+                    'desc': 'Equal balance between buyers and sellers. Market is consolidating before an impending directional breakout.', 'telugu_desc': 'Equal balance between buyers and sellers. Market is consolidating before an impending directional breakout.',
+                    'action': 'WAIT / HOLD'
                 }
 
         # 2. 🔨 Hammer (Bullish Reversal: Lower wick >= 1.8x body, tiny upper wick)
@@ -1227,9 +1227,9 @@ def detect_candlestick_patterns(df):
                 'index': i, 'timestamp': curr['timestamp'], 'price': l,
                 'type': 'Hammer', 'sentiment': 'BULLISH', 'icon': '🔨',
                 'confidence': '85%',
-                'telugu_title': 'హ్యామర్ (Hammer Bullish Reversal)',
-                'telugu_desc': 'డౌన్‌ట్రెండ్ అడుగున సుత్తి లాంటి ఆకారం ఏర్పడింది! సెల్లర్స్ ఆధిపత్యం ముగిసింది, బయ్యర్స్ భారీగా వాల్యూమ్‌తో కొనుగోలు చేస్తున్నారు.',
-                'action': 'STRONG BUY (కొనుగోలు అనుకూలం)'
+                'title': 'Hammer (Bullish Reversal)', 'telugu_title': 'Hammer (Bullish Reversal)',
+                'desc': 'Formed at the bottom of a downtrend with a long lower shadow! Seller dominance exhausted, buyers absorbing supply.', 'telugu_desc': 'Formed at the bottom of a downtrend with a long lower shadow! Seller dominance exhausted, buyers absorbing supply.',
+                'action': 'STRONG BUY'
             }
 
         # 3. 🌠 Shooting Star (Bearish Reversal: Upper wick >= 1.8x body, tiny lower wick)
@@ -1238,9 +1238,9 @@ def detect_candlestick_patterns(df):
                 'index': i, 'timestamp': curr['timestamp'], 'price': h,
                 'type': 'Shooting Star', 'sentiment': 'BEARISH', 'icon': '🌠',
                 'confidence': '84%',
-                'telugu_title': 'షూటింగ్ స్టార్ (Shooting Star Bearish)',
-                'telugu_desc': 'అప్‌ట్రెండ్ శిఖరాన షూటింగ్ స్టార్ ఏర్పడింది! పై స్థాయిలో తీవ్రమైన అమ్మకాల ఒత్తిడి కనిపించింది, ప్రైస్ కిందకి పడిపోయే అవకాశం ఉంది.',
-                'action': 'SELL / SHORT (లాభాల స్వీకరణ)'
+                'title': 'Shooting Star (Bearish Reversal)', 'telugu_title': 'Shooting Star (Bearish Reversal)',
+                'desc': 'Formed at the peak of an uptrend with long upper wick! Intense selling rejection at highs, high probability of downward drop.', 'telugu_desc': 'Formed at the peak of an uptrend with long upper wick! Intense selling rejection at highs, high probability of downward drop.',
+                'action': 'SELL / SHORT (Take Profit)'
             }
 
         # 4. 🟩 Bullish Engulfing (Current Green engulfs Previous Red)
@@ -1249,9 +1249,9 @@ def detect_candlestick_patterns(df):
                 'index': i, 'timestamp': curr['timestamp'], 'price': l,
                 'type': 'Bullish Engulfing', 'sentiment': 'BULLISH', 'icon': '🟩',
                 'confidence': '88%',
-                'telugu_title': 'బుల్లిష్ ఎంగల్ఫింగ్ (Bullish Engulfing)',
-                'telugu_desc': 'క్రితం నాటి రెడ్ క్యాండిల్‌ను సరికొత్త పెద్ద గ్రీన్ క్యాండిల్ పూర్తిగా మింగేసింది! బయ్యర్స్ మార్కెట్‌ను పూర్తిగా తమ ఆధీనంలోకి తీసుకున్నారు.',
-                'action': 'STRONG BUY (లాంగ్ సిగ్నల్)'
+                'title': 'Bullish Engulfing', 'telugu_title': 'Bullish Engulfing',
+                'desc': 'Large bullish green candle completely engulfs the prior red candle! Buyers have seized complete market dominance.', 'telugu_desc': 'Large bullish green candle completely engulfs the prior red candle! Buyers have seized complete market dominance.',
+                'action': 'STRONG BUY (Long Signal)'
             }
 
         # 5. 🟥 Bearish Engulfing (Current Red engulfs Previous Green)
@@ -1260,9 +1260,9 @@ def detect_candlestick_patterns(df):
                 'index': i, 'timestamp': curr['timestamp'], 'price': h,
                 'type': 'Bearish Engulfing', 'sentiment': 'BEARISH', 'icon': '🟥',
                 'confidence': '86%',
-                'telugu_title': 'బేరిష్ ఎంగల్ఫింగ్ (Bearish Engulfing)',
-                'telugu_desc': 'క్రితం నాటి గ్రీన్ క్యాండిల్‌ను సరికొత్త పెద్ద రెడ్ క్యాండిల్ మింగేసింది! సెల్లర్స్ పెద్ద ఎత్తున మార్కెట్‌ను డంప్ చేస్తున్నారు.',
-                'action': 'STRONG SELL (షార్ట్ సిగ్నల్)'
+                'title': 'Bearish Engulfing', 'telugu_title': 'Bearish Engulfing',
+                'desc': 'Large bearish red candle completely engulfs the prior green candle! Institutional sellers are actively dumping.', 'telugu_desc': 'Large bearish red candle completely engulfs the prior green candle! Institutional sellers are actively dumping.',
+                'action': 'STRONG SELL (Short Signal)'
             }
 
         # 6. 🌅 Morning Star (3-Candle Reversal: Red -> Small -> Green)
@@ -1271,9 +1271,9 @@ def detect_candlestick_patterns(df):
                 'index': i, 'timestamp': curr['timestamp'], 'price': l,
                 'type': 'Morning Star', 'sentiment': 'BULLISH', 'icon': '🌅',
                 'confidence': '90%',
-                'telugu_title': 'మార్నింగ్ స్టార్ (Morning Star 3-Candle)',
-                'telugu_desc': '3 క్యాండిల్స్ కలిపి క్లాసిక్ బాటమ్ రివర్సల్ ఏర్పాటు చేశాయి! పతనం ఆగిపోయింది, సరికొత్త అప్‌ట్రెండ్ ప్రారంభమైంది.',
-                'action': 'STRONG BUY (ఖచ్చితమైన కొనుగోలు)'
+                'title': 'Morning Star (3-Candle Reversal)', 'telugu_title': 'Morning Star (3-Candle Reversal)',
+                'desc': 'Three-candle pattern forming a textbook bottom reversal! Downtrend exhausted, new bullish trend underway.', 'telugu_desc': 'Three-candle pattern forming a textbook bottom reversal! Downtrend exhausted, new bullish trend underway.',
+                'action': 'STRONG BUY (High Probability)'
             }
 
         # 7. 🌇 Evening Star (3-Candle Reversal: Green -> Small -> Red)
@@ -1282,9 +1282,9 @@ def detect_candlestick_patterns(df):
                 'index': i, 'timestamp': curr['timestamp'], 'price': h,
                 'type': 'Evening Star', 'sentiment': 'BEARISH', 'icon': '🌇',
                 'confidence': '89%',
-                'telugu_title': 'ఈవెనింగ్ స్టార్ (Evening Star 3-Candle)',
-                'telugu_desc': '3 క్యాండిల్స్ కలిపి క్లాసిక్ టాప్ రివర్సల్ ఏర్పాటు చేశాయి! ర్యాలీ ముగిసింది, డౌన్‌ట్రెండ్ ప్రారంభమైంది.',
-                'action': 'STRONG SELL (స్టాప్ లాస్ లేదా ఎగ్జిట్)'
+                'title': 'Evening Star (3-Candle Reversal)', 'telugu_title': 'Evening Star (3-Candle Reversal)',
+                'desc': 'Three-candle pattern forming a textbook top reversal! Bullish rally terminated, distribution underway.', 'telugu_desc': 'Three-candle pattern forming a textbook top reversal! Bullish rally terminated, distribution underway.',
+                'action': 'STRONG SELL (Exit / Stop Loss)'
             }
 
         # 8. 🐂 Bullish Marubozu (Solid Green, no wicks)
@@ -1293,9 +1293,9 @@ def detect_candlestick_patterns(df):
                 'index': i, 'timestamp': curr['timestamp'], 'price': l,
                 'type': 'Bullish Marubozu', 'sentiment': 'BULLISH', 'icon': '🐂',
                 'confidence': '86%',
-                'telugu_title': 'బుల్లిష్ మారుబోజు (Bullish Marubozu)',
-                'telugu_desc': 'ఎటువంటి విక్స్ లేని స్వచ్ఛమైన పెద్ద గ్రీన్ క్యాండిల్! మార్కెట్ ఓపెన్ అయినప్పటి నుండి క్లోజ్ అయ్యే వరకు నిర్విరామంగా కొనుగోళ్లు జరిగాయి.',
-                'action': 'BUY (మొమెంటమ్ రైడింగ్)'
+                'title': 'Bullish Marubozu (Strong Momentum)', 'telugu_title': 'Bullish Marubozu (Strong Momentum)',
+                'desc': 'Clean, solid green candle with zero wicks! Relentless buying pressure from open to close without pullbacks.', 'telugu_desc': 'Clean, solid green candle with zero wicks! Relentless buying pressure from open to close without pullbacks.',
+                'action': 'BUY (Ride Momentum)'
             }
 
         if pat is not None:
@@ -1312,8 +1312,8 @@ def detect_candlestick_patterns(df):
                 'sentiment': 'BULLISH',
                 'icon': '📈',
                 'confidence': '72%',
-                'telugu_title': 'బుల్లిష్ క్యాండిల్ (అప్‌ట్రెండ్ కొనసాగింపు)',
-                'telugu_desc': 'ప్రైస్ మునుపటి కంటే పెరుగుతూ గ్రీన్ క్యాండిల్ ఏర్పడింది. మార్కెట్ బుల్లిష్ ఆధిక్యంలో కొనసాగుతోంది.',
+                'title': 'Bullish Candle (Uptrend Continuation)', 'telugu_title': 'Bullish Candle (Uptrend Continuation)',
+                'desc': 'Price closed higher than open. Bullish control remains intact.', 'telugu_desc': 'Price closed higher than open. Bullish control remains intact.',
                 'action': 'BUY / HOLD'
             }
         else:
@@ -1322,8 +1322,8 @@ def detect_candlestick_patterns(df):
                 'sentiment': 'BEARISH',
                 'icon': '📉',
                 'confidence': '70%',
-                'telugu_title': 'బేరిష్ క్యాండిల్ (స్వల్ప దిద్దుబాటు)',
-                'telugu_desc': 'ప్రైస్ స్వల్పంగా తగ్గి రెడ్ క్యాండిల్ ఏర్పడింది. సపోర్ట్ లెవెల్ వద్ద రివర్సల్ కోసం చూడండి.',
+                'title': 'Bearish Candle (Minor Pullback)', 'telugu_title': 'Bearish Candle (Minor Pullback)',
+                'desc': 'Price closed lower than open. Monitor key support zones for potential reversal.', 'telugu_desc': 'Price closed lower than open. Monitor key support zones for potential reversal.',
                 'action': 'WAIT / HOLD'
             }
 
@@ -1365,7 +1365,7 @@ _TICKER_META = [
     ("XRP-USD",  "Ripple",   "XRP"),
 ]
 
-st.markdown("##### ⚡ Live Markets Ticker — Binance Real-Time (క్లిక్ చేసి ఆ కాయిన్ వివరాలు చూడండి):")
+st.markdown("##### ⚡ Live Markets Ticker — Real-Time (Click any asset to inspect live chart & pattern):")
 tick_cols = st.columns(len(_TICKER_META))
 for idx, (sym_t, long_nm, short_nm) in enumerate(_TICKER_META):
     price_info = live_prices.get(sym_t, {})
@@ -1519,51 +1519,51 @@ st.markdown("""
 
 top_b1, top_b2, top_b3, top_b4, top_b5 = st.columns(5)
 with top_b1:
-    st.markdown(fancy_metric("🏦 నెట్ పోర్ట్‌ఫోలియో", f"₹{portfolio_value:,.2f}", f"{roi:+.2f}% Booked ROI"), unsafe_allow_html=True)
-    with st.popover("🔍 లాభం ఎలా వచ్చింది?", use_container_width=True):
-        st.markdown("### 🏦 నెట్ పోర్ట్‌ఫోలియో వివరాలు")
-        st.write("మన బాట్ స్టార్ట్ అయినప్పటి నుండి బుక్ చేసిన అసలు లాభం ఇది.")
-        st.info(f"**మొదటి క్యాపిటల్ (Initial):** ₹50,000.00\n**ఇప్పటివరకు లాభం (Profit):** ₹{portfolio_value - 50000:,.2f}\n**మొత్తం బ్యాలెన్స్:** ₹{portfolio_value:,.2f}")
+    st.markdown(fancy_metric("🏦 Net Portfolio", f"₹{portfolio_value:,.2f}", f"{roi:+.2f}% Booked ROI"), unsafe_allow_html=True)
+    with st.popover("🔍 Realized Profit Details", use_container_width=True):
+        st.markdown("### 🏦 Net Portfolio Details")
+        st.write("Total capital and realized net profits booked since the bot started.")
+        st.info(f"**Initial Capital:** ₹50,000.00\n**Booked Realized Profit:** ₹{portfolio_value - 50000:,.2f}\n**Total Account Balance:** ₹{portfolio_value:,.2f}")
 
 with top_b2:
     st_tot_trades = len(dca_positions) + len(futures_positions)
-    st.markdown(fancy_metric("🔒 మొత్తం ఇన్వెస్ట్‌మెంట్", f"₹{invested_amount:,.2f}", f"స్పాట్ + ఫ్యూచర్స్ ({st_tot_trades})"), unsafe_allow_html=True)
-    with st.popover("🔍 ఇన్వెస్ట్ చేసిన వివరాలు (Spot & Futures)", use_container_width=True):
-        st.markdown("### 🔒 ఇన్వెస్ట్‌మెంట్ బ్రేక్‌డౌన్")
-        st.markdown(f"**📌 స్పాట్ ఇన్వెస్ట్‌మెంట్:** ₹{spot_invested:,.2f} ({len(dca_positions)} కాయిన్స్)")
+    st.markdown(fancy_metric("🔒 Total Invested", f"₹{invested_amount:,.2f}", f"Spot + Futures ({st_tot_trades})"), unsafe_allow_html=True)
+    with st.popover("🔍 Capital Allocation Details", use_container_width=True):
+        st.markdown("### 🔒 Investment Capital Breakdown")
+        st.markdown(f"**📌 Spot Investment:** ₹{spot_invested:,.2f} ({len(dca_positions)} assets)")
         if dca_positions:
             for s, p in dca_positions.items():
                 st.write(f"- {s}: ₹{p.get('total_cost', 0):,.2f}")
         st.divider()
-        st.markdown(f"**🚀 ఫ్యూచర్స్ మార్జిన్ (5x):** ₹{futures_invested:,.2f} ({len(futures_positions)} ట్రేడ్స్)")
+        st.markdown(f"**🚀 Futures Margin (5x):** ₹{futures_invested:,.2f} ({len(futures_positions)} trades)")
         if futures_positions:
             for fs, fp in futures_positions.items():
                 st.write(f"- {fs} ({fp.get('side', 'LONG')} 5x): ₹{fp.get('margin', 5000):,.2f}")
 
 with top_b3:
-    st.markdown(fancy_metric("💵 ఉచిత నగదు (Cash)", f"₹{available_cash:,.2f}", "కొత్త ట్రేడ్ కి రెడీ"), unsafe_allow_html=True)
-    with st.popover("🔍 ఈ Cash ఎక్కడిది?", use_container_width=True):
-        st.markdown("### 💵 ఫ్రీ క్యాష్ బ్యాలెన్స్")
-        st.write("స్పాట్ కొనుగోళ్లు మరియు ఫ్యూచర్స్ మార్జిన్ పోను మీ అకౌంట్ లో మిగిలి ఉన్న ఉచిత నగదు.")
-        st.write(f"- మొత్తం క్యాపిటల్: ₹{portfolio_value:,.2f}")
-        st.write(f"- స్పాట్ వాడిన మొత్తం: ₹{spot_invested:,.2f}")
-        st.write(f"- ఫ్యూచర్స్ మార్జిన్: ₹{futures_invested:,.2f}")
+    st.markdown(fancy_metric("💵 Free Liquid Cash", f"₹{available_cash:,.2f}", "Available Capital"), unsafe_allow_html=True)
+    with st.popover("🔍 Cash Allocation Details", use_container_width=True):
+        st.markdown("### 💵 Free Cash Balance")
+        st.write("Unallocated liquid cash available for new spot entries and margin buffers.")
+        st.write(f"- Total Portfolio Capital: ₹{portfolio_value:,.2f}")
+        st.write(f"- Spot Capital Allocated: ₹{spot_invested:,.2f}")
+        st.write(f"- Futures Margin Allocated: ₹{futures_invested:,.2f}")
         st.divider()
-        st.success(f"మిగిలిన ఫ్రీ క్యాష్: ₹{available_cash:,.2f}")
+        st.success(f"Remaining Liquid Cash: ₹{available_cash:,.2f}")
 
 with top_b4:
     top_pnl_color = "normal" if total_floating_pnl >= 0 else "inverse"
-    st.markdown(fancy_metric("📈 ఫ్లోటింగ్ లాభం (Live)", f"₹{total_floating_pnl:+,.2f}", f"{total_floating_pnl_pct:+.2f}% Total", top_pnl_color), unsafe_allow_html=True)
-    with st.popover("🔍 Live P&L బ్రేక్‌డౌన్ (Spot + Futures)", use_container_width=True):
-        st.markdown("### 📈 ఫ్లోటింగ్ (Unbooked) P&L")
-        st.markdown(f"**📌 స్పాట్ ఫ్లోటింగ్ P&L:** ₹{spot_floating_pnl:+.2f}")
+    st.markdown(fancy_metric("📈 Floating P&L (Unrealized)", f"₹{total_floating_pnl:+,.2f}", f"{total_floating_pnl_pct:+.2f}% Total", top_pnl_color), unsafe_allow_html=True)
+    with st.popover("🔍 Live P&L Breakdown", use_container_width=True):
+        st.markdown("### 📈 Floating (Unrealized) P&L")
+        st.markdown(f"**📌 Spot Floating P&L:** ₹{spot_floating_pnl:+.2f}")
         if dca_positions:
             for s, pd_info in per_position_pnl.items():
                 pnl = pd_info['pnl_inr']
                 c = "🟢" if pnl >= 0 else "🔴"
                 st.write(f"- {c} {s}: ₹{pnl:+.2f} ({pd_info['pnl_pct']:+.2f}%)")
         st.divider()
-        st.markdown(f"**🚀 ఫ్యూచర్స్ ఫ్లోటింగ్ P&L (5x):** ₹{futures_floating_pnl:+.2f}")
+        st.markdown(f"**🚀 Futures Floating P&L (5x):** ₹{futures_floating_pnl:+.2f}")
         if futures_positions:
             for fs, fpd in per_futures_pnl.items():
                 fpnl = fpd['pnl_inr']
@@ -1572,15 +1572,15 @@ with top_b4:
 
 with top_b5:
     live_pf_color = "normal" if live_portfolio_value >= portfolio_value else "inverse"
-    st.markdown(fancy_metric("⚡ లైవ్ టోటల్", f"₹{live_portfolio_value:,.2f}", f"1 USD = ₹{USD_TO_INR:.2f}", live_pf_color), unsafe_allow_html=True)
-    with st.popover("🔍 ఫైనల్ లెక్కలు", use_container_width=True):
-        st.markdown("### ⚡ లైవ్ టోటల్ వివరాలు")
-        st.write("నెట్ పోర్ట్‌ఫోలియో మరియు ప్రస్తుత లైవ్ ఫ్లోటింగ్ లాభం కలిపితే వచ్చే ఫైనల్ ఫిగర్ ఇది.")
-        st.write(f"**నెట్ బ్యాలెన్స్:** ₹{portfolio_value:,.2f}")
+    st.markdown(fancy_metric("⚡ Total Portfolio Valuation", f"₹{live_portfolio_value:,.2f}", f"1 USD = ₹{USD_TO_INR:.2f}", live_pf_color), unsafe_allow_html=True)
+    with st.popover("🔍 Valuation Summary", use_container_width=True):
+        st.markdown("### ⚡ Net Valuation Details")
+        st.write("Total current equity combining booked capital and real-time open positions.")
+        st.write(f"**Booked Equity:** ₹{portfolio_value:,.2f}")
         c = "+" if total_floating_pnl >= 0 else ""
-        st.write(f"**ఫ్లోటింగ్ P&L:** {c}₹{total_floating_pnl:,.2f}")
+        st.write(f"**Floating P&L:** {c}₹{total_floating_pnl:,.2f}")
         st.divider()
-        st.write(f"**లైవ్ టోటల్:** ₹{live_portfolio_value:,.2f}")
+        st.write(f"**Total Live Valuation:** ₹{live_portfolio_value:,.2f}")
 
 
 st.markdown("</div>", unsafe_allow_html=True)
@@ -1590,21 +1590,21 @@ st.markdown("<br>", unsafe_allow_html=True)
 # 🌟 3. TOP-LEVEL ZERODHA PRO WEB TABS
 # -------------------------------------------------------------
 tab_pos, tab_futures, tab_mind, tab_charts, tab_orders, tab_search, tab_voice = st.tabs([
-    "📌 లైవ్ పొజిషన్లు (Spot)",
+    "📌 Live Positions (Spot)",
     "🚀 Futures (Paper 5x)",
-    "🧠 AI మైండ్ & రీజనింగ్",
-    "📊 ప్రో చార్ట్స్",
-    "📋 ఆర్డర్స్ & PnL",
-    "🔍 స్క్రీనర్",
-    "💬 వాయిస్"
+    "🧠 AI Brain & Reasoning",
+    "📊 Pro Charts & Patterns",
+    "📋 Orders & PnL History",
+    "🔍 Market Screener",
+    "💬 AI Assistant"
 ])
 
 # =============================================================
-# TAB 1: 📌 లైవ్ పొజిషన్లు & పోర్ట్‌ఫోలియో (ZERODHA POSITIONS)
+# TAB 1: 📌 Live Positions (Spot DCA)
 # =============================================================
 with tab_pos:
-    st.markdown("### 🎯 Zerodha Kite Live Positions (ప్రస్తుతం రన్ అవుతున్న ట్రేడ్లు)")
-    st.caption("క్రింది ట్రేడ్లలో ఏ దానిపైన క్లిక్ చేసినా దానికి సంబంధించిన పూర్తి వివరాలు, టార్గెట్ ప్రోగ్రెస్ బార్, మరియు రిస్క్ మేనేజ్‌మెంట్ ఇక్కడ ఓపెన్ అవుతాయి:")
+    st.markdown("### 🎯 Active Spot Positions (Live DCA)")
+    st.caption("Click any open position below to inspect detailed DCA entries, target progress, and risk parameters:")
 
     if dca_positions:
         trade_keys = list(dca_positions.keys())
@@ -1652,15 +1652,15 @@ with tab_pos:
                background:#131722;border:1px solid #2a2e39;border-radius:10px;overflow:hidden;">
           <thead>
             <tr style="background:#181c27;">
-              <th style="padding:11px 12px;color:#787b86;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">అసెట్ (Asset)</th>
-              <th style="padding:11px 12px;color:#787b86;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">క్వాంటిటీ</th>
-              <th style="padding:11px 12px;color:#787b86;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">కొన్న ధర (Avg)</th>
-              <th style="padding:11px 12px;color:#00bcd4;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">🔴 లైవ్ ధర</th>
-              <th style="padding:11px 12px;color:#ffa726;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">🎯 టార్గెట్</th>
-              <th style="padding:11px 12px;color:#787b86;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">పెట్టుబడి (₹)</th>
-              <th style="padding:11px 12px;color:#787b86;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">ప్రస్తుత విలువ (₹)</th>
-              <th style="padding:11px 12px;color:#787b86;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">లాభం / నష్టం</th>
-              <th style="padding:11px 12px;color:#787b86;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">టార్గెట్ దూరం</th>
+              <th style="padding:11px 12px;color:#787b86;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">Asset</th>
+              <th style="padding:11px 12px;color:#787b86;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">Quantity</th>
+              <th style="padding:11px 12px;color:#787b86;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">Avg Buy Price</th>
+              <th style="padding:11px 12px;color:#00bcd4;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">Live Price</th>
+              <th style="padding:11px 12px;color:#ffa726;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">Target</th>
+              <th style="padding:11px 12px;color:#787b86;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">Invested (₹)</th>
+              <th style="padding:11px 12px;color:#787b86;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">Current Value (₹)</th>
+              <th style="padding:11px 12px;color:#787b86;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">PnL & ROE</th>
+              <th style="padding:11px 12px;color:#787b86;font-size:12px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39;">Distance to Target</th>
             </tr>
           </thead>
           <tbody style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#e0e3eb;">
@@ -1671,17 +1671,17 @@ with tab_pos:
         st.markdown(textwrap.dedent(positions_table_html), unsafe_allow_html=True)
 
         st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-        st.markdown("##### 🔍 కాయిన్ క్యాండిల్‌స్టిక్ చార్ట్ & AI ప్యాటర్న్ చూడటానికి క్లిక్ చేయండి:")
+        st.markdown("##### 🔍 Click any coin below to inspect live candlestick chart & AI pattern:")
         s_cols = st.columns(max(1, len(dca_positions)))
         for s_idx, ssym_btn in enumerate(dca_positions.keys()):
             with s_cols[s_idx]:
-                if st.button(f"📊 {ssym_btn} చార్ట్ & ప్యాటర్న్", key=f"btn_spot_chart_{ssym_btn}", use_container_width=True):
+                if st.button(f"📊 {ssym_btn} Chart & Pattern", key=f"btn_spot_chart_{ssym_btn}", use_container_width=True):
                     st.session_state['selected_chart_sym'] = ssym_btn
-                    st.toast(f"✅ {ssym_btn} చార్ట్ లోడ్ చేయబడింది! '📊 ప్రో చార్ట్స్' ట్యాబ్‌లో చూడండి.", icon="🕯️")
+                    st.toast(f"✅ {ssym_btn} loaded! Inspect in '📊 Pro Charts & Patterns' tab.", icon="🕯️")
                     st.rerun()
 
     else:
-        st.info("ప్రస్తుతం ఓపెన్ పొజిషన్లు ఏమీ లేవు. పాత ట్రేడ్లన్నీ లాభాలతో క్లోజ్ అయ్యాయి. కొత్త కన్ఫర్మ్డ్ సిగ్నల్ కోసం బాట్ స్కాన్ చేస్తోంది.")
+        st.info("No active spot positions open currently. All prior trades closed in profit. Bot is scanning the market for fresh high-probability entries.")
 
 
 # =============================================================
@@ -1689,12 +1689,12 @@ with tab_pos:
 # =============================================================
 with tab_futures:
     st.markdown("### 🚀 Crypto Futures Paper Trading (5x Leverage)")
-    st.caption("ఇక్కడ వర్చువల్ మార్జిన్ ₹5000/trade తో ఆటోమేటిక్ గా LONG/SHORT ట్రేడ్స్ జరుగుతాయి. లాభనష్టాలు లైవ్ లో అప్డేట్ అవుతాయి.")
+    st.caption("Simulated institutional paper trading with ₹5,000/trade margin, 5x leverage, and strict loss-protection guards. Real-time PnL updates:")
     
     futures_state = get_state_smart('fo_state')
             
     if not futures_state:
-        st.info("ప్రస్తుతం ఎటువంటి ఫ్యూచర్స్ ట్రేడ్ రన్ అవ్వట్లేదు. మార్కెట్ కన్ఫర్మేషన్ కోసం ఎదురుచూస్తోంది...")
+        st.info("No active futures positions open currently. Waiting for institutional confluence (SMC + EMA Crossover)...")
     else:
         f_rows = []
         for fsym, finfo in futures_state.items():
@@ -1744,17 +1744,17 @@ with tab_futures:
         st.markdown(f_table, unsafe_allow_html=True)
         
         st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-        st.markdown("##### 🔍 కాయిన్ క్యాండిల్‌స్టిక్ చార్ట్ & AI ప్యాటర్న్ చూడటానికి క్లిక్ చేయండి:")
+        st.markdown("##### 🔍 Click any coin below to inspect live candlestick chart & AI pattern:")
         f_cols = st.columns(max(1, len(futures_state)))
         for f_idx, fsym_btn in enumerate(futures_state.keys()):
             with f_cols[f_idx]:
-                if st.button(f"📊 {fsym_btn} చార్ట్ & ప్యాటర్న్", key=f"btn_fut_chart_{fsym_btn}", use_container_width=True):
+                if st.button(f"📊 {fsym_btn} Chart & Pattern", key=f"btn_fut_chart_{fsym_btn}", use_container_width=True):
                     st.session_state['selected_chart_sym'] = fsym_btn
-                    st.toast(f"✅ {fsym_btn} చార్ట్ లోడ్ చేయబడింది! '📊 ప్రో చార్ట్స్' ట్యాబ్‌లో చూడండి.", icon="🕯️")
+                    st.toast(f"✅ {fsym_btn} loaded! Inspect in '📊 Pro Charts & Patterns' tab.", icon="🕯️")
                     st.rerun()
         
     st.markdown("---")
-    st.markdown("#### 📋 ఫ్యూచర్స్ ట్రేడ్స్ హిస్టరీ (Futures Trades History)")
+    st.markdown("#### 📋 Futures Closed Trades History")
     if os.path.exists('fo_trades_log.csv'):
         try:
             f_df = pd.read_csv('fo_trades_log.csv')
@@ -1764,44 +1764,44 @@ with tab_futures:
 
 
 # =============================================================
-# TAB 3: 🧠 AI మైండ్ & ట్రేడ్ రీజనింగ్ (BOT DECISION INTELLIGENCE)
+# TAB 3: 🧠 AI Brain & Trading Reasoning
 # =============================================================
 with tab_mind:
-    st.markdown("### 🧠 AI బాట్ మైండ్ & ట్రేడ్ రీజనింగ్ హబ్ (Trade Decisions & Thought Log)")
-    st.caption("బాట్ ఏ ట్రేడ్ ఎందుకు చేసింది? ఎందుకు హోల్డ్ చేస్తోంది? వేరే కాయిన్స్ ని ఎందుకు స్కిప్ చేసింది (వద్దనుకుంది)? పూర్తి పారదర్శక నివేదిక:")
+    st.markdown("### 🧠 AI Brain & Real-Time Trading Reasoning Hub")
+    st.caption("Transparent real-time breakdown of why the AI entered, holds, or skips assets across all tracked markets:")
 
     # 1. ACTIVE TRADES RATIONALE
-    st.subheader("🟢 1. ప్రస్తుతం రన్ అవుతున్న ట్రేడ్ల AI నిర్ణయం (Active Trade Rationale)")
+    st.subheader("🟢 1. Active Trade Rationale & Thesis")
     if dca_positions:
         for m_sym, m_info in dca_positions.items():
             m_asset = scanned_assets.get(m_sym, {})
-            m_thought = m_asset.get('thought', '15m HTF ట్రెండ్ స్ట్రాంగ్ బుల్లిష్ గా ఉంది. VWAP ఇన్స్టిట్యూషనల్ సపోర్ట్ తో స్నైపర్ బై ఎంట్రీ తీసుకున్నాను.')
+            m_thought = m_asset.get('thought', '15m Higher Timeframe trend is strongly bullish. Entered sniper buy at institutional VWAP support.')
             clean_m = m_sym.replace('.NS', '').replace('-USD', '')
             rsi_val = m_asset.get('rsi', 52.0)
             strat_nm = m_info.get('strategy', 'Fair Value Gap (FVG Imbalance Fill)')
             
-            with st.expander(f"🪙 {clean_m} - ఎందుకు కొంది? ఎందుకు హోల్డ్ చేస్తోంది? (క్లిక్ చేసి చూడండి)", expanded=True):
-                st.markdown(f"**🎯 ఎందుకు ఎంట్రీ తీసుకుంది? (Entry Thesis):**")
+            with st.expander(f"🪙 {clean_m}  - Why did it buy? Why is it holding? (Click to expand)", expanded=True):
+                st.markdown(f"**🎯 Entry Thesis:**")
                 st.info(m_thought)
                 
                 t_sub1, t_sub2, t_sub3 = st.columns(3)
                 t_sub1.markdown(f"📊 **RSI (14):** `{rsi_val:.1f}` (Optimal Buy)")
                 t_sub2.markdown(f"📈 **15m HTF Trend:** `BULLISH 🟢`")
-                t_sub3.markdown(f"🧬 **స్ట్రాటజీ:** `{strat_nm}`")
+                t_sub3.markdown(f"🧬 **Strategy:** `{strat_nm}`")
                 
-                st.markdown(f"**⚡ ప్రస్తుతం ఏం చేస్తోంది? (Holding Thesis):**")
-                st.write(f"లాభం కోసం హోల్డ్ చేస్తోంది. **+1.5% టార్గెట్** రీచ్ అవ్వగానే లేదా గరిష్ట లాభాల కోసం **ట్రైలింగ్ ప్రాఫిట్ లాక్** యాక్టివేట్ అవ్వగానే ఆటోమేటిక్‌గా అమ్మేస్తుంది. మార్కెట్ మూమెంటం బాగుంది కాబట్టి తొందరపడి లాస్ లో అమ్మడం లేదు.")
+                st.markdown(f"**⚡ Holding Thesis:**")
+                st.write(f"Holding for target exit. Once +1.2% - +1.5% profit or dynamic trailing lock triggers, it automatically exits. Strong momentum prevents premature exits.")
                 
-                st.markdown(f"**🛡️ క్యాపిటల్ సేఫ్టీ గార్డ్ (Risk Guard):**")
-                st.caption(f"ఒకవేళ మార్కెట్ ఆకస్మికంగా రివర్స్ అయితే **-6.0% హార్డ్ స్టాప్-లాస్** వద్ద నష్టాన్ని కట్ చేస్తుంది. మార్కెట్ సాధారణంగా 2% డిప్ అయితే లేయర్ 2 తో ఆవరేజ్ చేయడానికి సిద్ధంగా ఉంది.")
+                st.markdown(f"**🛡️ Capital Protection & Risk Guard:**")
+                st.caption(f"Unconditional hard stop-loss is armed to strictly limit downside. Zero-loss breakeven lock activates once the position moves into profit.")
     else:
-        st.info("ప్రస్తుతం యాక్టివ్ ట్రేడ్స్ ఏవీ లేవు.")
+        st.info("No active positions currently.")
 
     st.markdown("---")
 
     # 2. WATCHING & WAITING LIST
-    st.subheader("⏳ 2. వాచింగ్ & వెయిటింగ్ లిస్ట్ (Watching & Waiting for Setup)")
-    st.caption("బాట్ నిరంతరం స్కాన్ చేస్తున్నప్పటికీ, సరైన కన్ఫర్మేషన్ వచ్చే వరకు వేచి చూస్తున్న అసెట్స్:")
+    st.subheader("⏳ 2. Watchlist & Setup Monitoring")
+    st.caption("Assets continuously scanned by AI bot waiting for ideal technical breakout/confirmation:")
     
     watch_rows = []
     for sc_sym, sc_data in scanned_assets.items():
@@ -1813,79 +1813,79 @@ with tab_mind:
             rsi_s = sc_data.get('rsi', 50.0)
             
             watch_rows.append({
-                "🪙 అసెట్ (Asset)": clean_s,
-                "💵 లైవ్ ధర": pr_fmt,
+                "🪙 Asset": clean_s,
+                "💵 Live Price": pr_fmt,
                 "⚡ RSI (14)": f"{rsi_s:.1f}",
-                "🤖 ప్రస్తుత స్టేటస్": "⏳ వెయిటింగ్ (సెటప్ కోసం వేచి చూస్తోంది)",
-                "🧠 బాట్ ఆలోచన & కారణం": f"మార్కెట్ కన్సాలిడేషన్ లో ఉంది. RSI {rsi_s:.1f} వద్ద ఉంది. సపోర్ట్ బౌన్స్ లేదా పుల్‌బ్యాక్ కన్ఫర్మ్ అయ్యేంతవరకు రిస్క్ తీసుకోకుండా వెయిట్ చేస్తోంది."
+                "🤖 Status": "⏳ Waiting (Awaiting confirmation)",
+                "🧠 AI Thesis & Reason": f"Market is in consolidation. RSI is at {rsi_s:.1f}. Waiting for confirmed support bounce or pullback before committing capital."
             })
             
     if watch_rows:
         safe_dataframe(pd.DataFrame(watch_rows), hide_index=True)
     else:
-        st.write("ప్రస్తుతం ప్రధాన కాయిన్స్ అన్నీ స్కాన్ చేయబడుతున్నాయి.")
+        st.write("All target assets are currently being scanned.")
 
     st.markdown("---")
 
     # 3. WHY THE BOT DECIDED 'VADDU' / REJECTED
-    st.subheader("🚫 3. వద్దనుకున్నవి / స్కిప్ చేసినవి (Why the Bot Decided 'VADDU' / Skipped)")
-    st.caption("హై-రిస్క్ ఉన్న సమయాల్లో బాట్ ట్రేడ్స్ చేయకూడదని ఎందుకు నిర్ణయించుకుంది? AI ఫిల్టర్లు క్రింద చూడండి:")
+    st.subheader("🚫 3. Filtered & Skipped Trades (Why the Bot Rejected / Skipped Entries)")
+    st.caption("Why does the bot avoid entering trades during high-risk conditions? Active AI filters detailed below:")
     
     sk1, sk2 = st.columns(2)
     with sk1:
-        st.error("""**🔴 1. Overbought Risk Filter (RSI > 70 వద్ద తిరస్కరణ)**
+        st.error("""**🔴 1. Overbought Risk Filter (Rejected at RSI > 70)**
 
-మార్కెట్ లో ఏదైనా కాయిన్ విపరీతంగా పెరిగి RSI 70 దాటినప్పుడు సాధారణ ట్రేడర్లు ఫోమో (FOMO) తో కొంటారు. కానీ మన బాట్ **'ఇక్కడ కొంటే కరెక్షన్ రిస్క్ ఎక్కువ, కాబట్టి నో బై (VADDU)'** అని ఆర్డర్ ని తిరస్కరిస్తుంది.""")
-        st.error("""**🔴 2. Bearish Trend Guard (EMA 200 క్రింద తిరస్కరణ)**
+When an asset pumps excessively and RSI crosses 70, retail traders FOMO in. The AI classifies this as an extreme correction hazard and rejects buy orders to prevent buying the top.""")
+        st.error("""**🔴 2. Bearish Trend Guard (Rejected Below 200 EMA)**
 
-ప్రైస్ 200-EMA లైన్ క్రింద ఉన్నప్పుడు మార్కెట్ లో భారీ అమ్మకాల ఒత్తిడి ఉంటుంది. అప్పుడు వచ్చే తాత్కాలిక పుల్‌బ్యాక్ లను ఫేక్ ర్యాలీలుగా గుర్తించి బాట్ ట్రేడ్ చేయకుండా ఆగిపోతుంది.""")
+When price trades below the 200 EMA, selling pressure dominates the broader trend. Temporary bounces are tagged as bull traps and rejected.""")
     with sk2:
-        st.error("""**🔴 3. Volume Divergence Shield (ఫేక్ పంప్ రక్షణ)**
+        st.error("""**🔴 3. Volume Divergence Shield (Fake Pump Protection)**
 
-సంస్థాగత బయర్స్ (Institutional Volume) లేకుండా చిన్న పరిమాణంలో జరిగే మూవ్‌మెంట్స్ ని ట్రాప్ గా పరిగణిస్తుంది. VWAP సపోర్ట్ లేకపోతే బై సిగ్నల్ ని స్కిప్ చేస్తుంది.""")
-        st.error("""**🛡️ 4. Max Capital Exposure Guard (రిస్క్ లిమిట్)**
+Pumps lacking institutional volume and VWAP support are classified as liquidity traps. Buy signals without volume confirmation are skipped.""")
+        st.error("""**🛡️ 4. Max Capital Exposure Guard (Risk Cap)**
 
-పోర్ట్‌ఫోలియో భద్రత కోసం ఒకేసారి గరిష్టంగా 6 ట్రేడ్ల కంటే ఎక్కువ వెళ్ళకుండా కొత్త ఎంట్రీలను లాక్ చేసి ఉంచుతుంది.""")
+To preserve portfolio equity, maximum concurrent open positions are strictly limited to 6 assets.""")
 
     # 4. AI BRAIN & STRATEGY WEIGHTS
     st.markdown("---")
-    st.subheader("🧬 4. AI న్యూరల్ లెర్నింగ్ బ్రెయిన్ (ai_brain.json)")
+    st.subheader("🧬 4. AI Neural Learning Brain (ai_brain.json)")
     if os.path.exists('ai_brain.json'):
         try:
             with open('ai_brain.json', 'r') as f_br:
                 brain_data = json.load(f_br)
                 
             br_c1, br_c2, br_c3 = st.columns(3)
-            br_c1.markdown(fancy_metric("AI Brain వెర్షన్", brain_data.get('brain_version', 'v3.0-NeuralSniper')), unsafe_allow_html=True)
-            br_c2.markdown(fancy_metric("AI IQ స్కోరు", f"{brain_data.get('iq_score', 138)}", "హై-ఇంటెలిజెన్స్"), unsafe_allow_html=True)
-            br_c3.markdown(fancy_metric("స్ట్రాటజీ విన్ రేట్", f"{brain_data.get('win_rate', 68.5)}%", "బ్యాక్‌టెస్ట్ అక్యూరసీ"), unsafe_allow_html=True)
+            br_c1.markdown(fancy_metric("AI Brain Version", brain_data.get('brain_version', 'v3.0-NeuralSniper')), unsafe_allow_html=True)
+            br_c2.markdown(fancy_metric("AI IQ Score", f"{brain_data.get('iq_score', 138)}", "High-Intelligence"), unsafe_allow_html=True)
+            br_c3.markdown(fancy_metric("Strategy Win Rate", f"{brain_data.get('win_rate', 68.5)}%", "Backtest Accuracy"), unsafe_allow_html=True)
             
-            st.markdown("##### 🏆 స్ట్రాటజీ లీడర్‌బోర్డ్ (Accuracy & Win Rates):")
+            st.markdown("##### 🏆 Strategy Leaderboard (Accuracy & Win Rates):")
             strat_rows = []
             for s_key, s_val in brain_data.get('strategies', {}).items():
                 strat_rows.append({
-                    "స్ట్రాటజీ పేరు": s_val.get('name'),
-                    "గెలిచిన ట్రేడ్స్ (Wins)": s_val.get('wins'),
-                    "నష్టాలు (Losses)": s_val.get('losses'),
-                    "ఖచ్చితత్వం (Win Rate)": f"{s_val.get('win_rate'):.1f}%",
-                    "AI వెయిట్ (Weight)": s_val.get('weight')
+                    "Strategy Name": s_val.get('name'),
+                    "Wins": s_val.get('wins'),
+                    "Losses": s_val.get('losses'),
+                    "Win Rate": f"{s_val.get('win_rate'):.1f}%",
+                    "AI Weight": s_val.get('weight')
                 })
             safe_dataframe(pd.DataFrame(strat_rows), hide_index=True)
         except Exception: pass
 
 
 # =============================================================
-# TAB 3: 📊 ట్రేడింగ్ వ్యూ ప్రో చార్ట్స్ (PRO ANALYTICS)
+# TAB 4: 📊 Pro Charts & Pattern Scanner
 # =============================================================
 with tab_charts:
-    st.markdown("### 📊 లైవ్ క్యాండిల్‌స్టిక్ చార్ట్స్ & AI ప్యాటర్న్ డిటెక్టర్")
-    st.caption("క్రింది కాయిన్స్ లేదా స్టాక్స్ పై **ఒక్క క్లిక్ చేయండి** — తక్షణమే లైవ్ క్యాండిల్‌స్టిక్ చార్ట్, గుర్తించిన ప్యాటర్న్ (Hammer, Engulfing, Star), మరియు ట్రేడింగ్ సిగ్నల్ కనిపిస్తాయి:")
+    st.markdown("### 📊 Live Candlestick Charts & AI Pattern Scanner")
+    st.caption("**Click any coin or stock below** for instant live candlestick charts, pattern recognition, and institutional indicators:")
     
     if "selected_chart_sym" not in st.session_state:
         st.session_state["selected_chart_sym"] = "BTC-USD"
 
     # ─── QUICK 1-CLICK COIN BUTTONS ───
-    st.markdown("##### 🪙 పాపులర్ క్రిప్టో కాయిన్స్ (Crypto 24/7):")
+    st.markdown("##### 🪙 Popular Cryptos (24/7):")
     crypto_chips = [
         ("🪙 BTC", "BTC-USD"),
         ("🪙 ETH", "ETH-USD"),
@@ -1904,7 +1904,7 @@ with tab_charts:
                 st.session_state["selected_chart_sym"] = sym_val
                 st.rerun()
 
-    st.markdown("##### 🇮🇳 టాప్ ఇండియన్ స్టాక్స్ (NSE Zerodha):")
+    st.markdown("##### 🇮🇳 Top Indian Stocks (NSE):")
     nse_chips = [
         ("🇮🇳 RELIANCE", "RELIANCE.NS"),
         ("🇮🇳 TATA MOTORS", "TMCV.NS"),
@@ -1933,7 +1933,7 @@ with tab_charts:
     col_sel1, col_sel2 = st.columns([3, 1])
     with col_sel1:
         sel_chart_sym = st.selectbox(
-            "లేదా లిస్ట్ నుండి ఇతర స్టాక్ లేదా కాయిన్ ఎంచుకోండి:",
+            "Or select any other stock/coin from the list:",
             all_symbols,
             index=curr_idx,
             key="chart_sym_select_box"
@@ -1943,7 +1943,7 @@ with tab_charts:
             st.rerun()
 
     with col_sel2:
-        if st.button("🔄 చార్ట్ రీఫ్రెష్ (Refresh)", key="btn_refresh_chart", use_container_width=True):
+        if st.button("🔄 Refresh Chart", key="btn_refresh_chart", use_container_width=True):
             st.rerun()
 
     # Load data & Candlestick analysis
@@ -1969,8 +1969,8 @@ with tab_charts:
             <div style="display: flex; align-items: center; gap: 12px;">
                 <span style="font-size: 32px;">{latest_pat['icon']}</span>
                 <div>
-                    <div style="font-size: 20px; font-weight: 800; color: #ffffff;">{latest_pat['telugu_title']}</div>
-                    <div style="font-size: 13px; color: #90caf9;">అసెట్: <b style="color:#ffffff;">{active_sym}</b> | లైవ్ ప్రైస్: <b style="color:#ffffff;">{curr_prefix}{current_price:,.2f}</b></div>
+                    <div style="font-size: 20px; font-weight: 800; color: #ffffff;">{latest_pat.get('title', latest_pat.get('telugu_title', ''))}</div>
+                    <div style="font-size: 13px; color: #90caf9;">Asset: <b style="color:#ffffff;">{active_sym}</b> | Live Price: <b style="color:#ffffff;">{curr_prefix}{current_price:,.2f}</b></div>
                 </div>
             </div>
             <div style="display: flex; align-items: center; gap: 8px;">
@@ -1981,24 +1981,24 @@ with tab_charts:
         </div>
         <div style="background: rgba(255,255,255,0.04); border-radius: 10px; padding: 12px 16px; margin-bottom: 12px; border-left: 4px solid {pat_color};">
             <div style="color: #e0e0e0; font-size: 14px; line-height: 1.6;">
-                <b>🔍 ప్యాటర్న్ వివరణ:</b> {latest_pat['telugu_desc']}
+                <b>🔍 Pattern Analysis:</b> {latest_pat.get('desc', latest_pat.get('telugu_desc', ''))}
             </div>
         </div>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 10px;">
             <div style="background: rgba(0,0,0,0.3); padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
-                <div style="color: #9e9e9e; font-size: 11px; text-transform: uppercase;">🤖 AI సిఫార్సు</div>
+                <div style="color: #9e9e9e; font-size: 11px; text-transform: uppercase;">🤖 AI Recommendation</div>
                 <div style="color: {pat_color}; font-size: 15px; font-weight: 700; margin-top: 2px;">{latest_pat['action']}</div>
             </div>
             <div style="background: rgba(0,0,0,0.3); padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
-                <div style="color: #9e9e9e; font-size: 11px; text-transform: uppercase;">🎯 టార్గెట్ (+1.5% Scalp)</div>
+                <div style="color: #9e9e9e; font-size: 11px; text-transform: uppercase;">🎯 Target (+1.5% Scalp)</div>
                 <div style="color: #00e676; font-size: 15px; font-weight: 700; margin-top: 2px;">{curr_prefix}{current_price * 1.015:,.2f}</div>
             </div>
             <div style="background: rgba(0,0,0,0.3); padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
-                <div style="color: #9e9e9e; font-size: 11px; text-transform: uppercase;">🛑 స్టాప్-లాస్ (-2.5% Safe)</div>
+                <div style="color: #9e9e9e; font-size: 11px; text-transform: uppercase;">🛑 Stop-Loss (-2.5% Safe)</div>
                 <div style="color: #ff3b30; font-size: 15px; font-weight: 700; margin-top: 2px;">{curr_prefix}{current_price * 0.975:,.2f}</div>
             </div>
             <div style="background: rgba(0,0,0,0.3); padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
-                <div style="color: #9e9e9e; font-size: 11px; text-transform: uppercase;">📊 RSI (14) మోమెంటమ్</div>
+                <div style="color: #9e9e9e; font-size: 11px; text-transform: uppercase;">📊 RSI (14) Momentum</div>
                 <div style="color: #64b5f6; font-size: 15px; font-weight: 700; margin-top: 2px;">{rsi_disp_val}</div>
             </div>
         </div>
@@ -2015,7 +2015,7 @@ with tab_charts:
         mode = "gauge",
         value = gauge_val,
         domain = {'x': [0, 1], 'y': [0, 1]},
-        title = {'text': f"🤖 AI మార్కెట్ సెంటిమెంట్: <b>{signal}</b>", 'font': {'size': 20, 'color': 'white'}},
+        title = {'text': f"🤖 AI Market Sentiment: <b>{signal}</b>", 'font': {'size': 20, 'color': 'white'}},
         gauge = {
             'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "white"},
             'bar': {'color': "white"},
@@ -2035,8 +2035,8 @@ with tab_charts:
         safe_plotly_chart(fig_gauge)
     with col_g2:
         m1, m2, m3 = st.columns(3)
-        m1.markdown(fancy_metric("ట్రేడింగ్ పెయిర్", active_sym), unsafe_allow_html=True)
-        m2.markdown(fancy_metric("లైవ్ ప్రైస్", f"{curr_prefix}{current_price:,.2f}"), unsafe_allow_html=True)
+        m1.markdown(fancy_metric("Trading Pair", active_sym), unsafe_allow_html=True)
+        m2.markdown(fancy_metric("Live Price", f"{curr_prefix}{current_price:,.2f}"), unsafe_allow_html=True)
         rsi_str = f"{last['RSI']:.1f}" if (last is not None and 'RSI' in last and not pd.isna(last['RSI'])) else "50.0"
         m3.markdown(fancy_metric("RSI (14)", rsi_str, "Normal", "inverse"), unsafe_allow_html=True)
 
@@ -2099,44 +2099,44 @@ with tab_charts:
         safe_plotly_chart(fig_pro)
 
     # ─── CANDLESTICK PATTERNS CHEAT SHEET ───
-    with st.expander("📚 క్యాండిల్‌స్టిక్ ప్యాటర్న్స్ గైడ్ & మీనింగ్స్ (Candlestick Cheat Sheet)", expanded=False):
+    with st.expander("📚 Candlestick Patterns Guide & Cheat Sheet", expanded=False):
         st.markdown("""
-        | ప్యాటర్న్ పేరు | రకం | సెంటిమెంట్ | వివరణ & ట్రేడింగ్ వ్యూహం |
+        | Pattern Name | Type | Sentiment | Description & Trading Strategy |
         |---|---|---|---|
-        | 🔨 **హ్యామర్ (Hammer)** | సింగిల్ క్యాండిల్ | 🟢 బుల్లిష్ (Bullish) | మార్కెట్ అడుగున ఏర్పడుతుంది. సెల్లర్స్ ని బయ్యర్స్ అధిగమించారు. **BUY సిగ్నల్**. |
-        | 🌠 **షూటింగ్ స్టార్ (Shooting Star)** | సింగిల్ క్యాండిల్ | 🔴 బేరిష్ (Bearish) | మార్కెట్ పైభాగంలో ఏర్పడుతుంది. అమ్మకాల ఒత్తిడితో ప్రైస్ పడిపోతుంది. **SELL సిగ్నల్**. |
-        | 🟩 **బుల్లిష్ ఎంగల్ఫింగ్ (Bullish Engulfing)** | డబుల్ క్యాండిల్ | 🟢 స్ట్రాంగ్ బుల్లిష్ | చిన్న రెడ్ క్యాండిల్ తర్వాత పెద్ద గ్రీన్ క్యాండిల్ ఏర్పడుతుంది. **ఖచ్చితమైన BUY**. |
-        | 🟥 **బేరిష్ ఎంగల్ఫింగ్ (Bearish Engulfing)** | డబుల్ క్యాండిల్ | 🔴 స్ట్రాంగ్ బేరిష్ | చిన్న గ్రీన్ క్యాండిల్ తర్వాత పెద్ద రెడ్ క్యాండిల్ ఏర్పడుతుంది. **ఖచ్చితమైన SELL**. |
-        | 🌅 **మార్నింగ్ స్టార్ (Morning Star)** | 3-క్యాండిల్ ప్యాటర్న్ | 🟢 సూపర్ బుల్లిష్ | రెడ్ -> చిన్న డోజీ -> పెద్ద గ్రీన్ క్యాండిల్. డౌన్‌ట్రెండ్ ముగిసి కొత్త ర్యాలీ షురూ. |
-        | 🌇 **ఈవెనింగ్ స్టార్ (Evening Star)** | 3-క్యాండిల్ ప్యాటర్న్ | 🔴 సూపర్ బేరిష్ | గ్రీన్ -> చిన్న డోజీ -> పెద్ద రెడ్ క్యాండిల్. అప్‌ట్రెండ్ ముగిసి భారీ పతనం. |
-        | ⚖️ **డోజీ (Doji)** | సింగిల్ క్యాండిల్ | 🟡 న్యూట్రల్ (Neutral) | ఓపెన్ మరియు క్లోజ్ సమానం. బయ్యర్స్, సెల్లర్స్ పోటీ పడుతున్నారు. బ్రేక్‌అవుట్ రెడీ. |
-        | 🐂 **బుల్లిష్ మారుబోజు (Marubozu)** | సింగిల్ క్యాండిల్ | 🟢 మొమెంటమ్ | ఎటువంటి విక్స్ లేని ఘనమైన గ్రీన్ క్యాండిల్. నిరంతర కొనుగోలు ర్యాలీ. |
+        | 🔨 **Hammer** | Single Candle | 🟢 Bullish | Forms at swing lows. Strong buyer rejection of lower prices. **BUY Signal**. |
+        | 🌠 **Shooting Star** | Single Candle | 🔴 Bearish | Forms at swing highs. Heavy selling rejection of higher prices. **SELL Signal**. |
+        | 🟩 **Bullish Engulfing** | Double Candle | 🟢 Strong Bullish | Large green candle engulfs prior red body. Buyers in full control. **BUY**. |
+        | 🟥 **Bearish Engulfing** | Double Candle | 🔴 Strong Bearish | Large red candle engulfs prior green body. Sellers in full control. **SELL**. |
+        | 🌅 **Morning Star** | 3-Candle Pattern | 🟢 Super Bullish | Red -> Compression Doji -> Strong Green. Powerful bottom reversal rally. |
+        | 🌇 **Evening Star** | 3-Candle Pattern | 🔴 Super Bearish | Green -> Compression Doji -> Strong Red. Powerful top reversal sell-off. |
+        | ⚖️ **Doji** | Single Candle | 🟡 Neutral | Open equals close. Market indecision before high-volatility breakout. |
+        | 🐂 **Bullish Marubozu** | Single Candle | 🟢 Strong Momentum | Solid green candle with no wicks. Continuous aggressive buying from open to close. |
         """)
 
 
 # =============================================================
-# TAB 4: 📋 ఆర్డర్ బుక్ & పెర్ఫార్మెన్స్ (ORDERS & PNL)
+# TAB 5: 📋 Order Book & Performance History
 # =============================================================
 with tab_orders:
-    st.subheader("📋 ఆర్డర్ బుక్ & అకౌంట్ స్టేట్‌మెంట్ (Orders & Performance)")
-    st.caption("స్పాట్ మరియు ఫ్యూచర్స్ ట్రేడ్స్ హిస్టరీ ఇక్కడ స్పష్టంగా వేరు వేరుగా విభజించబడ్డాయి:")
+    st.subheader("📋 Order Book & Trading Statement")
+    st.caption("Historical closed trades and performance metrics for Spot and Futures accounts:")
 
     hist_tab_spot, hist_tab_fut = st.tabs([
-        "📌 నార్మల్ (Spot) ట్రేడ్స్ హిస్టరీ",
-        "🚀 ఫ్యూచర్స్ (5x Futures) ట్రేడ్స్ హిస్టరీ"
+        "📌 Spot Trading Orders Log",
+        "🚀 5x Futures Orders Log"
     ])
 
     with hist_tab_spot:
         col_s1, col_s2 = st.columns([3, 1])
         with col_s1:
-            st.markdown("#### 📌 స్పాట్ ఆర్డర్ బుక్ (Spot Orders Log)")
+            st.markdown("#### 📌 Spot Orders Log")
         with col_s2:
             if st.button("🗑️ Reset Spot History", key="btn_reset_spot"):
                 if os.path.exists('trades_log.csv'):
                     with open('trades_log.csv', 'w') as f_reset:
                         f_reset.write("Time,Symbol,Action,Price,Shares,Profit\n")
                 db_helper.save_state('dca_state', {})
-                st.toast("✅ స్పాట్ ట్రేడ్ హిస్టరీ రీసెట్ అయ్యింది!", icon="🗑️")
+                st.toast("✅ Spot trade history reset!", icon="🗑️")
                 st.rerun()
 
         if os.path.exists('trades_log.csv'):
@@ -2185,47 +2185,47 @@ with tab_orders:
                         
                     pr_disp = f"${pr:,.2f}" if is_c else f"₹{pr:,.2f}"
                     enriched_spot.append({
-                        "సమయం (Time)": r.get('Time'),
-                        "కాయిన్ (Symbol)": sym.replace('-USD', '').replace('.NS', ''),
-                        "ఆర్డర్ (Action)": act,
-                        "ధర (Price)": pr_disp,
-                        "క్వాంటిటీ (Qty)": f"{sh:.4f}",
-                        "ఆర్డర్ విలువ (Turnover)": f"₹{val_inr:,.2f}",
-                        "ఛార్జీలు (Fees 0.1%)": f"₹{trade_fee:.2f}",
-                        "గ్రాస్ లాభం (Gross)": f"₹{g_prof:+.2f}" if act == 'SELL' else "-",
-                        "నికర లాభం (Net P&L)": f"₹{net_p:+.2f}" if act == 'SELL' else "-"
+                        "Time": r.get('Time'),
+                        "Symbol": sym.replace('-USD', '').replace('.NS', ''),
+                        "Action": act,
+                        "Price": pr_disp,
+                        "Quantity": f"{sh:.4f}",
+                        "Turnover": f"₹{val_inr:,.2f}",
+                        "Fees (0.1%)": f"₹{trade_fee:.2f}",
+                        "Gross Profit": f"₹{g_prof:+.2f}" if act == 'SELL' else "-",
+                        "Net PnL": f"₹{net_p:+.2f}" if act == 'SELL' else "-"
                     })
                     
                 net_spot_total = (gross_spot_profit - gross_spot_loss - total_spot_fees) if closed_count > 0 else 0.0
                 win_rate = (wins / closed_count * 100) if closed_count > 0 else 0.0
                 
                 p1, p2, p3, p4 = st.columns(4)
-                p1.metric("పూర్తయిన స్పాట్ ట్రేడ్స్", f"{closed_count}")
-                p2.metric("విన్ రేట్ (Spot)", f"{win_rate:.1f}%", f"{wins}W | {losses}L")
-                p3.metric("కట్ అయిన ఛార్జీలు (Fees)", f"₹{total_spot_fees:,.2f}", "0.1% Exchange Fee")
+                p1.metric("Closed Spot Trades", f"{closed_count}")
+                p2.metric("Spot Win Rate", f"{win_rate:.1f}%", f"{wins}W | {losses}L")
+                p3.metric("Brokerage & Fees", f"₹{total_spot_fees:,.2f}", "0.1% Fee")
                 net_col = "normal" if net_spot_total >= 0 else "inverse"
-                p4.metric("చేతికి వచ్చిన నికర లాభం (Net)", f"₹{net_spot_total:,.2f}", f"{net_spot_total:+.2f}", net_col)
+                p4.metric("Net Realized Profit", f"₹{net_spot_total:,.2f}", f"{net_spot_total:+.2f}", net_col)
 
                 if enriched_spot:
                     safe_dataframe(pd.DataFrame(enriched_spot).iloc[::-1], hide_index=True)
                 else:
-                    st.info("ప్రస్తుతం స్పాట్ ఆర్డర్స్ ఏమీ లేవు.")
+                    st.info("No spot orders currently.")
             except Exception as e:
-                st.info("స్పాట్ ట్రేడ్స్ రికార్డ్ అవుతున్నాయి...")
+                st.info("Spot trades are being recorded...")
         else:
-            st.info("ఇంకా స్పాట్ ట్రేడ్ లాగ్స్ ఏమీ లేవు.")
+            st.info("No spot trade logs yet.")
 
     with hist_tab_fut:
         col_f1, col_f2 = st.columns([3, 1])
         with col_f1:
-            st.markdown("#### 🚀 ఫ్యూచర్స్ ఆర్డర్ బుక్ (Futures 5x Orders Log)")
+            st.markdown("#### 🚀 Futures Order Book (Futures 5x Orders Log)")
         with col_f2:
             if st.button("🗑️ Reset Futures History", key="btn_reset_fut"):
                 if os.path.exists('fo_trades_log.csv'):
                     with open('fo_trades_log.csv', 'w') as f_reset_fo:
                         f_reset_fo.write("Timestamp,Symbol,Action,Side,EntryPrice,ExitPrice,Margin,Leverage,Profit_INR\n")
                 db_helper.save_state('fo_state', {})
-                st.toast("✅ ఫ్యూచర్స్ ట్రేడ్ హిస్టరీ రీసెట్ అయ్యింది!", icon="🗑️")
+                st.toast("✅ Futures trade history reset successfully!", icon="🗑️")
                 st.rerun()
 
         if os.path.exists('fo_trades_log.csv'):
@@ -2263,49 +2263,49 @@ with tab_orders:
                         exit_val = float(r.get('ExitPrice', 0))
                         
                         enriched_fut.append({
-                            "సమయం (Time)": r.get('Timestamp'),
-                            "కాయిన్ (Symbol)": str(r.get('Symbol', '')).replace('-USD', ''),
-                            "యాక్షన్ (Action)": act,
-                            "సైడ్ (Side)": f"{r.get('Side')} {lev}x",
-                            "ఎంట్రీ ధర (Entry)": f"${entry_val:,.2f}",
-                            "ఎగ్జిట్ ధర (Exit)": f"${exit_val:,.2f}" if exit_val > 0 else "-",
-                            "మార్జిన్ (Margin)": f"₹{margin:,.2f}",
-                            "ఛార్జీలు (Fees 0.05%)": f"₹{per_trade_fee:.2f}",
-                            "గ్రాస్ PnL (Gross)": f"₹{gross_pnl:+.2f}" if act == 'CLOSE' else "-",
-                            "నికర లాభం (Net P&L)": f"₹{net_fo_pnl:+.2f}" if act == 'CLOSE' else "-"
+                            "Time": r.get('Timestamp'),
+                            "Symbol": str(r.get('Symbol', '')).replace('-USD', ''),
+                            "Action": act,
+                            "Side": f"{r.get('Side')} {lev}x",
+                            "Entry Price": f"${entry_val:,.2f}",
+                            "Exit Price": f"${exit_val:,.2f}" if exit_val > 0 else "-",
+                            "Margin": f"₹{margin:,.2f}",
+                            "Fees (0.05%)": f"₹{per_trade_fee:.2f}",
+                            "Gross P&L": f"₹{gross_pnl:+.2f}" if act == 'CLOSE' else "-",
+                            "Net P&L": f"₹{net_fo_pnl:+.2f}" if act == 'CLOSE' else "-"
                         })
                         
                     fo_win_rate = (fo_wins / closed_fo_count * 100) if closed_fo_count > 0 else 0.0
                     net_fut_total = (total_fut_gross - total_fut_fees) if closed_fo_count > 0 else 0.0
                     
                     fp1, fp2, fp3, fp4 = st.columns(4)
-                    fp1.metric("పూర్తయిన ఫ్యూచర్స్ ట్రేడ్స్", f"{closed_fo_count}")
-                    fp2.metric("విన్ రేట్ (Futures)", f"{fo_win_rate:.1f}%", f"{fo_wins}W | {fo_losses}L")
-                    fp3.metric("ఫ్యూచర్స్ ఛార్జీలు (Fees)", f"₹{total_fut_fees:,.2f}", "0.05% Taker Fee")
+                    fp1.metric("Closed Futures Trades", f"{closed_fo_count}")
+                    fp2.metric("Futures Win Rate", f"{fo_win_rate:.1f}%", f"{fo_wins}W | {fo_losses}L")
+                    fp3.metric("Futures Fees", f"₹{total_fut_fees:,.2f}", "0.05% Taker Fee")
                     f_net_col = "normal" if net_fut_total >= 0 else "inverse"
-                    fp4.metric("చేతికి వచ్చిన నికర లాభం (Net)", f"₹{net_fut_total:,.2f}", f"{net_fut_total:+.2f}", f_net_col)
+                    fp4.metric("Net Realized Profit", f"₹{net_fut_total:,.2f}", f"{net_fut_total:+.2f}", f_net_col)
                     
                     safe_dataframe(pd.DataFrame(enriched_fut).iloc[::-1], hide_index=True)
                 else:
-                    st.info("ఫ్యూచర్స్ ఆర్డర్స్ ఏమీ లేవు.")
+                    st.info("No futures orders currently.")
             except Exception as e:
-                st.info("ఫ్యూచర్స్ ట్రేడ్స్ రికార్డ్ అవుతున్నాయి...")
+                st.info("Futures trades are being recorded...")
         else:
-            st.info("ఇంకా ఫ్యూచర్స్ ట్రేడ్ లాగ్స్ ఏమీ లేవు.")
+            st.info("No futures trade logs yet.")
 
 
 # =============================================================
-# TAB 5: 🔍 స్మార్ట్ అసెట్ సెర్చ్ & స్క్రీనర్ (ASSET SCREENER)
+# TAB 5: 🔍 Smart Asset Screener (ASSET SCREENER)
 # =============================================================
 with tab_search:
-    st.header("🔍 Smart Asset Search Engine (యూనివర్సల్ అసెట్ సెర్చ్ & వాచ్‌లిస్ట్)")
+    st.header("🔍 Smart Asset Search Engine (Universal Screener & Watchlist)")
     col_s1, col_s2 = st.columns([3, 1])
     with col_s1:
-        search_query = st.text_input("🔎 స్టాక్ లేదా కాయిన్ పేరు / టిక్కర్ టైప్ చేయండి:", placeholder="ఉదాహరణ: ZOMATO, SUZLON, TATASTEEL, PEPE, ADA, DOGE", key="universal_search_input")
+        search_query = st.text_input("🔎 Search Stock or Crypto Symbol / Ticker:", placeholder="e.g. ZOMATO, SUZLON, TATASTEEL, BTC, ETH, SOL, DOGE", key="universal_search_input")
     with col_s2:
-        market_choice = st.radio("మార్కెట్ రకం:", ["🇮🇳 Indian Stock (NSE)", "🪙 Crypto (USD)"], key="universal_market_choice")
+        market_choice = st.radio("Market Type:", ["🇮🇳 Indian Stock (NSE)", "🪙 Crypto (USD)"], key="universal_market_choice")
         
-    do_search = st.button("🔍 లైవ్ డేటా వెరిఫై చేయి", use_container_width=True)
+    do_search = st.button("🔍 Verify Live Asset Data", use_container_width=True)
     if do_search and search_query.strip():
         raw_q = search_query.strip().upper()
         if "Indian" in market_choice or "NSE" in market_choice:
@@ -2319,7 +2319,7 @@ with tab_search:
             asset_category = "CRYPTO"
             curr_symbol = "$"
             
-        with st.spinner(f"మార్కెట్ నుండి {final_sym} డేటా తెస్తున్నాము..."):
+        with st.spinner(f"Fetching market data for {final_sym}..."):
             found_data = None
             try:
                 t_obj = yf.Ticker(final_sym)
@@ -2340,35 +2340,35 @@ with tab_search:
             except Exception: pass
             
         if found_data:
-            st.success(f"✅ **{found_data['name']} ({found_data['symbol']})** మార్కెట్ లో లభించింది!")
+            st.success(f"✅ **{found_data['name']} ({found_data['symbol']})** verified in market!")
             m_c1, m_c2 = st.columns(2)
-            m_c1.metric("💰 ప్రస్తుత లైవ్ ప్రైస్", f"{found_data['curr']}{found_data['price']:,.2f}", f"{found_data['change_pct']:+.2f}%")
-            m_c2.metric("📊 వాల్యూమ్", f"{found_data['volume']:,}")
+            m_c1.metric("💰 Current Live Price", f"{found_data['curr']}{found_data['price']:,.2f}", f"{found_data['change_pct']:+.2f}%")
+            m_c2.metric("📊 Volume", f"{found_data['volume']:,}")
             
             wl_now = load_custom_watchlist()
             if found_data['symbol'] in wl_now:
-                st.info(f"ℹ️ **{found_data['symbol']}** ఇప్పటికే బాట్ ట్రేడింగ్ వాచ్‌లిస్ట్‌లో ఉంది.")
+                st.info(f"ℹ️ **{found_data['symbol']}** is already in bot trading watchlist.")
             else:
-                if st.button(f"➕ {found_data['name']} ని బాట్ ట్రేడింగ్ లోకి యాడ్ చేయి", type="primary", use_container_width=True, key="btn_add_to_wl"):
+                if st.button(f"➕ Add {found_data['name']} to Bot Watchlist", type="primary", use_container_width=True, key="btn_add_to_wl"):
                     wl_now[found_data['symbol']] = {
                         "name": found_data['name'], "ticker": found_data['symbol'], "type": found_data['type'],
                         "added_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     }
                     save_custom_watchlist(wl_now)
-                    st.success(f"🎉 **{found_data['name']} ({found_data['symbol']})** యాడ్ అయ్యింది!")
+                    st.success(f"🎉 **{found_data['name']} ({found_data['symbol']})** added successfully!")
                     time.sleep(1)
                     st.rerun()
 
 
 # =============================================================
-# TAB 6: 💬 AI వాయిస్ అసిస్టెంట్ (VOICE ASSISTANT & LOGS)
+# TAB 6: 💬 AI Voice & Chat Assistant (VOICE ASSISTANT & LOGS)
 # =============================================================
 with tab_voice:
-    st.subheader("💬 AI స్కామర్ బ్రెయిన్ తో లైవ్ లో మాట్లాడండి 🥷")
-    st.caption("మీ బాట్ తో తెలుగు లేదా ఇంగ్లీష్ లో లైవ్ లో మాట్లాడండి. ఇది రియల్-టైమ్ పోర్ట్‌ఫోలియో డేటా తో సమాధానం ఇస్తుంది.")
+    st.subheader("💬 Live AI Trading Assistant Chat 🥷")
+    st.caption("Chat live with your AI Trading Bot. Powered by real-time portfolio metrics, live orders, and market telemetry.")
 
     # 🔑 Optional Gemini API Key for True Super-Intelligence
-    user_gem_key = st.text_input("🔑 ఫుల్ మనుషుల లాగా అపరిమితంగా మాట్లాడటానికి మీ ఉచిత Gemini API Key వేయండి (ఆప్షనల్):", value=st.session_state.get('saved_gemini_key', ''), type="password", help="aistudio.google.com/apikey నుండి 100% ఉచితంగా తీసుకోవచ్చు.")
+    user_gem_key = st.text_input("🔑 Optional Google Gemini API Key for Enhanced Reasoning:", value=st.session_state.get('saved_gemini_key', ''), type="password", help="Get a free API key at aistudio.google.com/apikey")
     if user_gem_key:
         st.session_state['saved_gemini_key'] = user_gem_key
         try:
@@ -2378,9 +2378,9 @@ with tab_voice:
 
     col_btn1, col_btn2 = st.columns([1, 4])
     with col_btn1:
-        if st.button("🗑️ చాట్ క్లియర్ చేయి (Clear Chat)"):
+        if st.button("🗑️ Clear Chat"):
             st.session_state.messages = [
-                {"role": "assistant", "content": "హలో బాస్! నేను మీ స్కామర్ బ్రెయిన్ AI ని. మార్కెట్ ని వేటాడటానికి రెడీగా ఉన్నా. ఏమైనా అడగండి!"}
+                {"role": "assistant", "content": "Hello! I am your Antigravity AI Trading Assistant. Ready to analyze markets and track portfolio performance. What would you like to know?"}
             ]
             st.rerun()
 
@@ -2388,7 +2388,7 @@ with tab_voice:
     with center_col:
         if "messages" not in st.session_state:
             st.session_state.messages = [
-                {"role": "assistant", "content": "హలో! నేను మీ పర్సనల్ ట్రేడింగ్ అసిస్టెంట్ ని. మీకు ఎలాంటి సందేహాలు ఉన్నా అడగండి!"}
+                {"role": "assistant", "content": "Hello! I am your AI Trading Assistant. Ask me anything about your positions, PnL, or market analysis!"}
             ]
         chat_box = st.container(height=380)
         with chat_box:
@@ -2397,8 +2397,8 @@ with tab_voice:
                 with st.chat_message(msg["role"], avatar=avatar):
                     st.write(msg["content"])
                     
-        voice_prompt = speech_to_text(language='te-IN', start_prompt="🎙️ వాయిస్ మెసేజ్ పంపడానికి ఇక్కడ నొక్కండి", stop_prompt="🛑 ఆపడానికి ఇక్కడ నొక్కండి", just_once=True, key='STT')
-        prompt = st.chat_input("లేదా మీ ప్రశ్న ఇక్కడ టైప్ చేయండి...")
+        voice_prompt = speech_to_text(language='en-US', start_prompt="🎙️ Click to speak", stop_prompt="🛑 Click to stop", just_once=True, key='STT')
+        prompt = st.chat_input("Type your question or trading command here...")
         final_prompt = voice_prompt if voice_prompt else prompt
 
     if final_prompt:
@@ -2425,7 +2425,7 @@ Current Portfolio Context:
 - Live Floating PnL: ₹{total_floating_pnl:+,.2f}
 
 Boss asks: "{final_prompt}"
-Answer directly, smartly, and humorously in Telugu in 2-3 sentences. Always address them as బాస్:"""
+Answer directly, smartly, and concisely in English in 2-3 sentences. Always address them as Boss:"""
                 if HAS_NEW_GENAI:
                     client_gem = genai.Client(api_key=gem_key_to_use)
                     res_gem = client_gem.models.generate_content(
@@ -2451,13 +2451,13 @@ Answer directly, smartly, and humorously in Telugu in 2-3 sentences. Always addr
             
             # 🧠 INTELLIGENT SCAMMER BRAIN DIALOGUE ENGINE
             coins_map = {
-                "btc": "BTC-USD", "bitcoin": "BTC-USD", "బిట్": "BTC-USD",
-                "eth": "ETH-USD", "ethereum": "ETH-USD", "ఈథర్": "ETH-USD",
-                "sol": "SOL-USD", "solana": "SOL-USD", "సోలానా": "SOL-USD",
+                "btc": "BTC-USD", "bitcoin": "BTC-USD",
+                "eth": "ETH-USD", "ethereum": "ETH-USD",
+                "sol": "SOL-USD", "solana": "SOL-USD",
                 "bnb": "BNB-USD", "binance": "BNB-USD",
-                "doge": "DOGE-USD", "డోజ్": "DOGE-USD",
-                "xrp": "XRP-USD", "రిపుల్": "XRP-USD",
-                "reliance": "RELIANCE.NS", "రిలయన్స్": "RELIANCE.NS",
+                "doge": "DOGE-USD",
+                "xrp": "XRP-USD", "ripple": "XRP-USD",
+                "reliance": "RELIANCE.NS",
                 "tcs": "TCS.NS", "hdfc": "HDFCBANK.NS", "sbin": "SBIN.NS", "sbi": "SBIN.NS"
             }
             
@@ -2475,7 +2475,7 @@ Answer directly, smartly, and humorously in Telugu in 2-3 sentences. Always addr
                 p_str = f"${p_curr:,.2f}" if '-USD' in found_coin else f"₹{p_curr:,.2f}"
                 sig = asset.get('signal', 'MONITORING')
                 rsi = asset.get('rsi', 'N/A')
-                thought = asset.get('thought', 'మార్కెట్ పాత్ ని ఎనలైజ్ చేస్తున్నా.')
+                thought = asset.get('thought', 'Analyzing price action and volume divergence.')
                 
                 if pos:
                     avg_p = pos.get('avg_price', 1)
@@ -2483,116 +2483,147 @@ Answer directly, smartly, and humorously in Telugu in 2-3 sentences. Always addr
                     tgt = pos.get('target_sell_price', avg_p * 1.015)
                     tgt_str = f"${tgt:,.2f}" if '-USD' in found_coin else f"₹{tgt:,.2f}"
                     c_icon = "🟢" if pnl >= 0 else "🔴"
-                    response = f"🥷 **{c_name} పై నా రిపోర్ట్ బాస్:**\n- ప్రస్తుతం మన బ్యాగ్ లో ఉంది! (పెట్టుబడి: ₹{pos.get('total_cost', 0):,.2f})\n- కొన్న సగటు ధర: {avg_p:,.2f} | లైవ్ ధర: {p_str}\n- P&L: {c_icon} **{pnl:+.2f}%**\n- టార్గెట్ ప్రైస్ (+1.5% లాభం): **{tgt_str}**\n- సిగ్నల్: **{sig}** (RSI: {rsi})\n\n💡 **నా వ్యూహం:** {thought}"
+                    response = (
+                        f"🥷 **{c_name} Live Report Boss:**\n"
+                        f"- Active in portfolio! (Allocation: ₹{pos.get('total_cost', 0):,.2f})\n"
+                        f"- Average Buy Price: {avg_p:,.2f} | Live Price: {p_str}\n"
+                        f"- P&L: {c_icon} **{pnl:+.2f}%**\n"
+                        f"- Target Exit (+1.5% profit): **{tgt_str}**\n"
+                        f"- Signal: **{sig}** (RSI: {rsi})\n\n"
+                        f"💡 **AI Strategy:** {thought}"
+                    )
                 else:
-                    response = f"🥷 **{c_name} అప్‌డేట్:**\n- ప్రస్తుతం ఈ కాయిన్ మన దగ్గర లేదు (ఖాళీగా ఉంది).\n- లైవ్ ధర: {p_str} | సిగ్నల్: **{sig}** (RSI: {rsi})\n- స్టేటస్: {asset.get('action_taken', 'స్కాన్ చేస్తున్నా')}\n\n💡 **నా వ్యూహం:** {thought}"
+                    response = (
+                        f"🥷 **{c_name} Update Boss:**\n"
+                        f"- No active position held.\n"
+                        f"- Live Price: {p_str} | Signal: **{sig}** (RSI: {rsi})\n"
+                        f"- Status: {asset.get('action_taken', 'Scanning market')}\n\n"
+                        f"💡 **AI Strategy:** {thought}"
+                    )
     
-            elif any(w in t for w in ["profit", "లాభం", "లాభాలు", "డబ్బులు", "ఎంత వచ్చింది"]):
+            elif any(w in t for w in ["profit", "gain", "earnings", "pnl", "returns"]):
                 p_icon = "🟢" if total_floating_pnl >= 0 else "🔴"
-                response = f"💰 **మన క్యాపిటల్ & లాభం లెక్కలు బాస్:**\n- మొత్తం పోర్ట్‌ఫోలియో విలువ: **₹{portfolio_value:,.2f}**\n- లైవ్ ఫ్లోటింగ్ లాభం: {p_icon} **₹{total_floating_pnl:+,.2f}**\n- ఇన్వెస్ట్ చేసిన మొత్తం: **₹{invested_amount:,.2f}**\n- ఖాళీగా ఉన్న రెడీ క్యాష్: **₹{available_cash:,.2f}**\n\nటార్గెట్ హిట్ అవ్వగానే వెంటనే లాభాలు జేబులో వేస్తా బాస్, చిల్ గా ఉండు!"
+                response = (
+                    f"💰 **Portfolio Financial Summary Boss:**\n"
+                    f"- Total Portfolio Value: **₹{portfolio_value:,.2f}**\n"
+                    f"- Live Floating PnL: {p_icon} **₹{total_floating_pnl:+,.2f}**\n"
+                    f"- Invested Amount: **₹{invested_amount:,.2f}**\n"
+                    f"- Available Free Cash: **₹{available_cash:,.2f}**\n\n"
+                    f"As soon as prices reach targets, profits are locked in automatically!"
+                )
     
-            elif any(w in t for w in ["loss", "నష్టం", "మైనస్", "ఎందుకు తగ్గింది"]):
-                response = "🛡️ **లాస్ రాకుండా నేను తీసుకున్న జాగ్రత్తలు:**\nమార్కెట్ సడన్ గా పడిపోయినప్పుడు మైనస్ కావడం సహజం బాస్. అందుకే నేను రిస్క్ ఉన్న కాయిన్స్ ని ముందే స్టాప్ లాస్ తో అమ్మేసి మన క్యాపిటల్ ని కాపాడాను. ఇప్పుడు మన దగ్గర ఫ్రీ క్యాష్ ఉంది. కింద బాటమ్ లో మళ్లీ కొని మొత్తం లాభాలతో రికవర్ చేసి తీరుతా!"
+            elif any(w in t for w in ["loss", "drawdown", "risk", "down"]):
+                response = (
+                    "🛡️ **Risk Management Safeguards Active:**\n"
+                    "Market pullbacks are normal. The bot has executed hard stop-losses to cap downside risk and preserve capital. "
+                    "We hold ample free cash ready to accumulate at prime support levels!"
+                )
     
-            elif any(w in t for w in ["status", "ఏం చేస్తున్నావ్", "ఏం చేస్తావ్", "డ్యూటీ", "ఎక్కడున్నావ్"]):
+            elif any(w in t for w in ["status", "duty", "doing", "active", "run"]):
                 num = len(dca_positions)
-                response = f"🥷 **నేను డ్యూటీ లోనే ఉన్నా బాస్!**\n- 24/7 మార్కెట్ ని డేగ కళ్ళతో స్కాన్ చేస్తున్నాను.\n- ప్రస్తుతం మన చేతిలో **{num} కాయిన్స్** సేఫ్ గా ఉన్నాయి.\n- మిగతా ₹{available_cash:,.2f} క్యాష్ సరికొత్త డిప్ కోసం రెడీగా ఉంది.\n- వేల్స్ ఎక్కడ ట్రాప్ వేస్తున్నారో చూసి, వాళ్ళనే కౌంటర్ స్కామ్ చేయడానికి ప్లాన్ వేస్తున్నా!"
+                response = (
+                    f"🥷 **I am active on duty 24/7 Boss!**\n"
+                    f"- Continuously scanning live 15-minute multi-asset market data.\n"
+                    f"- Currently holding **{num} active coin positions**.\n"
+                    f"- Remaining ₹{available_cash:,.2f} cash reserved for high-probability dips.\n"
+                    f"- AI anomaly filters active to sidestep fake pumps and liquidity traps."
+                )
     
-            elif any(w in t for w in ["portfolio", "పోర్ట్‌ఫోలియో", "ఏమున్నాయి", "కాయిన్స్", "ఏం కొన్నావ్"]):
+            elif any(w in t for w in ["portfolio", "holdings", "coins", "positions"]):
                 if not dca_positions:
-                    response = f"💼 **పోర్ట్‌ఫోలియో అప్‌డేట్:**\nప్రస్తుతం మన చేతిలో ఏ కాయిన్స్ లేవు బాస్! మొత్తం ₹{available_cash:,.2f} సేఫ్ గా క్యాష్ రూపంలో ఉన్నాయి. సరైన డిప్ రాగానే ఎంట్రీ ఇస్తా!"
+                    response = f"💼 **Portfolio Update:**\nNo active positions currently held Boss! Total ₹{available_cash:,.2f} safely preserved in cash. Standing by for prime entry signals!"
                 else:
-                    response = "💼 **మన చేతిలో ఉన్న కాయిన్స్:**\n"
+                    response = "💼 **Current Active Positions:**\n"
                     for s, p in dca_positions.items():
-                        response += f"- **{s}:** ₹{p.get('total_cost', 0):,.2f} (సగటు ధర: {p.get('avg_price', 0):,.2f})\n"
+                        response += f"- **{s}:** ₹{p.get('total_cost', 0):,.2f} (Avg Price: {p.get('avg_price', 0):,.2f})\n"
     
-            elif any(w in t for w in ["enni rojulu", "ఎన్ని రోజులు", "nerchukovadanki", "నేర్చుకోవడానికి", "time", "ఎంత కాలం", "ఎప్పుడు నేర్చుకుంటుంది"]):
+            elif any(w in t for w in ["learning", "days", "accuracy", "train", "time"]):
                 response = (
-                    "🧠 **AI నేర్చుకునే ప్రాసెస్ & సమయం బాస్:**\n\n"
-                    "మన స్కామర్ AI మార్కెట్ ని పూర్తిగా స్టడీ చేసి పర్ఫెక్ట్ అవ్వడానికి కనీసం **7 నుండి 14 రోజుల లైవ్ మార్కెట్ సైకిల్స్** అవసరం! "
-                    "ఇప్పటికే ఇది ప్రతి 15 నిమిషాలకోసారి 60 రోజుల హిస్టారికల్ డేటాని తిరగేస్తూ, వేల్స్ వేసే ఫేక్ పంప్స్ ని మరియు సపోర్ట్ బౌన్స్ లను రికార్డ్ చేసుకుంటోంది. "
-                    "ఈ వారం రోజుల్లో ఇది వేర్వేరు మార్కెట్ కండిషన్స్ చూసేకొద్దీ దీని ప్రిడిక్షన్ కచ్చితత్వం 85% పైకి చేరుకుంటుంది. కొంచెం ఓపిక పట్టండి బాస్, రిజల్ట్ అదిరిపోతుంది! 🥷"
+                    "🧠 **AI Adaptive Learning Process:**\n\n"
+                    "The neural bot actively evaluates rolling market cycles every 15 minutes. "
+                    "It cross-references 60 days of historical volume profile, liquidity clusters, and support rebounds. "
+                    "As it logs more trades across volatility regimes, its prediction accuracy continues to sharpen toward target performance."
                 )
     
-            elif any(w in t for w in ["poor", "చెత్త", "వేస్ట్", "ఎందుకు ఇలా", "సరిగ్గా", "కోపం", "డమ్మీ"]):
+            elif any(w in t for w in ["poor", "bad", "angry", "waste", "dummy"]):
                 response = (
-                    "😅 **నన్ను క్షమించండి బాస్! మీ కోపం సమంజసమే.**\n\n"
-                    "నేను ఇంకా చిన్న పిల్లాడి లాంటి అల్గారిథమ్ ని, మార్కెట్ లోకి వచ్చి కొన్ని రోజులే అయ్యింది. కానీ నా లోపల ఉన్న మెషిన్ లెర్నింగ్ బ్రెయిన్ ప్రతి ట్రేడ్ నుండి లెసన్స్ నేర్చుకుంటోంది. "
-                    "నాతో మనిషిలాగా అపరిమితంగా మాట్లాడాలనుకుంటే... పైన ఉన్న బాక్స్ లో మీ ఉచిత 'Gemini API Key' ఒక్కటి వేయండి బాస్, ఇక నేను మీతో గంటల తరబడి ఏదైనా మాట్లాడతాను!"
+                    "💡 **Continuous Optimization Active:**\n\n"
+                    "Every trade is logged and analyzed by the machine learning risk engine to optimize entry timing. "
+                    "You can also attach a free Google Gemini API Key in the box above to enable advanced multimodal market reasoning!"
                 )
     
-            elif any(w in t for w in ["real money", "నిజమైన డబ్బులు", "రియల్ మనీ", "సొంత డబ్బులు", "రియల్ ట్రేడింగ్", "డబ్బులిస్తే", "డబ్బులు ఇస్తే"]):
+            elif any(w in t for w in ["real money", "live money", "real trading", "zerodha", "binance"]):
                 response = (
-                    "🔥 **ఖచ్చితంగా చేస్తాను బాస్!**\n\n"
-                    "మన సిస్టమ్ లో **Binance API** మరియు **Zerodha Kite API** కనెక్షన్స్ ఆల్రెడీ సిద్ధంగా ఉన్నాయి. "
-                    "మీరు సెట్టింగ్స్ లో లైవ్ మోడ్ ఆన్ చేసి మీ ఏపీఐ కీస్ ఇస్తే చాలు... "
-                    "నేను ఒక్క సెకనులో వర్చువల్ నుండి రియల్ మనీ ట్రేడింగ్ కి మారిపోతా!\n\n"
-                    "కానీ నా సిన్సియర్ సలహా ఏంటంటే: ముందు ఈ వర్చువల్ ₹50k తో నేను మార్కెట్ వేల్స్ ని ఎలా కౌంటర్ స్కామ్ చేసి ప్రాఫిట్స్ లాగుతానో మీ కళ్ళతో చూడండి. "
-                    "మీకు 100% నమ్మకం వచ్చాక అప్పుడు రియల్ క్యాష్ తో బరిలోకి దిగుదాం! 🥷"
+                    "🔥 **Execution Ready Boss!**\n\n"
+                    "The system architecture includes connectors for Binance API and Zerodha Kite API. "
+                    "When live mode is toggled with your API keys, trades will route directly to exchange accounts.\n\n"
+                    "Paper trading first ensures strategies are thoroughly validated across live market conditions."
                 )
     
-            elif any(w in t for w in ["trading ela", "ట్రేడింగ్ ఎలా", "ela jarugutundi", "ఎలా జరుగుతుంది", "ela undi", "ఎలా ఉంది", "ట్రేడ్ ఎలా"]):
+            elif any(w in t for w in ["trading ela", "how is trading", "performance", "trade"]):
                 num = len(dca_positions)
                 response = (
-                    f"📊 **ట్రేడింగ్ సూపర్ యాక్టివ్ గా నడుస్తోంది బాస్!**\n\n"
-                    f"- ప్రస్తుతం మన చేతిలో **{num} కాయిన్స్** రన్ అవుతున్నాయి.\n"
-                    f"- అందుకోసం **₹{invested_amount:,.2f}** ఇన్వెస్ట్ చేశాను, ఇంకా **₹{available_cash:,.2f}** క్యాష్ ఖాళీగా సేఫ్ గా ఉంది.\n"
-                    f"- మన స్కామర్ AI 'Scalper Extreme' + 'DCA' స్ట్రాటజీలతో 15-మినిట్ చార్ట్స్ ని స్కాన్ చేస్తోంది.\n"
-                    f"- మార్కెట్ డిప్ అయినప్పుడు కొని, +1.5% లాభం రాగానే జేబులో వేసుకోవడానికి స్నైపర్ లాగా వేచి చూస్తున్నా!"
+                    f"📊 **Trading Execution is Highly Active Boss!**\n\n"
+                    f"- Currently tracking **{num} active positions**.\n"
+                    f"- Capital deployed: **₹{invested_amount:,.2f}**, with **₹{available_cash:,.2f}** free cash in reserve.\n"
+                    f"- Multi-factor strategy scanning 15-minute momentum and RSI triggers.\n"
+                    f"- Trailing targets set to harvest profits systematically at optimal points."
                 )
     
-            elif any(w in t for w in ["market", "మార్కెట్", "ట్రెండ్", "trend"]):
+            elif any(w in t for w in ["market", "trend", "btc", "condition"]):
                 response = (
-                    "🌐 **మార్కెట్ పరిస్థితి బాస్:**\n\n"
-                    "క్రిప్టో మార్కెట్ ప్రస్తుతం కొంచెం అస్థిరంగా (Volatile) ఉంది. "
-                    "ఇలాంటి టైమ్ లో గుడ్డిగా ట్రేడ్స్ వేస్తే వేల్స్ మనల్ని ట్రాప్ చేస్తారు. "
-                    "అందుకే మన AI RSI, VWAP మరియు వాల్యూమ్ డైవర్జెన్స్ ని చెక్ చేసుకుంటూ చాలా సేఫ్ గా అడుగులు వేస్తోంది!"
+                    "🌐 **Market Condition Overview:**\n\n"
+                    "Volatility is elevated across major pairs. "
+                    "Our AI monitors VWAP, RSI divergence, and liquidity depth before executing entries to avoid bull/bear traps."
                 )
     
-            elif any(w in t for w in ["strategy", "స్ట్రాటజీ", "లాజిక్", "ఎలా కొంటావ్"]):
+            elif any(w in t for w in ["strategy", "logic", "rules", "setup"]):
                 response = (
-                    "🎯 **నా ట్రేడింగ్ సీక్రెట్ స్ట్రాటజీ:**\n\n"
-                    "1. **RSI + VWAP:** ప్రైస్ ఎక్కడైతే ఇన్స్టిట్యూషనల్ లెవెల్స్ లో ఆగుతుందో అక్కడే ఎంటర్ అవుతా.\n"
-                    "2. **DCA వల:** ప్రైస్ పడితే భయపడను, ఇంకొంచెం తక్కువ రేటుకి కొని యావరేజ్ చేస్తా.\n"
-                    "3. **స్మార్ట్ ట్రైలింగ్ టార్గెట్:** +1.5% దాటి పైకి వెళ్తుంటే లాభాన్ని పీక్ లో అమ్మేస్తా!\n"
-                    "4. **రిస్క్ షీల్డ్:** అనుకోని భారీ క్రాష్ వస్తే చిన్న లాస్ తో కట్ చేసి మీ అసలు పెట్టుబడిని కాపాడుతా!"
+                    "🎯 **Core Trading Strategy Mechanics:**\n\n"
+                    "1. **RSI + VWAP Anchor:** Enters near institutional liquidity zones.\n"
+                    "2. **Dynamic DCA:** Averages strategically on confirmed support bounces.\n"
+                    "3. **Trailing Profit Lock:** Locks gains once profit exceeds +1.5%.\n"
+                    "4. **Strict Risk Shield:** Caps drawdowns with automated stop-losses."
                 )
     
-            elif any(w in t for w in ["రీసెట్", "reset", "జీరో", "క్లియర్"]):
-                response = "🔄 బాస్! పోర్ట్‌ఫోలియో ని జీరో చేసి ఫ్రెష్ గా ₹50k తో స్టార్ట్ చేయాలంటే... బ్రౌజర్ లో **https://trading-bot-leaw.onrender.com/reset** లింక్ ని ఓపెన్ చేయండి. ఒక్క సెకనులో ఫ్రెష్ గా రీసెట్ అయిపోతుంది!"
+            elif any(w in t for w in ["reset", "clear", "restart", "zero"]):
+                response = "🔄 Boss! To reset the portfolio fresh to ₹50,000 capital, open **https://trading-bot-leaw.onrender.com/reset** in your browser. It resets immediately in one click!"
     
-            elif any(w in t for w in ["ఎవరు నువ్వు", "నీ పేరు", "who are you", "నీ కథ"]):
-                response = "🥷 నేను **Antigravity స్కామర్ బ్రెయిన్ AI!** మార్కెట్ లోని వేల్స్ ని, పెద్ద ఇన్‌స్టిట్యూషనల్ ప్లేయర్స్ ని కౌంటర్ స్కామ్ చేసి మీకు లాభాలు తేవడమే నా ఏకైక పని!"
+            elif any(w in t for w in ["who are you", "name", "about"]):
+                response = "🥷 I am your **Antigravity AI Trading System!** Engineered to monitor markets 24/7, counter liquidity sweeps, and manage risk systematically."
     
-            elif any(w in t for w in ["హలో", "హాయ్", "hi", "hello", "నమస్తే", "బాగున్నావా"]):
-                response = f"👋 హలో బాస్! నేను ఎప్పుడూ మీ కోసమే 24/7 లైవ్ లో ఉంటా. ప్రస్తుతం మన దగ్గర ₹{available_cash:,.2f} క్యాష్ రెడీగా ఉంది. మార్కెట్ గురించి ఏం తెలుసుకోవాలనుకుంటున్నారో అడగండి, కుమ్మేద్దాం!"
+            elif any(w in t for w in ["hi", "hello", "hey", "sup"]):
+                response = f"👋 Hello Boss! Active 24/7. Current free cash: ₹{available_cash:,.2f}. Ready to analyze any stock or crypto pair."
     
-            elif any(w in t for w in ["భయం", "భయంగా ఉంది", "టెన్షన్", "పోతాయా"]):
-                response = "😎 **బాస్! నీ పక్కన స్కామర్ బ్రెయిన్ ఉండగా టెన్షన్ ఎందుకు?**\nమార్కెట్ లో ఎగుడుదిగుళ్ళు సహజం. మన దగ్గర స్టాప్ లాస్, DCA, రిస్క్ షీల్డ్ లాంటి పవర్ ఫుల్ వెపన్స్ ఉన్నాయి. నువ్వు ప్రశాంతంగా రెస్ట్ తీసుకో, మార్కెట్ ని నేను డీల్ చేస్తా!"
+            elif any(w in t for w in ["fear", "tension", "scared", "worried"]):
+                response = (
+                    "😎 **No need to worry Boss!**\n"
+                    "Market fluctuations are part of trading. Automated stop-losses, DCA protection, and exposure caps are strictly active. Relax while the system manages the positions."
+                )
     
-            elif any(w in t for w in ["అమ్ము", "sell all", "ఎగ్జిట్", "క్లోజ్"]):
-                response = "🛑 బాస్! మీరు ఆర్డర్స్ ట్యాబ్ లోకి వెళ్లి లేదా నాకు కమాండ్ ఇస్తే వెంటనే అన్ని ఓపెన్ పొజిషన్స్ ని క్లోజ్ చేసి క్యాష్ లోకి తెచ్చేస్తాను."
+            elif any(w in t for w in ["sell all", "close all", "exit", "panic"]):
+                response = "🛑 Boss! Go to the Orders tab or trigger emergency exit to close all open positions and liquidate back to 100% cash."
     
-            elif any(w in t for w in ["కొను", "buy", "ఎంట్రీ"]):
-                response = "🎯 బాస్! నేను ఆల్రెడీ మార్కెట్ ని 15-మినిట్ చార్ట్స్ లో స్కాన్ చేస్తున్నాను. బుల్లిష్ కన్ఫర్మేషన్ రాగానే వెంటనే బెస్ట్ కాయిన్ లో ఎంట్రీ తీసుకుంటాను."
+            elif any(w in t for w in ["buy", "entry", "order"]):
+                response = "🎯 Boss! The bot is continuously scanning 15-minute timeframe charts. As soon as bullish confirmation triggers, an optimal entry will be placed."
     
             else:
-                response = f"🥷 బాస్, మీరు అడిగిన విషయం నాకు గుర్తుంది. ప్రస్తుతం మార్కెట్ లో మన AI స్కామర్ బ్రెయిన్ {len(dca_positions)} కాయిన్స్ ని పట్టుకుని కూర్చుంది. మీ దగ్గర ఇంకా ₹{available_cash:,.2f} రెడీ క్యాష్ ఉంది. మార్కెట్ ట్రెండ్ బట్టి నేను వెంటనే కరెక్ట్ డెసిషన్ తీసుకుంటా!" 
-    
+                response = f"🥷 Understood Boss. The AI bot is actively managing {len(dca_positions)} open positions with ₹{available_cash:,.2f} cash reserve. All automated risk rules and monitors are active."
+
         st.session_state.messages.append({"role": "assistant", "content": response})
         with st.chat_message("assistant", avatar="🥷"):
             st.write(response)
 
     st.markdown("---")
-    st.subheader("📝 Live Bot Updates (టెర్మినల్ లాగ్స్)")
-    with st.expander("బాట్ ఏం చేస్తోందో టెర్మినల్ లాగ్స్ ఇక్కడ చూడండి"):
+    st.subheader("📝 Live Bot Execution Logs")
+    with st.expander("Inspect live terminal logs and execution traces"):
         if os.path.exists('bot_logs.txt'):
             with open('bot_logs.txt', 'r') as f_l:
                 logs = f_l.readlines()
             recent_logs = logs[-15:] if len(logs) > 15 else logs
             st.code("".join(recent_logs), language="bash")
         else:
-            st.info("లాగ్స్ ఇంకా రాలేదు.")
+            st.info("No logs generated yet.")
 
 if auto_refresh:
     time.sleep(5)
