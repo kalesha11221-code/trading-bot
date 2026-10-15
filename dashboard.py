@@ -1377,7 +1377,7 @@ _TICKER_META = [
 
 # Real-Time WebSocket Streaming Ticker (Live 0 Page Reloads)
 try:
-    st.components.v1.html("""
+    _tape_html = """
     <div class="tradingview-widget-container" style="background:#131722; border-radius:8px; overflow:hidden;">
       <div class="tradingview-widget-container__widget"></div>
       <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js" async>
@@ -1400,7 +1400,11 @@ try:
     }
       </script>
     </div>
-    """, height=52)
+    """
+    if hasattr(st, "iframe"):
+        st.iframe(_tape_html, height=52)
+    else:
+        st.components.v1.html(_tape_html, height=52)
 except Exception:
     pass
 
