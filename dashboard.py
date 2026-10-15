@@ -1385,8 +1385,9 @@ st.markdown("<br>", unsafe_allow_html=True)
 # 🏦 2. TOP ZERODHA PORTFOLIO BALANCE RIBBON
 # -------------------------------------------------------------
 initial_capital = 50000.00
-total_profit = 0.0
 
+# 1. Spot Realized Profit
+spot_profit = 0.0
 try:
     hist_df = db_helper.get_trade_history_df(is_futures=False)
     if not hist_df.empty and 'Profit' in hist_df.columns:
@@ -1405,8 +1406,25 @@ try:
                     elif p < 0: g_loss += abs(p)
                     taxes += abs(p) * 0.001
                 except: pass
-        total_profit = (g_prof - g_loss) - taxes
+        spot_profit = (g_prof - g_loss) - taxes
 except: pass
+
+# 2. Futures Realized Profit (Net of fees)
+futures_profit = 0.0
+try:
+    df_fo_hist = db_helper.get_trade_history_df(is_futures=True)
+    if not df_fo_hist.empty:
+        for idx, r in df_fo_hist.iterrows():
+            if str(r.get('Action', '')).upper() == 'CLOSE':
+                margin = float(r.get('Margin', 5000.0))
+                lev = int(r.get('Leverage', 5))
+                notional = margin * lev
+                fee = round(notional * 0.001, 2)
+                p = float(r.get('Profit_INR', 0.0))
+                futures_profit += (p - fee)
+except: pass
+
+total_profit = spot_profit + futures_profit
 
 # USD → INR rate
 USD_TO_INR = 84.5
@@ -1519,8 +1537,7 @@ with top_b1:
     st.markdown(fancy_metric("🏦 Net Portfolio", f"₹{portfolio_value:,.2f}", f"{roi:+.2f}% Booked ROI"), unsafe_allow_html=True)
     with st.popover("🔍 Realized Profit Details", use_container_width=True):
         st.markdown("### 🏦 Net Portfolio Details")
-        st.write("Total capital and realized net profits booked since the bot started.")
-        st.info(f"**Initial Capital:** ₹50,000.00\n**Booked Realized Profit:** ₹{portfolio_value - 50000:,.2f}\n**Total Account Balance:** ₹{portfolio_value:,.2f}")
+        st.info(f"**Initial Capital:** ₹50,000.00\n\n- **Spot Realized:** ₹{spot_profit:+,.2f}\n- **Futures Realized:** ₹{futures_profit:+,.2f}\n\n**Total Booked P&L:** ₹{total_profit:+,.2f}\n**Total Account Balance:** ₹{portfolio_value:,.2f}")
 
 with top_b2:
     st_tot_trades = len(dca_positions) + len(futures_positions)
@@ -1678,7 +1695,11 @@ with tab_pos:
                     st.rerun()
 
     else:
-        st.info("No active spot positions open currently. All prior trades closed in profit. Bot is scanning the market for fresh high-probability entries.")
+        if futures_positions:
+            f_names = ", ".join([f"{k} ({v.get('side', 'SHORT')} 5x)" for k, v in futures_positions.items()])
+            st.success(f"🚀 **Active Futures Trade Running:** {f_names} with ₹{futures_invested:,.2f} margin! Click the **🚀 Futures (Paper 5x)** tab next door to inspect live entry, target, and ROE.")
+        else:
+            st.info("No active spot positions open currently. All prior trades closed in profit. Bot is scanning the market for fresh high-probability entries.")
 
 
 # =============================================================
@@ -2118,10 +2139,91 @@ with tab_orders:
     st.subheader("📋 Order Book & Trading Statement")
     st.caption("Historical closed trades and performance metrics for Spot and Futures accounts:")
 
-    hist_tab_spot, hist_tab_fut = st.tabs([
-        "📌 Spot Trading Orders Log",
-        "🚀 5x Futures Orders Log"
+    df_fo_cnt = len(db_helper.get_trade_history_df(is_futures=True))
+    df_sp_cnt = len(db_helper.get_trade_history_df(is_futures=False))
+    hist_tab_fut, hist_tab_spot = st.tabs([
+        f"🚀 5x Futures Orders Log ({df_fo_cnt} Trades)",
+        f"📌 Spot Trading Orders Log ({df_sp_cnt} Trades)"
     ])
+
+    with hist_tab_fut:
+        col_f1, col_f2 = st.columns([3, 1])
+        with col_f1:
+            st.markdown("#### 🚀 Futures Order Book (Futures 5x Orders Log)")
+        with col_f2:
+            if st.button("🗑️ Reset Futures History", key="btn_reset_fut"):
+                if os.path.exists('fo_trades_log.csv'):
+                    with open('fo_trades_log.csv', 'w') as f_reset_fo:
+                        f_reset_fo.write("Timestamp,Symbol,Action,Side,EntryPrice,ExitPrice,Margin,Leverage,Profit_INR\n")
+                db_helper.save_state('fo_state', {})
+                st.toast("✅ Futures trade history reset successfully!", icon="🗑️")
+                st.rerun()
+
+        df_fo = db_helper.get_trade_history_df(is_futures=True)
+        if not df_fo.empty:
+            try:
+                if not df_fo.empty:
+                    enriched_fut = []
+                    total_fut_fees = 0.0
+                    total_fut_gross = 0.0
+                    closed_fo_count = 0
+                    fo_wins = 0
+                    fo_losses = 0
+                    
+                    for idx, r in df_fo.iterrows():
+                        margin = float(r.get('Margin', 5000.0))
+                        lev = int(r.get('Leverage', 5))
+                        notional = margin * lev # ₹25,000 position
+                        act = str(r.get('Action', '')).upper()
+                        gross_pnl = float(r.get('Profit_INR', 0.0))
+                        
+                        # Binance Futures 0.05% taker fee = ₹12.50 per leg, ₹25 roundtrip
+                        per_trade_fee = round(notional * 0.0005, 2) if act == 'OPEN' else round(notional * 0.001, 2)
+                        total_fut_fees += per_trade_fee
+                        
+                        if act == 'CLOSE':
+                            closed_fo_count += 1
+                            total_fut_gross += gross_pnl
+                            if gross_pnl > 0: fo_wins += 1
+                            elif gross_pnl < 0: fo_losses += 1
+                            net_fo_pnl = round(gross_pnl - per_trade_fee, 2)
+                        else:
+                            net_fo_pnl = 0.0
+                            
+                        entry_val = float(r.get('EntryPrice', 0))
+                        exit_val = float(r.get('ExitPrice', 0))
+                        
+                        enriched_fut.append({
+                            "Time": r.get('Timestamp'),
+                            "Symbol": str(r.get('Symbol', '')).replace('-USD', ''),
+                            "Action": act,
+                            "Side": f"{r.get('Side')} {lev}x",
+                            "Entry Price": f"${entry_val:,.2f}",
+                            "Exit Price": f"${exit_val:,.2f}" if exit_val > 0 else "-",
+                            "Margin": f"₹{margin:,.2f}",
+                            "Fees (0.05%)": f"₹{per_trade_fee:.2f}",
+                            "Gross P&L": f"₹{gross_pnl:+.2f}" if act == 'CLOSE' else "-",
+                            "Net P&L": f"₹{net_fo_pnl:+.2f}" if act == 'CLOSE' else "-"
+                        })
+                        
+                    fo_win_rate = (fo_wins / closed_fo_count * 100) if closed_fo_count > 0 else 0.0
+                    net_fut_total = (total_fut_gross - total_fut_fees) if closed_fo_count > 0 else 0.0
+                    
+                    fp1, fp2, fp3, fp4 = st.columns(4)
+                    fp1.metric("Closed Futures Trades", f"{closed_fo_count}")
+                    fp2.metric("Futures Win Rate", f"{fo_win_rate:.1f}%", f"{fo_wins}W | {fo_losses}L")
+                    fp3.metric("Futures Fees", f"₹{total_fut_fees:,.2f}", "0.05% Taker Fee")
+                    f_net_col = "normal" if net_fut_total >= 0 else "inverse"
+                    fp4.metric("Net Realized Profit", f"₹{net_fut_total:,.2f}", f"{net_fut_total:+.2f}", f_net_col)
+                    
+                    safe_dataframe(pd.DataFrame(enriched_fut).iloc[::-1], hide_index=True)
+                else:
+                    st.info("No futures orders currently.")
+            except Exception as e:
+                st.info("Futures trades are being recorded...")
+        else:
+            st.info("No futures trade logs yet.")
+
 
     with hist_tab_spot:
         col_s1, col_s2 = st.columns([3, 1])
@@ -2211,85 +2313,6 @@ with tab_orders:
                 st.info("Spot trades are being recorded...")
         else:
             st.info("No spot trade logs yet.")
-
-    with hist_tab_fut:
-        col_f1, col_f2 = st.columns([3, 1])
-        with col_f1:
-            st.markdown("#### 🚀 Futures Order Book (Futures 5x Orders Log)")
-        with col_f2:
-            if st.button("🗑️ Reset Futures History", key="btn_reset_fut"):
-                if os.path.exists('fo_trades_log.csv'):
-                    with open('fo_trades_log.csv', 'w') as f_reset_fo:
-                        f_reset_fo.write("Timestamp,Symbol,Action,Side,EntryPrice,ExitPrice,Margin,Leverage,Profit_INR\n")
-                db_helper.save_state('fo_state', {})
-                st.toast("✅ Futures trade history reset successfully!", icon="🗑️")
-                st.rerun()
-
-        df_fo = db_helper.get_trade_history_df(is_futures=True)
-        if not df_fo.empty:
-            try:
-                if not df_fo.empty:
-                    enriched_fut = []
-                    total_fut_fees = 0.0
-                    total_fut_gross = 0.0
-                    closed_fo_count = 0
-                    fo_wins = 0
-                    fo_losses = 0
-                    
-                    for idx, r in df_fo.iterrows():
-                        margin = float(r.get('Margin', 5000.0))
-                        lev = int(r.get('Leverage', 5))
-                        notional = margin * lev # ₹25,000 position
-                        act = str(r.get('Action', '')).upper()
-                        gross_pnl = float(r.get('Profit_INR', 0.0))
-                        
-                        # Binance Futures 0.05% taker fee = ₹12.50 per leg, ₹25 roundtrip
-                        per_trade_fee = round(notional * 0.0005, 2) if act == 'OPEN' else round(notional * 0.001, 2)
-                        total_fut_fees += per_trade_fee
-                        
-                        if act == 'CLOSE':
-                            closed_fo_count += 1
-                            total_fut_gross += gross_pnl
-                            if gross_pnl > 0: fo_wins += 1
-                            elif gross_pnl < 0: fo_losses += 1
-                            net_fo_pnl = round(gross_pnl - per_trade_fee, 2)
-                        else:
-                            net_fo_pnl = 0.0
-                            
-                        entry_val = float(r.get('EntryPrice', 0))
-                        exit_val = float(r.get('ExitPrice', 0))
-                        
-                        enriched_fut.append({
-                            "Time": r.get('Timestamp'),
-                            "Symbol": str(r.get('Symbol', '')).replace('-USD', ''),
-                            "Action": act,
-                            "Side": f"{r.get('Side')} {lev}x",
-                            "Entry Price": f"${entry_val:,.2f}",
-                            "Exit Price": f"${exit_val:,.2f}" if exit_val > 0 else "-",
-                            "Margin": f"₹{margin:,.2f}",
-                            "Fees (0.05%)": f"₹{per_trade_fee:.2f}",
-                            "Gross P&L": f"₹{gross_pnl:+.2f}" if act == 'CLOSE' else "-",
-                            "Net P&L": f"₹{net_fo_pnl:+.2f}" if act == 'CLOSE' else "-"
-                        })
-                        
-                    fo_win_rate = (fo_wins / closed_fo_count * 100) if closed_fo_count > 0 else 0.0
-                    net_fut_total = (total_fut_gross - total_fut_fees) if closed_fo_count > 0 else 0.0
-                    
-                    fp1, fp2, fp3, fp4 = st.columns(4)
-                    fp1.metric("Closed Futures Trades", f"{closed_fo_count}")
-                    fp2.metric("Futures Win Rate", f"{fo_win_rate:.1f}%", f"{fo_wins}W | {fo_losses}L")
-                    fp3.metric("Futures Fees", f"₹{total_fut_fees:,.2f}", "0.05% Taker Fee")
-                    f_net_col = "normal" if net_fut_total >= 0 else "inverse"
-                    fp4.metric("Net Realized Profit", f"₹{net_fut_total:,.2f}", f"{net_fut_total:+.2f}", f_net_col)
-                    
-                    safe_dataframe(pd.DataFrame(enriched_fut).iloc[::-1], hide_index=True)
-                else:
-                    st.info("No futures orders currently.")
-            except Exception as e:
-                st.info("Futures trades are being recorded...")
-        else:
-            st.info("No futures trade logs yet.")
-
 
 # =============================================================
 # TAB 5: 🔍 Smart Asset Screener (ASSET SCREENER)
