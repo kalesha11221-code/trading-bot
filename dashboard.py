@@ -930,8 +930,20 @@ try:
 except Exception:
     pass
 
-timeframe = '1m'
-auto_refresh = st.sidebar.checkbox("🟢 Live Auto-Refresh (5s Stream)", value=True, help="Automatically refreshes every 5 seconds to update real-time prices, signals, and floating PnL")
+col_r1, col_r2 = st.sidebar.columns([2, 1])
+with col_r1:
+    refresh_mode = st.selectbox(
+        "⚡ Sync Mode",
+        ["Smooth On-Demand (0 Flickering)", "Auto-Refresh (30s)", "Auto-Refresh (60s)", "Fast (10s)"],
+        index=0,
+        help="Choose 'Smooth On-Demand' to prevent page reloads and flickering. Click Sync whenever you want to update."
+    )
+with col_r2:
+    st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+    if st.button("🔄 Sync", key="sb_sync_now", use_container_width=True, help="Fetch fresh live data"):
+        st.cache_data.clear()
+        st.rerun()
+
 enable_voice = st.sidebar.checkbox("🔊 Voice Output Alerts", value=True)
 st.sidebar.markdown("---")
 
@@ -1363,7 +1375,36 @@ _TICKER_META = [
     ("XRP-USD",  "Ripple",   "XRP"),
 ]
 
-st.markdown("##### ⚡ Live Markets Ticker — Real-Time (Click any asset to inspect live chart & pattern):")
+# Real-Time WebSocket Streaming Ticker (Live 0 Page Reloads)
+try:
+    st.components.v1.html("""
+    <div class="tradingview-widget-container" style="background:#131722; border-radius:8px; overflow:hidden;">
+      <div class="tradingview-widget-container__widget"></div>
+      <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js" async>
+      {
+      "symbols": [
+        {"proName": "BINANCE:BTCUSDT", "title": "BTC/USDT"},
+        {"proName": "BINANCE:ETHUSDT", "title": "ETH/USDT"},
+        {"proName": "BINANCE:SOLUSDT", "title": "SOL/USDT"},
+        {"proName": "BINANCE:BNBUSDT", "title": "BNB/USDT"},
+        {"proName": "BINANCE:DOGEUSDT", "title": "DOGE/USDT"},
+        {"proName": "BINANCE:XRPUSDT", "title": "XRP/USDT"},
+        {"proName": "BSE:RELIANCE", "title": "RELIANCE"},
+        {"proName": "BSE:SBIN", "title": "SBIN"}
+      ],
+      "showSymbolLogo": true,
+      "isTransparent": true,
+      "displayMode": "adaptive",
+      "colorTheme": "dark",
+      "locale": "en"
+    }
+      </script>
+    </div>
+    """, height=52)
+except Exception:
+    pass
+
+st.markdown("##### ⚡ Interactive Asset Selector (Click any asset to inspect live chart & pattern):")
 tick_cols = st.columns(len(_TICKER_META))
 for idx, (sym_t, long_nm, short_nm) in enumerate(_TICKER_META):
     price_info = live_prices.get(sym_t, {})
@@ -2645,6 +2686,12 @@ Answer directly, smartly, and concisely in English in 2-3 sentences. Always addr
         else:
             st.info("No logs generated yet.")
 
-if auto_refresh:
-    time.sleep(5)
+if refresh_mode == "Fast (10s)":
+    time.sleep(10)
+    st.rerun()
+elif refresh_mode == "Auto-Refresh (30s)":
+    time.sleep(30)
+    st.rerun()
+elif refresh_mode == "Auto-Refresh (60s)":
+    time.sleep(60)
     st.rerun()
