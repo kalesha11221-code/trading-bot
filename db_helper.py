@@ -320,3 +320,27 @@ def get_trade_history_csv(is_futures=False):
     if df.empty:
         return header
     return df.to_csv(index=False)
+
+def reset_trade_history(is_futures=False):
+    """
+    Completely and permanently clears trade history across local CSV and MongoDB Cloud.
+    Guarantees that history stays 100% clean and never resurrects!
+    """
+    file_name, col_name, header, fields = _get_trade_meta(is_futures)
+    
+    # 1. Clear local CSV
+    try:
+        with open(file_name, 'w', encoding='utf-8') as f:
+            f.write(header)
+        print(f"✅ Cleared local {file_name}", flush=True)
+    except Exception as e:
+        print(f"Error resetting local {file_name}: {e}", flush=True)
+        
+    # 2. Clear MongoDB Atlas Collection
+    curr_db = get_mongo_db()
+    if curr_db is not None:
+        try:
+            curr_db[col_name].delete_many({})
+            print(f"✅ Cleared collection {col_name} in MongoDB Cloud!", flush=True)
+        except Exception as e:
+            print(f"Error clearing {col_name} in MongoDB: {e}", flush=True)

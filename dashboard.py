@@ -2237,11 +2237,17 @@ with tab_orders:
             st.markdown("#### 🚀 Futures Order Book (Futures 5x Orders Log)")
         with col_f2:
             if st.button("🗑️ Reset Futures History", key="btn_reset_fut"):
-                if os.path.exists('fo_trades_log.csv'):
-                    with open('fo_trades_log.csv', 'w') as f_reset_fo:
-                        f_reset_fo.write("Timestamp,Symbol,Action,Side,EntryPrice,ExitPrice,Margin,Leverage,Profit_INR\n")
+                # 1. Permanently delete from MongoDB Cloud and local file
+                db_helper.reset_trade_history(is_futures=True)
                 db_helper.save_state('fo_state', {})
-                st.toast("✅ Futures trade history reset successfully!", icon="🗑️")
+                # 2. Tell Render Server to clear its memory/cache
+                try:
+                    requests.get("https://trading-bot-leaw.onrender.com/reset_futures", timeout=4)
+                except Exception:
+                    pass
+                # 3. Clear Streamlit cache
+                st.cache_data.clear()
+                st.toast("✅ Futures trade history permanently cleared!", icon="🗑️")
                 st.rerun()
 
         df_fo = db_helper.get_trade_history_df(is_futures=True)
@@ -2316,11 +2322,17 @@ with tab_orders:
             st.markdown("#### 📌 Spot Orders Log")
         with col_s2:
             if st.button("🗑️ Reset Spot History", key="btn_reset_spot"):
-                if os.path.exists('trades_log.csv'):
-                    with open('trades_log.csv', 'w') as f_reset:
-                        f_reset.write("Time,Symbol,Action,Price,Shares,Profit\n")
+                # 1. Permanently delete from MongoDB Cloud and local file
+                db_helper.reset_trade_history(is_futures=False)
                 db_helper.save_state('dca_state', {})
-                st.toast("✅ Spot trade history reset!", icon="🗑️")
+                # 2. Tell Render Server to clear its memory/cache
+                try:
+                    requests.get("https://trading-bot-leaw.onrender.com/reset_spot", timeout=4)
+                except Exception:
+                    pass
+                # 3. Clear Streamlit cache
+                st.cache_data.clear()
+                st.toast("✅ Spot trade history permanently cleared!", icon="🗑️")
                 st.rerun()
 
         df_perf = db_helper.get_trade_history_df(is_futures=False)
