@@ -17,6 +17,7 @@ class DummyHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         import json
         import os
+        import db_helper
         
         # 🔄 REMOTE ZERO RESET TRIGGER (Futures, Spot, or All)
         if self.path in ('/reset', '/reset_all'):
