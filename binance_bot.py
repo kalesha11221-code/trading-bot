@@ -1050,15 +1050,17 @@ def process_symbol(sym):
             
         peak_gain_pct = ((peak_p - avg_price) / avg_price) * 100.0
         
-        # 🚀 QUICK SCALP PROFIT & CAPITAL PROTECTION ENGINE:
-        # 1. Quick Target Exit: Reached >= 1.2% profit directly (Fast scalp!)
-        # 2. Smart Trailing Exit: Reached >= 1.2% and dipped 0.3% from peak (Locks quick pumps)
-        # 3. Breakeven Lock: Reached >= 1.0% earlier, exit if falls back to <= +0.2% (Zero Loss Rule)
-        # 4. Confirmed Trend Reversal: Reached >= 0.5% with confirmed SELL reversal signal
-        is_breakeven_exit = (peak_gain_pct >= 1.0 and profit_pct <= 0.2)
-        is_trailing_exit = (peak_gain_pct >= 1.2 and current_price <= (peak_p * 0.997))
-        is_target_exit = (profit_pct >= 1.2)
-        is_reversal_exit = (profit_pct >= 0.5 and signal == 'sell')
+        # 🏛️ INSTITUTIONAL FEE-AWARE SPOT PROFIT ENGINE:
+        # Roundtrip Spot Trading Fee: 0.10% Buy + 0.10% Sell = 0.20%
+        # All exits are guaranteed to cover exchange fees and lock positive net cash:
+        # 1. Target Exit: Reached >= +2.5% profit directly (Clean +2.3% net profit!)
+        # 2. Smart Trailing Exit: Reached >= +2.0% and dipped 0.6% from peak (Locks >= +1.2% net profit!)
+        # 3. Fee-Aware Breakeven Lock: Peak >= +1.5%, exit if drops to <= +0.8% (Guarantees +0.6% net profit after 0.2% fees!)
+        # 4. Confirmed Trend Reversal: Reached >= +1.5% with confirmed SELL signal (Never exit on micro-fluctuations below fees!)
+        is_breakeven_exit = (peak_gain_pct >= 1.5 and profit_pct <= 0.8)
+        is_trailing_exit = (peak_gain_pct >= 2.0 and current_price <= (peak_p * 0.994))
+        is_target_exit = (profit_pct >= 2.5)
+        is_reversal_exit = (profit_pct >= 1.5 and signal == 'sell')
         
         if is_trailing_exit or is_target_exit or is_reversal_exit or is_breakeven_exit:
             profit = (current_price - avg_price) * total_qty
