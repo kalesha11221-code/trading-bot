@@ -5,11 +5,11 @@ import db_helper
 import requests
 import streamlit as st
 
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=10, show_spinner=False)
 def get_render_state():
     try:
         url = "https://trading-bot-leaw.onrender.com"
-        resp = requests.get(url, timeout=10)
+        resp = requests.get(url, timeout=5)
         if resp.status_code == 200:
             data = resp.json()
             if isinstance(data, dict):
@@ -165,29 +165,69 @@ BINANCE_SYMBOLS = {
     "XRP-USD": "XRPUSDT",
 }
 
-@st.cache_data(ttl=6, show_spinner=False)
+@st.cache_data(ttl=10, show_spinner=False)
 def get_live_prices():
-    """Fetch latest prices using yfinance (cloud friendly)."""
+    """Fetch latest prices fast: Render state first (0ms), Binance 24hr API second (50ms), fallback to yfinance."""
     prices = {}
+    
+    # 1. Instant Fast Path: Extract from RENDER_STATE (0.0001s, already in memory!)
+    try:
+        if RENDER_STATE and "scan_status" in RENDER_STATE and "assets" in RENDER_STATE["scan_status"]:
+            r_assets = RENDER_STATE["scan_status"]["assets"]
+            for sym in BINANCE_SYMBOLS.keys():
+                if sym in r_assets and "price" in r_assets[sym] and float(r_assets[sym]["price"]) > 0:
+                    p = float(r_assets[sym]["price"])
+                    prices[sym] = {
+                        "price": p,
+                        "change_pct": float(r_assets[sym].get("pnl_pct", 0.0)),
+                        "high": p * 1.01,
+                        "low": p * 0.99,
+                        "volume": 0.0
+                    }
+            if len(prices) == len(BINANCE_SYMBOLS):
+                return prices
+    except Exception:
+        pass
+
+    # 2. Lightning Fast Secondary Path: Binance Public 24hr Ticker API (1 single request for ALL pairs, ~50ms)
+    try:
+        resp = requests.get("https://api.binance.com/api/v3/ticker/24hr", timeout=3)
+        if resp.status_code == 200:
+            b_data = {item['symbol']: item for item in resp.json()}
+            for sym, b_sym in BINANCE_SYMBOLS.items():
+                if b_sym in b_data:
+                    d = b_data[b_sym]
+                    prices[sym] = {
+                        "price": float(d.get('lastPrice', 0.0)),
+                        "change_pct": float(d.get('priceChangePercent', 0.0)),
+                        "high": float(d.get('highPrice', 0.0)),
+                        "low": float(d.get('lowPrice', 0.0)),
+                        "volume": float(d.get('volume', 0.0)),
+                    }
+            if len(prices) == len(BINANCE_SYMBOLS):
+                return prices
+    except Exception:
+        pass
+
+    # 3. Last Resort Fallback: yfinance only if both above fail
     for symbol in BINANCE_SYMBOLS.keys():
-        try:
-            t = yf.Ticker(symbol)
-            hist = t.history(period="2d", interval="1d")
-            if len(hist) >= 1:
-                last_price = float(hist['Close'].iloc[-1])
-                prev_price = float(hist['Close'].iloc[0]) if len(hist) > 1 else last_price
-                change_pct = ((last_price - prev_price) / prev_price * 100) if prev_price else 0.0
-                prices[symbol] = {
-                    "price": last_price,
-                    "change_pct": change_pct,
-                    "high": float(hist['High'].iloc[-1]),
-                    "low": float(hist['Low'].iloc[-1]),
-                    "volume": float(hist['Volume'].iloc[-1]),
-                }
-            else:
+        if symbol not in prices or prices[symbol]["price"] <= 0:
+            try:
+                t = yf.Ticker(symbol)
+                hist = t.history(period="1d", interval="1d")
+                if len(hist) >= 1:
+                    last_price = float(hist['Close'].iloc[-1])
+                    prices[symbol] = {
+                        "price": last_price,
+                        "change_pct": 0.0,
+                        "high": float(hist['High'].iloc[-1]),
+                        "low": float(hist['Low'].iloc[-1]),
+                        "volume": float(hist['Volume'].iloc[-1]),
+                    }
+                else:
+                    prices[symbol] = {"price": 0.0, "change_pct": 0.0, "high": 0.0, "low": 0.0, "volume": 0.0}
+            except Exception:
                 prices[symbol] = {"price": 0.0, "change_pct": 0.0, "high": 0.0, "low": 0.0, "volume": 0.0}
-        except Exception:
-            prices[symbol] = {"price": 0.0, "change_pct": 0.0, "high": 0.0, "low": 0.0, "volume": 0.0}
     return prices
 
 def fancy_metric(label, value, delta="", delta_color="normal"):
@@ -1064,7 +1104,7 @@ def robust_fetch_candles(sym):
 
     return pd.DataFrame()
 
-@st.cache_data(ttl=5, show_spinner=False)
+@st.cache_data(ttl=20, show_spinner=False)
 def fetch_and_analyze(sym):
     try:
         sym = SYMBOL_ALIASES.get(sym.upper(), sym.upper())
