@@ -1,7 +1,13 @@
 import time
 import ml_brain
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+IST = timezone(timedelta(hours=5, minutes=30))
+
+def get_ist_now():
+    """Returns current datetime in Indian Standard Time (IST)."""
+    return datetime.now(IST)
 
 # 🧠 REAL AI BRAIN: FRACTAL PATTERN RECOGNITION
 def analyze_pattern_future(df):
@@ -135,7 +141,7 @@ def update_ai_brain_after_trade(sym, profit, strategy_key=None):
         strat = strategy_key if strategy_key in brain['strategies'] else 'rsi_vwap_confluence'
         strat_obj = brain['strategies'][strat]
         
-        now_str = datetime.now().strftime('%H:%M')
+        now_str = get_ist_now().strftime('%H:%M')
         coin_clean = sym.replace('-USD', '')
 
         if is_win:
@@ -178,7 +184,7 @@ def update_ai_brain_after_trade(sym, profit, strategy_key=None):
 
 
 def log_trade(action, sym, price, quantity, profit=0.0, strategy_key=None):
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    timestamp = get_ist_now().strftime('%Y-%m-%d %H:%M:%S')
     profit_str = f"{profit:.4f}" if profit != 0.0 else "0.0"
     
     with file_lock:
@@ -880,17 +886,14 @@ def log_status(msg, voice_alert=None, color_code='\033[0m'):
 
 
 def process_symbol(sym):
-    now = datetime.now()
+    now = get_ist_now()
     is_crypto = sym.endswith("-USD")
     is_indian = sym.endswith(".NS") or sym.endswith(".BO") or sym in ["^NSEI", "^NSEBANK"]
     if is_indian:
-        import pytz
-        ist = pytz.timezone('Asia/Kolkata')
-        now_ist = datetime.now(ist)
-        if now_ist.weekday() > 4: # Weekend
+        if now.weekday() > 4: # Weekend
             return {'symbol': sym, 'status': 'MARKET_CLOSED'}
         
-        curr_t = now_ist.time()
+        curr_t = now.time()
         m_open = datetime.strptime("09:15", "%H:%M").time()
         m_close = datetime.strptime("15:30", "%H:%M").time()
         
@@ -1079,7 +1082,7 @@ def process_symbol(sym):
             
             msg = f"{exit_badge} [{mode_str}]: {sym} ({qty_label}) | ఫలితం: {profit_disp} (+{profit_pct:.2f}%)\n{thought} 🧠 [Peak: +{peak_gain_pct:.2f}% | DCA Layers: {len(pos.get('entries', []))}]"
             voice_msg = f"Alert. Profit taken on {clean_name}. Trade closed successfully."
-            log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
+            log_status(f"[{get_ist_now().strftime('%H:%M:%S IST')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
             strat_key = pos.get('strategy', 'rsi_vwap_confluence')
             log_trade("SELL", sym, current_price, total_qty, profit, strategy_key=strat_key)
             send_telegram_message(f"✅ {msg}")
@@ -1100,7 +1103,7 @@ def process_symbol(sym):
                 execute_live_order("SELL", sym, quantity=total_qty)
             loss_disp = f"₹{profit:,.2f}"
             msg = f"🛑 [{mode_str} హార్డ్ స్టాప్-లాస్]: {sym} -2.5% నష్టానికి చేరుకోగానే క్యాపిటల్ ని కాపాడేందుకు వెంటనే అమ్మేసాను! (Loss: {loss_disp})"
-            log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", color_code='\033[91m')
+            log_status(f"[{get_ist_now().strftime('%H:%M:%S IST')}] {msg}", color_code='\033[91m')
             strat_key = pos.get('strategy', 'rsi_vwap_confluence')
             log_trade("SELL", sym, current_price, total_qty, profit, strategy_key=strat_key)
             send_telegram_message(f"⚠️ {msg}")
@@ -1127,7 +1130,7 @@ def process_symbol(sym):
                     "price": current_price,
                     "qty": slice_qty,
                     "cost": slice_cost_inr,
-                    "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    "time": get_ist_now().strftime('%Y-%m-%d %H:%M:%S')
                 })
                 pos['total_qty'] += slice_qty
                 pos['total_cost'] += slice_cost_inr
@@ -1143,7 +1146,7 @@ def process_symbol(sym):
                 
                 msg = f"🎯 [{mode_str} స్కామర్ బ్రెయిన్ 🥷 DCA Layer {layer}/3 | 🏛️ SMC OrderBlock]: {sym} @ {price_disp} ({qty_label})\nకొత్త సగటు ధర: {avg_disp} | టార్గెట్ (+1.5% క్విక్ ప్రాఫిట్): {target_disp}\n{thought}"
                 voice_msg = f"Alert. Averaging down on {clean_name}."
-                log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[96m')
+                log_status(f"[{get_ist_now().strftime('%H:%M:%S IST')}] {msg}", voice_alert=voice_msg, color_code='\033[96m')
                 log_trade("BUY", sym, current_price, slice_qty, 0.0)
                 send_telegram_message(f"✅ {msg}")
                 action_taken = "DCA_BUY"
@@ -1167,7 +1170,7 @@ def process_symbol(sym):
                         "price": current_price,
                         "qty": slice_qty,
                         "cost": slice_cost_inr,
-                        "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        "time": get_ist_now().strftime('%Y-%m-%d %H:%M:%S')
                     }],
                     "avg_price": current_price,
                     "total_qty": slice_qty,
@@ -1186,7 +1189,7 @@ def process_symbol(sym):
                 
                 msg = f"🎯 [{mode_str} స్కామర్ బ్రెయిన్ 🥷 స్నైపర్ DCA | 🏛️ SMC Institutional Confluence]: {sym} డిప్ లో కొన్నాను @ {price_disp} ({cost_disp} | {qty_label})\n🎯 టార్గెట్ (+3.5% బెస్ట్ ప్రాఫిట్): {target_disp} | టెక్నిక్: {strat_used}\n{thought}"
                 voice_msg = f"Alert. Buying fractional slice of {clean_name}."
-                log_status(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
+                log_status(f"[{get_ist_now().strftime('%H:%M:%S IST')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
                 log_trade("BUY", sym, current_price, slice_qty, 0.0)
                 send_telegram_message(f"✅ {msg}")
                 action_taken = "BUY"
@@ -1210,7 +1213,7 @@ def process_symbol(sym):
         "peak_price": round(pos.get('peak_price', current_price), 2) if pos is not None else 0.0,
         "invested": round(pos.get('total_cost', 0.0), 2) if pos is not None else 0.0,
         "dca_layer": len(pos.get('entries', [])) if pos is not None else 0,
-        "timestamp": now.strftime('%H:%M:%S'),
+        "timestamp": get_ist_now().strftime('%H:%M:%S IST'),
         "is_indian": is_indian
     }
 
@@ -1224,7 +1227,7 @@ def run_bot_loop():
             print("Bot loop is already running in this process.")
             return
         _bot_loop_active = True
-    log_status(f"[{datetime.now().strftime('%H:%M:%S')}] 🔥 Advanced AI Trading Robot is now ONLINE!", voice_alert="Advanced AI Robot is now online.", color_code="[95m")
+    log_status(f"[{get_ist_now().strftime('%H:%M:%S IST')}] 🔥 Advanced AI Trading Robot is now ONLINE!", voice_alert="Advanced AI Robot is now online.", color_code="[95m")
     send_telegram_message("🤖 AI మల్టిపుల్ ట్రేడింగ్ బాట్ ఆన్ అయ్యింది!")
     # Restore complete spot trade history from MongoDB Cloud so restarts never lose history
     try:
@@ -1284,7 +1287,7 @@ def run_bot_loop():
                 except: pass
 
             live_scan_data = {
-                "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                "timestamp": get_ist_now().strftime('%Y-%m-%d %H:%M:%S'),
                 "broker": broker_name,
                 "mode": mode,
                 "capital_mode": cap_mode_saved,
@@ -1319,12 +1322,12 @@ def run_bot_loop():
             last_act_text = ("ట్రేడ్ జరిగింది: " + ", ".join(actions_taken)) if actions_taken else hold_label
             
             if not actions_taken:
-                log_status(f"[{datetime.now().strftime('%H:%M:%S')}] ⚡ [{broker_name}] {hold_label}.", color_code='\033[96m')
+                log_status(f"[{get_ist_now().strftime('%H:%M:%S IST')}] ⚡ [{broker_name}] {hold_label}.", color_code='\033[96m')
 
-            # 💓 Write Live Heartbeat for Website Indicator
+            # 💓 Write Live Heartbeat for Website Indicator (IST)
             heartbeat_data = {
                 "last_ping": time.time(),
-                "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                "timestamp": get_ist_now().strftime('%Y-%m-%d %H:%M:%S'),
                 "status": "RUNNING",
                 "broker": broker_name,
                 "mode": mode,
@@ -1340,13 +1343,13 @@ def run_bot_loop():
                 pass
                 
         except Exception as e:
-            log_status(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️ ఎర్రర్: {e}")
+            log_status(f"[{get_ist_now().strftime('%H:%M:%S IST')}] ⚠️ ఎర్రర్: {e}")
             try:
                 import json
 
                 db_helper.save_state('bot_heartbeat', {
                     "last_ping": time.time(),
-                    "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    "timestamp": get_ist_now().strftime('%Y-%m-%d %H:%M:%S'),
                     "status": "ERROR",
                     "error": str(e),
                     "loop_count": loop_count

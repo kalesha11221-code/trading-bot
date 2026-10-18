@@ -8,7 +8,12 @@ import urllib.request
 import threading
 import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+IST = timezone(timedelta(hours=5, minutes=30))
+
+def get_ist_now():
+    """Returns current datetime in Indian Standard Time (IST)."""
+    return datetime.now(IST)
 
 # --- CONFIGURATION ---
 FUTURES_SYMBOLS = ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "DOGE-USD", "XRP-USD"]
@@ -41,7 +46,7 @@ def save_state(state):
 
 def log_trade(sym, action, side, entry_p, exit_p, margin, lev, profit):
     with file_lock:
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        timestamp = get_ist_now().strftime('%Y-%m-%d %H:%M:%S')
         trade_data = {
             'Timestamp': timestamp,
             'Symbol': sym,
@@ -230,7 +235,7 @@ def run_futures_bot():
                         del state[sym]
                         save_state(state)
                         cooldown_dict[sym] = time.time() + 300
-                        print(f"[{datetime.now().strftime('%H:%M:%S')}] 🛑 CLOSED {side} {sym} | PnL: ₹{pnl_inr:.2f} ({reason})", flush=True)
+                        print(f"[{get_ist_now().strftime('%H:%M:%S IST')}] 🛑 CLOSED {side} {sym} | PnL: ₹{pnl_inr:.2f} ({reason})", flush=True)
                         time.sleep(2)
                         
                 elif len(state) < MAX_POSITIONS and signal != 'HOLD':
@@ -246,11 +251,11 @@ def run_futures_bot():
                         "margin": MARGIN_PER_TRADE,
                         "leverage": LEVERAGE,
                         "peak_roe": 0.0,
-                        "timestamp": datetime.now().isoformat()
+                        "timestamp": get_ist_now().strftime('%Y-%m-%d %H:%M:%S')
                     }
                     save_state(state)
                     log_trade(sym, "OPEN", signal, current_price, 0, MARGIN_PER_TRADE, LEVERAGE, 0.0)
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🏛️ OPENED {signal} {sym} @ ${current_price:.2f} [Institutional Confluence]", flush=True)
+                    print(f"[{get_ist_now().strftime('%H:%M:%S IST')}] 🏛️ OPENED {signal} {sym} @ ${current_price:.2f} [Institutional Confluence]", flush=True)
                     time.sleep(2)
                     
             time.sleep(10) 

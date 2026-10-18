@@ -51,7 +51,13 @@ import time
 import json
 
 import threading
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+IST = timezone(timedelta(hours=5, minutes=30))
+
+def get_ist_now():
+    """Returns current datetime in Indian Standard Time (IST)."""
+    return datetime.now(IST)
 
 # Reliable background thread to run binance_bot inside the cloud server
 def _run_background_bot():
@@ -524,8 +530,7 @@ loop_num = bot_meta.get('loop_count', '-')
 last_act = bot_meta.get('last_action', 'Scanning')
 active_syms = bot_meta.get('active_symbols', [])
 
-from datetime import datetime
-now_time = datetime.now()
+now_time = get_ist_now()
 is_nse_time = (now_time.weekday() < 5 and ((now_time.hour == 9 and now_time.minute >= 15) or (9 < now_time.hour < 15) or (now_time.hour == 15 and now_time.minute <= 30)))
 nse_badge = '<span style="background: rgba(0, 230, 118, 0.15); color: #00e676; border: 1px solid #00e676; padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: bold;">🟢 Zerodha NSE Live</span>' if is_nse_time else '<span style="background: rgba(255, 82, 82, 0.15); color: #ff5252; border: 1px solid #ff5252; padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: bold;">🔴 Zerodha NSE Closed (Opens 9:15 AM)</span>'
 bot_status_badge = '<span style="background: rgba(0, 230, 118, 0.2); color: #00e676; border: 1px solid #00e676; padding: 4px 12px; border-radius: 8px; font-size: 12px; font-weight: bold;">🟢 AI BOT ONLINE</span>' if bot_status == 'RUNNING' else '<span style="background: rgba(255, 82, 82, 0.2); color: #ff5252; border: 1px solid #ff5252; padding: 4px 12px; border-radius: 8px; font-size: 12px; font-weight: bold;">🔴 BOT STOPPED</span>'
@@ -1015,7 +1020,7 @@ with st.sidebar.expander("🔍 Quick Asset Search & Add", expanded=False):
                 "name": c_n,
                 "ticker": final_sym,
                 "type": asset_t,
-                "added_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                "added_at": get_ist_now().strftime("%Y-%m-%d %H:%M:%S")
             }
             save_custom_watchlist(curr_wl)
             st.success(f"✅ {c_n} ({final_sym}) added to Watchlist!")
@@ -1111,7 +1116,7 @@ def fetch_and_analyze(sym):
         df = robust_fetch_candles(sym)
         if df.empty:
             # Ultimate safety fallback so the UI NEVER renders blank!
-            dates = pd.date_range(end=datetime.now(), periods=50, freq='1min')
+            dates = pd.date_range(end=get_ist_now(), periods=50, freq='1min')
             base_p = 65000.0 if "BTC" in sym else 2600.0 if "ETH" in sym else 150.0
             prices = [base_p + float(i)*0.5 for i in range(50)]
             df = pd.DataFrame({'timestamp': dates, 'open': prices, 'high': prices, 'low': prices, 'close': prices, 'volume': [100.0]*50})
@@ -2285,7 +2290,7 @@ with tab_orders:
                         exit_val = float(r.get('ExitPrice', 0))
                         
                         enriched_fut.append({
-                            "Time": r.get('Timestamp'),
+                            "Time (IST)": r.get('Timestamp'),
                             "Symbol": str(r.get('Symbol', '')).replace('-USD', ''),
                             "Action": act,
                             "Side": f"{r.get('Side')} {lev}x",
@@ -2381,7 +2386,7 @@ with tab_orders:
                         
                     pr_disp = f"${pr:,.2f}" if is_c else f"₹{pr:,.2f}"
                     enriched_spot.append({
-                        "Time": r.get('Time'),
+                        "Time (IST)": r.get('Time'),
                         "Symbol": sym.replace('-USD', '').replace('.NS', ''),
                         "Action": act,
                         "Price": pr_disp,
@@ -2469,7 +2474,7 @@ with tab_search:
                 if st.button(f"➕ Add {found_data['name']} to Bot Watchlist", type="primary", use_container_width=True, key="btn_add_to_wl"):
                     wl_now[found_data['symbol']] = {
                         "name": found_data['name'], "ticker": found_data['symbol'], "type": found_data['type'],
-                        "added_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        "added_at": get_ist_now().strftime("%Y-%m-%d %H:%M:%S")
                     }
                     save_custom_watchlist(wl_now)
                     st.success(f"🎉 **{found_data['name']} ({found_data['symbol']})** added successfully!")

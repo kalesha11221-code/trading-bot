@@ -3,7 +3,13 @@ import json
 import csv
 import io
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+IST = timezone(timedelta(hours=5, minutes=30))
+
+def get_ist_now():
+    """Returns current datetime in Indian Standard Time (IST)."""
+    return datetime.now(IST)
 
 try:
     from pymongo import MongoClient
@@ -152,7 +158,7 @@ def log_trade_persistent(row_dict, is_futures=False):
     for fld in fields:
         clean_row[fld] = str(row_dict.get(fld, '0.0' if 'Profit' in fld else ''))
 
-    t_val = clean_row.get(time_col, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+    t_val = clean_row.get(time_col, get_ist_now().strftime('%Y-%m-%d %H:%M:%S'))
     clean_row[time_col] = t_val
     doc_id = f"{t_val}_{clean_row.get('Symbol', '')}_{clean_row.get('Action', '')}"
     
@@ -203,58 +209,22 @@ def sync_cloud_to_local(is_futures=False):
 
 def merge_csv_data(csv_text, is_futures=False):
     """
-    Intelligently merges incoming CSV lines from Render with existing history.
-    NEVER wipes existing records, and works 100% reliably even if MongoDB is offline!
+    Directly syncs local cache with the authoritative trade log from the 24/7 Render master server.
+    Ensures that when trades happen or resets occur, the dashboard reflects the true cloud state instantly.
     """
     if not csv_text or not csv_text.strip():
         return
         
     file_name, col_name, header, fields = _get_trade_meta(is_futures)
-    time_col = 'Timestamp' if is_futures else 'Time'
     
-    # 1. Load existing records from local CSV
-    all_records = {}
-    if os.path.exists(file_name) and os.path.getsize(file_name) > len(header):
-        try:
-            with open(file_name, 'r', encoding='utf-8') as f:
-                reader_old = csv.DictReader(f)
-                for r in reader_old:
-                    t = r.get(time_col, '')
-                    s = r.get('Symbol', '')
-                    a = r.get('Action', '')
-                    if t and s:
-                        k = f"{t}_{s}_{a}"
-                        all_records[k] = {fld: str(r.get(fld, '')) for fld in fields}
-        except Exception:
-            pass
-
-    # 2. Merge incoming records from Render
     try:
-        reader_new = csv.DictReader(io.StringIO(csv_text.strip()))
-        for r in reader_new:
-            t = r.get(time_col, '')
-            s = r.get('Symbol', '')
-            a = r.get('Action', '')
-            if t and s:
-                k = f"{t}_{s}_{a}"
-                all_records[k] = {fld: str(r.get(fld, '')) for fld in fields}
-    except Exception:
-        pass
-
-    if not all_records:
-        return
-
-    # 3. Always write merged records locally so Streamlit displays them immediately!
-    try:
-        sorted_rows = sorted(all_records.values(), key=lambda r: str(r.get(time_col, '')))
-        lines = [header]
-        for r in sorted_rows:
-            row_vals = [str(r.get(fld, '')) for fld in fields]
-            lines.append(",".join(row_vals) + "\n")
+        clean_text = csv_text.strip()
+        if not clean_text.endswith('\n'):
+            clean_text += '\n'
         with open(file_name, 'w', encoding='utf-8') as f:
-            f.writelines(lines)
+            f.write(clean_text)
     except Exception as e:
-        print(f"merge_csv_data local file write error: {e}", flush=True)
+        print(f"merge_csv_data write error: {e}", flush=True)
 
     # 4. Asynchronous Cloud Sync: Sync to MongoDB Atlas in background thread with bulk_write
     # This prevents blocking the UI for 15+ seconds while keeping MongoDB 100% updated!
