@@ -1091,30 +1091,16 @@ def process_symbol(sym):
             action_taken = "SELL"
             pos = None
 
-        # 🛑 UNCONDITIONAL HARD STOP-LOSS: drops > 2.5%, exit immediately to strictly cap risk!
-        # Does NOT wait for signal == 'sell', protecting capital from sharp market drawdowns!
-        elif profit_pct <= -2.5:
-            profit = (current_price - avg_price) * total_qty
-            last_exit_times[sym] = time.time()
-            if live_mode and is_crypto:
-                execute_live_order("SELL", sym, quantity=total_qty)
-            loss_disp = f"₹{profit:,.2f}"
-            msg = f"🛑 [{mode_str} హార్డ్ స్టాప్-లాస్]: {sym} -2.5% నష్టానికి చేరుకోగానే క్యాపిటల్ ని కాపాడేందుకు వెంటనే అమ్మేసాను! (Loss: {loss_disp})"
-            log_status(f"[{get_ist_now().strftime('%H:%M:%S IST')}] {msg}", color_code='\033[91m')
-            strat_key = pos.get('strategy', 'rsi_vwap_confluence')
-            log_trade("SELL", sym, current_price, total_qty, profit, strategy_key=strat_key)
-            send_telegram_message(f"⚠️ {msg}")
-            if sym in dca_state:
-                del dca_state[sym]
-                save_dca_state(dca_state)
-            action_taken = "SELL"
-            pos = None
+        # -------------------------------------------------------------
+        # 2. PRO DCA ACCUMULATION ON DIPS (TURNING DIPS INTO BIG WINS)
+        # -------------------------------------------------------------
+        # In Spot trading, when price dips -1.5% to -2.0%, we average down!
+        # Layer 1 = Initial buy, Layer 2 = at -1.5% dip, Layer 3 = at -3.0% dip
+        dca_layers = len(pos.get('entries', []))
+        dip_needed = 0.985 if dca_layers == 1 else 0.970
+        is_dca_dip = current_price <= (avg_price * dip_needed)
 
-        # -------------------------------------------------------------
-        # 2. ADDITIONAL DCA DIP BUY (AVERAGING DOWN)
-        # -------------------------------------------------------------
-        elif len(pos.get('entries', [])) < 3 and current_price <= (avg_price * 0.982) and signal == 'buy' and ml_brain.get_ml_signal(sym) == 1 and ml_brain.get_smc_analysis(sym).get('bias') != 'BEARISH':
-            # Capital Protection Guard
+        if dca_layers < 3 and is_dca_dip:
             current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
             if (current_invested + slice_cost_inr) <= portfolio_cap:
                 if live_mode and is_crypto:
@@ -1122,7 +1108,7 @@ def process_symbol(sym):
                     if not success:
                         log_status(f"⚠️ Live Binance DCA Buy Warning ({sym}): {res}")
                 
-                layer = len(pos.get('entries', [])) + 1
+                layer = dca_layers + 1
                 pos['entries'].append({
                     "price": current_price,
                     "qty": slice_qty,
@@ -1132,7 +1118,7 @@ def process_symbol(sym):
                 pos['total_qty'] += slice_qty
                 pos['total_cost'] += slice_cost_inr
                 pos['avg_price'] = pos['total_cost'] / pos['total_qty']
-                pos['target_sell_price'] = pos['avg_price'] * 1.015
+                pos['target_sell_price'] = pos['avg_price'] * (1.010 if is_scalp_style else 1.015)
                 pos['peak_price'] = current_price
                 save_dca_state(dca_state)
                 
@@ -1141,12 +1127,30 @@ def process_symbol(sym):
                 avg_disp = f"₹{pos['avg_price']:,.2f}" if is_indian else f"${pos['avg_price']:,.2f}"
                 target_disp = f"₹{pos['target_sell_price']:,.2f}" if is_indian else f"${pos['target_sell_price']:,.2f}"
                 
-                msg = f"🎯 [{mode_str} స్కామర్ బ్రెయిన్ 🥷 DCA Layer {layer}/3 | 🏛️ SMC OrderBlock]: {sym} @ {price_disp} ({qty_label})\nకొత్త సగటు ధర: {avg_disp} | టార్గెట్ (+1.5% క్విక్ ప్రాఫిట్): {target_disp}\n{thought}"
+                msg = f"🎯 [{mode_str} స్కామర్ బ్రెయిన్ 🥷 DCA Layer {layer}/3 | 🏛️ SMC OrderBlock]: {sym} @ {price_disp} ({qty_label})\nకొత్త సగటు ధర: {avg_disp} | టార్గెట్ (+1.0% క్విక్ ప్రాఫిట్): {target_disp}\n{thought}"
                 voice_msg = f"Alert. Averaging down on {clean_name}."
                 log_status(f"[{get_ist_now().strftime('%H:%M:%S IST')}] {msg}", voice_alert=voice_msg, color_code='\033[96m')
                 log_trade("BUY", sym, current_price, slice_qty, 0.0)
                 send_telegram_message(f"✅ {msg}")
                 action_taken = "DCA_BUY"
+
+        # 🛑 EMERGENCY CRASH SHIELD (Only after all DCA layers, or deep crash <= -6.0%):
+        elif (dca_layers >= 3 and profit_pct <= -5.0) or profit_pct <= -6.0:
+            profit = (current_price - avg_price) * total_qty
+            last_exit_times[sym] = time.time()
+            if live_mode and is_crypto:
+                execute_live_order("SELL", sym, quantity=total_qty)
+            loss_disp = f"₹{profit:,.2f}"
+            msg = f"🛑 [{mode_str} ఎమర్జెన్సీ షీల్డ్]: {sym} -6.0% డీప్ క్రాష్ లో క్యాపిటల్ ని కాపాడేందుకు అమ్మేసాను! (Loss: {loss_disp})"
+            log_status(f"[{get_ist_now().strftime('%H:%M:%S IST')}] {msg}", color_code='\033[91m')
+            strat_key = pos.get('strategy', 'rsi_vwap_confluence')
+            log_trade("SELL", sym, current_price, total_qty, profit, strategy_key=strat_key)
+            send_telegram_message(f"⚠️ {msg}")
+            if sym in dca_state:
+                del dca_state[sym]
+                save_dca_state(dca_state)
+            action_taken = "SELL"
+            pos = None
 
     # -------------------------------------------------------------
     # 3. FIRST DIP ENTRY (INITIAL FRACTIONAL SLICE)
