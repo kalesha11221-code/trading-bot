@@ -839,8 +839,10 @@ if bot_settings.get("panic_mode"):
 
 # AI Self-Learning Brain Hub
 try:
-    with open('ai_brain.json', 'r') as f:
-        brain = json.load(f)
+    brain = db_helper.get_state('ai_brain', {})
+    if not brain and os.path.exists('ai_brain.json'):
+        with open('ai_brain.json', 'r') as f:
+            brain = json.load(f)
     st.sidebar.markdown("---")
     st.sidebar.subheader("🧠 AI Self-Learning Brain")
     
@@ -1476,7 +1478,20 @@ st.markdown("<br>", unsafe_allow_html=True)
 # -------------------------------------------------------------
 initial_capital = 50000.00
 
-# 1. Spot Realized Profit
+# USD → INR rate
+USD_TO_INR = 84.5
+try:
+    _inr_url = "https://api.exchangerate-api.com/v4/latest/USD"
+    _req = urllib.request.Request(_inr_url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(_req, timeout=2) as _resp:
+        _fx = json.loads(_resp.read().decode())
+        _fx_inr = float(_fx.get("rates", {}).get("INR", 84.5))
+        if 75 <= _fx_inr <= 100:
+            USD_TO_INR = _fx_inr
+except:
+    pass
+
+# 1. Spot Realized Profit (Calculated in INR)
 spot_profit = 0.0
 try:
     hist_df = db_helper.get_trade_history_df(is_futures=False)
@@ -1492,9 +1507,10 @@ try:
                 p_str = str(row['Profit']).replace('₹', '').replace('$', '').replace(',', '').strip()
                 try:
                     p = -float(p_str.replace('-', '')) if p_str.startswith('-') else float(p_str)
-                    if p > 0: g_prof += p
-                    elif p < 0: g_loss += abs(p)
-                    taxes += abs(p) * 0.001
+                    p_inr = p * USD_TO_INR if sym_r.endswith('-USD') else p
+                    if p_inr > 0: g_prof += p_inr
+                    elif p_inr < 0: g_loss += abs(p_inr)
+                    taxes += abs(p_inr) * 0.001
                 except: pass
         spot_profit = (g_prof - g_loss) - taxes
 except: pass
@@ -1515,19 +1531,6 @@ try:
 except: pass
 
 total_profit = spot_profit + futures_profit
-
-# USD → INR rate
-USD_TO_INR = 84.5
-try:
-    _inr_url = "https://api.exchangerate-api.com/v4/latest/USD"
-    _req = urllib.request.Request(_inr_url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(_req, timeout=2) as _resp:
-        _fx = json.loads(_resp.read().decode())
-        _fx_inr = float(_fx.get("rates", {}).get("INR", 84.5))
-        if 75 <= _fx_inr <= 100:
-            USD_TO_INR = _fx_inr
-except:
-    pass
 
 # 1. Read Active Spot (DCA) Positions
 dca_positions = get_state_smart('dca_state')
@@ -1956,13 +1959,16 @@ Pumps lacking institutional volume and VWAP support are classified as liquidity 
 To preserve portfolio equity, maximum concurrent open positions are strictly limited to 6 assets.""")
 
     # 4. AI BRAIN & STRATEGY WEIGHTS
-    st.markdown("---")
     st.subheader("🧬 4. AI Neural Learning Brain (ai_brain.json)")
-    if os.path.exists('ai_brain.json'):
+    brain_data = db_helper.get_state('ai_brain', {})
+    if not brain_data and os.path.exists('ai_brain.json'):
         try:
             with open('ai_brain.json', 'r') as f_br:
                 brain_data = json.load(f_br)
-                
+        except Exception:
+            pass
+    if brain_data:
+        try:
             br_c1, br_c2, br_c3 = st.columns(3)
             br_c1.markdown(fancy_metric("AI Brain Version", brain_data.get('brain_version', 'v3.0-NeuralSniper')), unsafe_allow_html=True)
             br_c2.markdown(fancy_metric("AI IQ Score", f"{brain_data.get('iq_score', 138)}", "High-Intelligence"), unsafe_allow_html=True)
@@ -1979,7 +1985,8 @@ To preserve portfolio equity, maximum concurrent open positions are strictly lim
                     "AI Weight": s_val.get('weight')
                 })
             safe_dataframe(pd.DataFrame(strat_rows), hide_index=True)
-        except Exception: pass
+        except Exception:
+            pass
 
 
 # =============================================================
@@ -2366,25 +2373,32 @@ with tab_orders:
                     trade_fee = round(val_inr * 0.001, 2)
                     total_spot_fees += trade_fee
                     
-                    raw_prof = str(r.get('Profit', '0')).replace('₹', '').replace(',', '').strip()
+                    raw_prof = str(r.get('Profit', '0')).replace('₹', '').replace('$', '').replace(',', '').strip()
                     try:
                         g_prof = float(raw_prof)
                     except:
                         g_prof = 0.0
                         
+                    g_prof_inr = round(g_prof * USD_TO_INR, 2) if is_c else round(g_prof, 2)
+                    
                     if act == 'SELL':
                         closed_count += 1
-                        if g_prof > 0:
-                            gross_spot_profit += g_prof
+                        if g_prof_inr > 0:
+                            gross_spot_profit += g_prof_inr
                             wins += 1
-                        elif g_prof < 0:
-                            gross_spot_loss += abs(g_prof)
+                        elif g_prof_inr < 0:
+                            gross_spot_loss += abs(g_prof_inr)
                             losses += 1
-                        net_p = round(g_prof - (trade_fee * 2), 2) # Roundtrip fees
+                        net_p = round(g_prof_inr - (trade_fee * 2), 2) # Roundtrip fees in INR
                     else:
                         net_p = 0.0
                         
                     pr_disp = f"${pr:,.2f}" if is_c else f"₹{pr:,.2f}"
+                    if is_c:
+                        gross_disp = f"+${g_prof:,.2f} (₹{g_prof_inr:+,.2f})" if g_prof > 0 else (f"-${abs(g_prof):,.2f} (₹{g_prof_inr:+,.2f})" if g_prof < 0 else "₹0.00")
+                    else:
+                        gross_disp = f"₹{g_prof_inr:+,.2f}"
+                        
                     enriched_spot.append({
                         "Time (IST)": r.get('Time'),
                         "Symbol": sym.replace('-USD', '').replace('.NS', ''),
@@ -2393,8 +2407,8 @@ with tab_orders:
                         "Quantity": f"{sh:.4f}",
                         "Turnover": f"₹{val_inr:,.2f}",
                         "Fees (0.1%)": f"₹{trade_fee:.2f}",
-                        "Gross Profit": f"₹{g_prof:+.2f}" if act == 'SELL' else "-",
-                        "Net PnL": f"₹{net_p:+.2f}" if act == 'SELL' else "-"
+                        "Gross Profit": gross_disp if act == 'SELL' else "-",
+                        "Net PnL": f"₹{net_p:+,.2f}" if act == 'SELL' else "-"
                     })
                     
                 net_spot_total = (gross_spot_profit - gross_spot_loss - total_spot_fees) if closed_count > 0 else 0.0

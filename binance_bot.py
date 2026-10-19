@@ -109,11 +109,10 @@ def update_ai_brain_after_trade(sym, profit, strategy_key=None):
         import json
 
         import math
-        brain_file = 'ai_brain.json'
-        brain = {}
-        if os.path.exists(brain_file):
+        brain = db_helper.get_state('ai_brain', {})
+        if not brain and os.path.exists('ai_brain.json'):
             try:
-                with open(brain_file, 'r') as f:
+                with open('ai_brain.json', 'r') as f:
                     brain = json.load(f)
             except Exception:
                 pass
@@ -175,9 +174,7 @@ def update_ai_brain_after_trade(sym, profit, strategy_key=None):
         brain['ML_weight'] = min(2.0, round(brain.get('ML_weight', 1.0) + (0.03 if is_win else -0.03), 2))
 
         brain['recent_lessons'] = [lesson] + brain.get('recent_lessons', [])[:4]
-
-        with open(brain_file, 'w') as f:
-            json.dump(brain, f, indent=2, ensure_ascii=False)
+        db_helper.save_state('ai_brain', brain)
             
     except Exception as e:
         pass
@@ -519,11 +516,7 @@ def generate_signal(df, sym):
     # 🧠 SELF-LEARNING AI BRAIN
     import json
 
-    try:
-        with open('ai_brain.json', 'r') as f:
-            ai_brain = json.load(f)
-    except:
-        ai_brain = {"RSI_weight": 1.0, "MACD_weight": 1.0, "BOL_weight": 1.0, "ML_weight": 1.0, "learning_iterations": 0}
+    ai_brain = db_helper.get_state('ai_brain', {"RSI_weight": 1.0, "MACD_weight": 1.0, "BOL_weight": 1.0, "ML_weight": 1.0, "learning_iterations": 0})
 
     current_price = df.iloc[-1]['close']
     
@@ -1055,15 +1048,19 @@ def process_symbol(sym):
         
         # 🏛️ INSTITUTIONAL FEE-AWARE SPOT PROFIT ENGINE:
         # Roundtrip Spot Trading Fee: 0.10% Buy + 0.10% Sell = 0.20%
-        # All exits are guaranteed to cover exchange fees and lock positive net cash:
-        # 1. Target Exit: Reached >= +2.5% profit directly (Clean +2.3% net profit!)
-        # 2. Smart Trailing Exit: Reached >= +2.0% and dipped 0.6% from peak (Locks >= +1.2% net profit!)
-        # 3. Fee-Aware Breakeven Lock: Peak >= +1.5%, exit if drops to <= +0.8% (Guarantees +0.6% net profit after 0.2% fees!)
-        # 4. Confirmed Trend Reversal: Reached >= +1.5% with confirmed SELL signal (Never exit on micro-fluctuations below fees!)
-        is_breakeven_exit = (peak_gain_pct >= 1.5 and profit_pct <= 0.8)
-        is_trailing_exit = (peak_gain_pct >= 2.0 and current_price <= (peak_p * 0.994))
-        is_target_exit = (profit_pct >= 2.5)
-        is_reversal_exit = (profit_pct >= 1.5 and signal == 'sell')
+        # Exits strictly cover exchange fees and lock positive net cash:
+        if is_scalp_style:
+            # ⚡ LIGHTNING SCALPING ENGINE (Minutes-based Micro-Momentum: 2-10 mins):
+            is_breakeven_exit = (peak_gain_pct >= 0.70 and profit_pct <= 0.40)
+            is_trailing_exit = (peak_gain_pct >= 0.85 and current_price <= (peak_p * 0.997))
+            is_target_exit = (profit_pct >= 1.0)
+            is_reversal_exit = (profit_pct >= 0.60 and signal == 'sell')
+        else:
+            # 🏛️ INSTITUTIONAL SWING ENGINE (Hours/Days Trend):
+            is_breakeven_exit = (peak_gain_pct >= 1.5 and profit_pct <= 0.8)
+            is_trailing_exit = (peak_gain_pct >= 2.0 and current_price <= (peak_p * 0.994))
+            is_target_exit = (profit_pct >= 2.5)
+            is_reversal_exit = (profit_pct >= 1.5 and signal == 'sell')
         
         if is_trailing_exit or is_target_exit or is_reversal_exit or is_breakeven_exit:
             profit = (current_price - avg_price) * total_qty

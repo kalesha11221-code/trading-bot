@@ -245,22 +245,13 @@ def merge_csv_data(csv_text, is_futures=False):
 def get_trade_history_df(is_futures=False):
     """
     Returns pandas DataFrame containing complete, unabridged trade history.
-    Fast Path: Reads from local CSV first (0.001s, zero network lag).
-    Fallback: Reads from MongoDB Cloud if local file is missing/empty.
+    1. Primary Path: Reads fresh authoritative data from MongoDB Cloud.
+    2. Fallback Path: Reads local CSV if MongoDB Cloud is offline.
     """
     file_name, col_name, header, fields = _get_trade_meta(is_futures)
     time_col = 'Timestamp' if is_futures else 'Time'
     
-    # 1. Fast Path: Read local CSV populated by Render (0.001s, instant)
-    if os.path.exists(file_name) and os.path.getsize(file_name) > len(header):
-        try:
-            df = pd.read_csv(file_name)
-            if not df.empty:
-                return df
-        except Exception:
-            pass
-
-    # 2. Fallback to MongoDB Cloud if local file is missing/empty
+    # 1. Primary: Fetch authoritative data from MongoDB Cloud
     curr_db = get_mongo_db()
     if curr_db is not None:
         try:
@@ -275,6 +266,15 @@ def get_trade_history_df(is_futures=False):
                     df.to_csv(file_name, index=False)
                 except Exception:
                     pass
+                return df
+        except Exception:
+            pass
+
+    # 2. Fallback: Read local CSV cache if MongoDB is offline
+    if os.path.exists(file_name) and os.path.getsize(file_name) > len(header):
+        try:
+            df = pd.read_csv(file_name)
+            if not df.empty:
                 return df
         except Exception:
             pass

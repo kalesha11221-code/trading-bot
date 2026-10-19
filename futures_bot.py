@@ -200,35 +200,32 @@ def run_futures_bot():
                     should_close = False
                     reason = ""
                     
-                    # 1. 🎯 INSTITUTIONAL TAKE PROFIT (+8.0% ROE = +₹400 gross | +₹375 NET PROFIT after fee)
-                    # 2:1 Risk-to-Reward ratio that beats the Stop-Loss cleanly!
-                    if roe_pct >= 8.0:
+                    # 1. 🎯 FAST SCALPING TAKE PROFIT (+3.5% ROE = +₹175 gross | +₹150 NET PROFIT after fee)
+                    # Quickly captures 0.7% micro-momentum spikes in 3-10 minutes!
+                    if roe_pct >= 3.5:
                         should_close = True
-                        reason = f"TAKE_PROFIT_TARGET (+8.0% ROE | Net: +₹{net_pnl_inr:.2f})"
+                        reason = f"TAKE_PROFIT_TARGET (+3.5% ROE | Net: +₹{net_pnl_inr:.2f})"
                     
-                    # 2. 🛡️ DYNAMIC TRAILING PROFIT LOCK (Peak >= +5.0% ROE, locks profit if dips 1.2%)
-                    # Guarantees exit with at least +₹165 to +₹350 NET cash in pocket!
-                    elif peak_roe >= 5.0 and roe_pct <= (peak_roe - 1.2):
+                    # 2. 🛡️ DYNAMIC TRAILING PROFIT LOCK (Peak >= +3.0% ROE, locks profit if dips 0.8%)
+                    elif peak_roe >= 3.0 and roe_pct <= (peak_roe - 0.8):
                         should_close = True
                         reason = f"TRAILING_PROFIT_LOCK (Peak: +{peak_roe:.1f}%, Net: +₹{net_pnl_inr:.2f})"
                         
                     # 3. 🔒 FEE-AWARE TRUE BREAKEVEN LOCK
-                    # If trade went up to +3.5% ROE earlier, lock exit at +1.5% ROE (+₹75 gross)
-                    # Guaranteeing +₹50.00 CLEAN NET PROFIT even after Binance ₹25 fee is deducted!
-                    elif peak_roe >= 3.5 and roe_pct <= 1.5:
+                    # If trade went up to +2.0% ROE earlier, lock exit at +1.0% ROE (+₹50 gross | +₹25 NET)
+                    elif peak_roe >= 2.0 and roe_pct <= 1.0:
                         should_close = True
-                        reason = f"TRUE_BREAKEVEN_NET_LOCK (+1.5% ROE | Net: +₹{net_pnl_inr:.2f})"
+                        reason = f"TRUE_BREAKEVEN_NET_LOCK (+1.0% ROE | Net: +₹{net_pnl_inr:.2f})"
                         
-                    # 4. 🔄 CONFIRMED REVERSAL EXIT (Must have at least +3.0% ROE | Net +₹125)
-                    # NEVER exits on micro-fluctuations that only enrich the broker with fees!
-                    elif (side == 'LONG' and signal == 'SHORT' and roe_pct >= 3.0) or (side == 'SHORT' and signal == 'LONG' and roe_pct >= 3.0):
+                    # 4. 🔄 CONFIRMED REVERSAL EXIT (Must have at least +1.5% ROE | Net +₹50)
+                    elif (side == 'LONG' and signal == 'SHORT' and roe_pct >= 1.5) or (side == 'SHORT' and signal == 'LONG' and roe_pct >= 1.5):
                         should_close = True
                         reason = f"REVERSAL_NET_PROFIT_LOCK (Net: +₹{net_pnl_inr:.2f})"
                         
-                    # 5. 🛑 STRICT RISK GUARD / STOP LOSS (-3.5% ROE = ₹175 max loss)
-                    elif roe_pct <= -3.5:
+                    # 5. 🛑 STRICT RISK GUARD / STOP LOSS (-2.5% ROE = ₹125 max loss)
+                    elif roe_pct <= -2.5:
                         should_close = True
-                        reason = f"HARD_STOP_LOSS (-3.5% ROE | Capital Protected)"
+                        reason = f"HARD_STOP_LOSS (-2.5% ROE | Capital Protected)"
                         
                     if should_close:
                         log_trade(sym, "CLOSE", side, entry, current_price, margin, LEVERAGE, round(pnl_inr, 2))
