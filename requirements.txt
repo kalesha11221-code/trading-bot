@@ -12,3 +12,7 @@ google-generativeai
 pymongo==4.6.1
 certifi
 scikit-learn
+smartapi-python
+pyotp
+logzero
+websocket-client

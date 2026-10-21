@@ -1,0 +1,37 @@
+{
+    "HDFCBANK-EQ": {
+        "token": "1333",
+        "name": "HDFCBANK",
+        "lotsize": "1"
+    },
+    "TCS-EQ": {
+        "token": "11536",
+        "name": "TCS",
+        "lotsize": "1"
+    },
+    "INFY-EQ": {
+        "token": "1594",
+        "name": "INFY",
+        "lotsize": "1"
+    },
+    "ITC-EQ": {
+        "token": "1660",
+        "name": "ITC",
+        "lotsize": "1"
+    },
+    "ICICIBANK-EQ": {
+        "token": "4963",
+        "name": "ICICIBANK",
+        "lotsize": "1"
+    },
+    "SBIN-EQ": {
+        "token": "3045",
+        "name": "SBIN",
+        "lotsize": "1"
+    },
+    "RELIANCE-EQ": {
+        "token": "2885",
+        "name": "RELIANCE",
+        "lotsize": "1"
+    }
+}

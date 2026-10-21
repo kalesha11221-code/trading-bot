@@ -668,6 +668,7 @@ st.sidebar.title("🤖 AI Trading Mode")
 # Trading Mode Switch
 mode_options = [
     "🌐🇮🇳 Dual Trading (Crypto 24/7 + Indian Stocks NSE)",
+    "🇮🇳💰 Angel One Live Trading (Real Indian Stocks)",
     "🇮🇳 Paper Trading (Indian Stocks - Zerodha Virtual)",
     "📝 Paper Trading (Crypto - Binance Virtual)",
     "💰 Live Trading (Binance Real Money)"
@@ -678,7 +679,9 @@ if os.path.exists('trading_mode.txt'):
     try:
         with open('trading_mode.txt', 'r') as f:
             c = f.read().strip()
-            if "Dual" in c:
+            if "Angel" in c:
+                saved_mode = "🇮🇳💰 Angel One Live Trading (Real Indian Stocks)"
+            elif "Dual" in c:
                 saved_mode = "🌐🇮🇳 Dual Trading (Crypto 24/7 + Indian Stocks NSE)"
             elif "Zerodha" in c or "Indian" in c:
                 saved_mode = "🇮🇳 Paper Trading (Indian Stocks - Zerodha Virtual)"
@@ -693,7 +696,15 @@ trading_mode = st.sidebar.radio("Trading Mode Switch", mode_options, index=mode_
 st.sidebar.markdown("---")
 
 is_dual_mode = "Dual" in trading_mode
-is_zerodha_mode = ("Zerodha" in trading_mode or is_dual_mode)
+is_angel_live = "Angel" in trading_mode
+is_zerodha_mode = ("Zerodha" in trading_mode or is_dual_mode or is_angel_live)
+
+angel_live_cash = 0.0
+try:
+    import angel_helper
+    angel_live_cash = angel_helper.angel_engine.get_available_cash()
+except Exception:
+    pass
 
 live_usdt_balance = 0.0
 try:
@@ -711,7 +722,14 @@ try:
 except Exception:
     pass
 
-if is_dual_mode:
+if is_angel_live:
+    st.sidebar.success(f"🇮🇳💰 **Angel One Live Connected!**")
+    st.sidebar.markdown(f"**👤 Account:** SHAIK KALESHA (`AABZ864543`)\n\n**💵 Live Cash:** `₹{angel_live_cash:,.2f}`")
+    if angel_live_cash > 0:
+        st.sidebar.warning("⚡ Real Indian Stock orders will execute on NSE with live funds.")
+    else:
+        st.sidebar.info("💡 Deposit funds via PhonePe / GPay into Angel One to begin executing live orders.")
+elif is_dual_mode:
     st.sidebar.success("🌐🇮🇳 **Dual Trading Active!**")
     st.sidebar.info("🚀 24/7 Crypto Spot and Indian NSE Stocks running concurrently.")
     st.sidebar.markdown(f"**💰 Capital:** ₹50,000 (NSE) + " + (f"${live_usdt_balance:.2f} (Binance Live)" if live_usdt_balance > 0 else "$10,000 (Crypto Virtual)"))

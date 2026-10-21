@@ -43,6 +43,11 @@ def analyze_pattern_future(df):
 
 import os
 import db_helper
+try:
+    import angel_helper
+    HAS_ANGEL = True
+except Exception:
+    HAS_ANGEL = False
 
 import concurrent.futures
 import threading
@@ -290,7 +295,9 @@ def get_current_trading_mode():
         try:
             with open('trading_mode.txt', 'r') as f:
                 content = f.read().strip()
-            if "Dual" in content:
+            if "Angel" in content or "ANGEL" in content:
+                return "ANGEL_LIVE"
+            elif "Dual" in content:
                 return "DUAL_TRADING"
             elif "Zerodha" in content or "Indian" in content or "NSE" in content:
                 return "ZERODHA_PAPER"
@@ -302,9 +309,14 @@ def get_current_trading_mode():
     return "DUAL_TRADING"
 
 def is_live_trading():
-    return get_current_trading_mode() == "BINANCE_LIVE"
+    return get_current_trading_mode() in ("BINANCE_LIVE", "ANGEL_LIVE")
 
 def execute_live_order(action, sym, quantity=None, quote_amount=None):
+    # 🇮🇳 Indian Stocks Live Order Routing (Angel One SmartAPI)
+    if (".NS" in sym or ".BO" in sym) and HAS_ANGEL:
+        return angel_helper.angel_engine.execute_order(action, sym, quantity)
+
+    # 🪙 Crypto Live Order Routing (Binance CCXT)
     if not exchange: return False, "No exchange initialized"
     market_sym = sym.replace("-USD", "/USDT")
     try:
@@ -325,7 +337,7 @@ def execute_live_order(action, sym, quantity=None, quote_amount=None):
             order = exchange.create_market_sell_order(market_sym, sell_qty)
             return True, order
     except Exception as e:
-        log_status(f"⚠️ Live Binance Error ({market_sym}): {e}")
+        log_status(f"⚠️ Live Order Error ({market_sym}): {e}")
         return False, str(e)
     return False, "Unknown"
 
@@ -1067,11 +1079,11 @@ def process_symbol(sym):
             profit = (current_price - avg_price) * total_qty
             last_exit_times[sym] = time.time()
             
-            # Execute real order if in Live Mode on Binance
-            if live_mode and is_crypto:
+            # Execute real order if in Live Mode on Binance or Angel One
+            if live_mode:
                 success, res = execute_live_order("SELL", sym, quantity=total_qty)
                 if not success:
-                    log_status(f"⚠️ Live Binance Sell Warning ({sym}): {res}")
+                    log_status(f"⚠️ Live Sell Warning ({sym}): {res}")
             
             qty_label = f"{int(total_qty)} షేర్లు" if (is_indian and total_qty == int(total_qty)) else f"Qty: {total_qty:.5f}"
             price_disp = f"₹{current_price:,.2f}" if is_indian else f"${current_price:,.2f}"
@@ -1104,10 +1116,10 @@ def process_symbol(sym):
         if dca_layers < 3 and is_dca_dip:
             current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
             if (current_invested + slice_cost_inr) <= portfolio_cap:
-                if live_mode and is_crypto:
-                    success, res = execute_live_order("BUY", sym, quote_amount=slice_cost_usd)
+                if live_mode:
+                    success, res = execute_live_order("BUY", sym, quantity=slice_qty, quote_amount=slice_cost_usd)
                     if not success:
-                        log_status(f"⚠️ Live Binance DCA Buy Warning ({sym}): {res}")
+                        log_status(f"⚠️ Live DCA Buy Warning ({sym}): {res}")
                 
                 layer = dca_layers + 1
                 pos['entries'].append({
@@ -1163,10 +1175,10 @@ def process_symbol(sym):
         if len(dca_state) < max_positions:
             current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
             if (current_invested + slice_cost_inr) <= portfolio_cap:
-                if live_mode and is_crypto:
-                    success, res = execute_live_order("BUY", sym, quote_amount=slice_cost_usd)
+                if live_mode:
+                    success, res = execute_live_order("BUY", sym, quantity=slice_qty, quote_amount=slice_cost_usd)
                     if not success:
-                        log_status(f"⚠️ Live Binance Buy Warning ({sym}): {res}")
+                        log_status(f"⚠️ Live Buy Warning ({sym}): {res}")
                         
                 target_p = current_price * (1.009 if is_scalp_style else 1.015)
                 dca_state[sym] = {
