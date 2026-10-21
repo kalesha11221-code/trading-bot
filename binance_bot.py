@@ -989,15 +989,15 @@ def process_symbol(sym):
     if is_indian:
         mode_str = "🇮🇳 ZERODHA VIRTUAL"
         if cap_mode == "High Profit" or is_scalp_style:
-            portfolio_cap = 50000.0  # ₹50,000 active capital
+            portfolio_cap = 50000.0  # ₹50,000 active capital (Velocity Multi-Asset Scalper)
             if current_price > 2500:
-                slice_qty = 4.0   # 4 shares for Reliance/TCS (~₹11,000-₹14,000) -> +1.5% = ₹165 - ₹210 profit
+                slice_qty = 2.0   # 2 shares for Reliance/TCS (~₹5,000-₹6,000) -> Fast rotation
             elif current_price > 700:
-                slice_qty = 12.0  # 12 shares for TMCV, SBI, Infosys, HDFC Bank (~₹9,000-₹12,000) -> +1.5% = ₹150 profit
+                slice_qty = 7.0   # 7 shares for TMCV, SBI, Infosys, HDFC Bank (~₹5,000-₹6,000)
             elif current_price > 100:
-                slice_qty = 40.0  # 40 shares for ITC, Zomato/Eternal (~₹11,000-₹12,000) -> +1.5% = ₹170 profit
+                slice_qty = 20.0  # 20 shares for ITC, Zomato/Eternal (~₹5,000-₹5,500)
             else:
-                slice_qty = 150.0 # 150 shares for Suzlon (~₹9,000-₹12,000) -> +1.5% = ₹150 profit
+                slice_qty = 75.0  # 75 shares for Suzlon (~₹5,000)
         elif cap_mode == "Smart Dynamic":
             portfolio_cap = 50000.0
             if current_price > 2500: slice_qty = 2.0
@@ -1015,10 +1015,10 @@ def process_symbol(sym):
     else:
         mode_str = "💰 LIVE BINANCE" if (live_mode and is_crypto) else "📝 VIRTUAL"
         if cap_mode == "High Profit" or is_scalp_style:
-            slice_cost_usd = round(120.0 * brain_conf, 1) # $120 per entry (~₹10,140) -> +1.5% = $1.80 (~₹152 profit)
+            slice_cost_usd = round(60.0 * brain_conf, 1) # $60 per entry (~₹5,070) for 8-asset high-speed rotation
             portfolio_cap = 50000.0
         elif cap_mode == "Smart Dynamic":
-            slice_cost_usd = round(60.0 * brain_conf, 1)  # $60 (~₹5,070)
+            slice_cost_usd = round(45.0 * brain_conf, 1)  # $45 (~₹3,800)
             portfolio_cap = 50000.0
         else:
             slice_cost_usd = round(25.0 * brain_conf, 1)  # $25 (~₹2,100)
@@ -1051,10 +1051,11 @@ def process_symbol(sym):
         # Exits strictly cover exchange fees and lock positive net cash:
         if is_scalp_style:
             # ⚡ LIGHTNING SCALPING ENGINE (Minutes-based Micro-Momentum: 2-10 mins):
-            is_breakeven_exit = (peak_gain_pct >= 0.70 and profit_pct <= 0.40)
-            is_trailing_exit = (peak_gain_pct >= 0.85 and current_price <= (peak_p * 0.997))
-            is_target_exit = (profit_pct >= 1.0)
-            is_reversal_exit = (profit_pct >= 0.60 and signal == 'sell')
+            # Target is +0.90%, Trailing locks at +0.75%, Breakeven locks at +0.55%
+            is_breakeven_exit = (peak_gain_pct >= 0.55 and profit_pct <= 0.30)
+            is_trailing_exit = (peak_gain_pct >= 0.75 and current_price <= (peak_p * 0.998))
+            is_target_exit = (profit_pct >= 0.90)
+            is_reversal_exit = (profit_pct >= 0.50 and signal == 'sell')
         else:
             # 🏛️ INSTITUTIONAL SWING ENGINE (Hours/Days Trend):
             is_breakeven_exit = (peak_gain_pct >= 1.5 and profit_pct <= 0.8)
@@ -1117,7 +1118,9 @@ def process_symbol(sym):
                 })
                 pos['total_qty'] += slice_qty
                 pos['total_cost'] += slice_cost_inr
-                pos['avg_price'] = pos['total_cost'] / pos['total_qty']
+                # Always calculate avg_price in the asset's native currency (USD for Crypto, INR for Indian stocks)
+                total_native_spent = sum(float(e.get('price', 0)) * float(e.get('qty', 0)) for e in pos['entries'])
+                pos['avg_price'] = (total_native_spent / pos['total_qty']) if pos['total_qty'] > 0 else current_price
                 pos['target_sell_price'] = pos['avg_price'] * (1.010 if is_scalp_style else 1.015)
                 pos['peak_price'] = current_price
                 save_dca_state(dca_state)
@@ -1156,7 +1159,7 @@ def process_symbol(sym):
     # 3. FIRST DIP ENTRY (INITIAL FRACTIONAL SLICE)
     # -------------------------------------------------------------
     elif pos is None and signal == 'buy' and ml_brain.get_ml_signal(sym) == 1 and ml_brain.get_smc_analysis(sym).get('bias') != 'BEARISH':
-        max_positions = 4 if is_scalp_style else MAX_ACTIVE_POSITIONS
+        max_positions = 8 if is_scalp_style else MAX_ACTIVE_POSITIONS
         if len(dca_state) < max_positions:
             current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
             if (current_invested + slice_cost_inr) <= portfolio_cap:
@@ -1165,7 +1168,7 @@ def process_symbol(sym):
                     if not success:
                         log_status(f"⚠️ Live Binance Buy Warning ({sym}): {res}")
                         
-                target_p = current_price * 1.015
+                target_p = current_price * (1.009 if is_scalp_style else 1.015)
                 dca_state[sym] = {
                     "entries": [{
                         "price": current_price,

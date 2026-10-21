@@ -182,12 +182,15 @@ def run_futures_bot():
                     
                     if side == 'LONG':
                         pnl_usd = (current_price - entry) * qty
+                        roe_pct = ((current_price - entry) / entry) * 100.0 * LEVERAGE
                     else: 
                         pnl_usd = (entry - current_price) * qty
+                        roe_pct = ((entry - current_price) / entry) * 100.0 * LEVERAGE
                         
                     # 🏛️ INSTITUTIONAL FEE-AWARE P&L ENGINE
                     # Margin: ₹5,000 | Leverage: 5x | Notional: ₹25,000
                     # Roundtrip Taker Fee: 0.10% on ₹25,000 = ₹25.00 (0.50% ROE)
+                    pnl_inr = pnl_usd * USD_TO_INR
                     fee_inr = margin * LEVERAGE * 0.001  # Exact ₹25 roundtrip fee
                     net_pnl_inr = pnl_inr - fee_inr
                     net_roe_pct = (net_pnl_inr / margin) * 100.0
@@ -200,32 +203,32 @@ def run_futures_bot():
                     should_close = False
                     reason = ""
                     
-                    # 1. 🎯 FAST SCALPING TAKE PROFIT (+3.5% ROE = +₹175 gross | +₹150 NET PROFIT after fee)
-                    # Quickly captures 0.7% micro-momentum spikes in 3-10 minutes!
-                    if roe_pct >= 3.5:
+                    # 1. 🎯 FAST SCALPING TAKE PROFIT (+3.0% ROE = +₹150 NET PROFIT after fee)
+                    # Quickly captures 0.6% micro-momentum spikes in 3-10 minutes!
+                    if roe_pct >= 3.0:
                         should_close = True
-                        reason = f"TAKE_PROFIT_TARGET (+3.5% ROE | Net: +₹{net_pnl_inr:.2f})"
+                        reason = f"TAKE_PROFIT_TARGET (+3.0% ROE | Net: +₹{net_pnl_inr:.2f})"
                     
-                    # 2. 🛡️ DYNAMIC TRAILING PROFIT LOCK (Peak >= +3.0% ROE, locks profit if dips 0.8%)
-                    elif peak_roe >= 3.0 and roe_pct <= (peak_roe - 0.8):
+                    # 2. 🛡️ DYNAMIC TRAILING PROFIT LOCK (Peak >= +2.5% ROE, locks profit if dips 0.6%)
+                    elif peak_roe >= 2.5 and roe_pct <= (peak_roe - 0.6):
                         should_close = True
                         reason = f"TRAILING_PROFIT_LOCK (Peak: +{peak_roe:.1f}%, Net: +₹{net_pnl_inr:.2f})"
                         
                     # 3. 🔒 FEE-AWARE TRUE BREAKEVEN LOCK
-                    # If trade went up to +2.0% ROE earlier, lock exit at +1.0% ROE (+₹50 gross | +₹25 NET)
-                    elif peak_roe >= 2.0 and roe_pct <= 1.0:
+                    # If trade went up to +1.8% ROE earlier, lock exit at +0.8% ROE (+₹40 NET)
+                    elif peak_roe >= 1.8 and roe_pct <= 0.8:
                         should_close = True
-                        reason = f"TRUE_BREAKEVEN_NET_LOCK (+1.0% ROE | Net: +₹{net_pnl_inr:.2f})"
+                        reason = f"TRUE_BREAKEVEN_NET_LOCK (+0.8% ROE | Net: +₹{net_pnl_inr:.2f})"
                         
-                    # 4. 🔄 CONFIRMED REVERSAL EXIT (Must have at least +1.5% ROE | Net +₹50)
-                    elif (side == 'LONG' and signal == 'SHORT' and roe_pct >= 1.5) or (side == 'SHORT' and signal == 'LONG' and roe_pct >= 1.5):
+                    # 4. 🔄 CONFIRMED REVERSAL EXIT (Must have at least +1.0% ROE)
+                    elif (side == 'LONG' and signal == 'SHORT' and roe_pct >= 1.0) or (side == 'SHORT' and signal == 'LONG' and roe_pct >= 1.0):
                         should_close = True
                         reason = f"REVERSAL_NET_PROFIT_LOCK (Net: +₹{net_pnl_inr:.2f})"
                         
-                    # 5. 🛑 STRICT RISK GUARD / STOP LOSS (-2.5% ROE = ₹125 max loss)
-                    elif roe_pct <= -2.5:
+                    # 5. 🛑 RISK GUARD / STOP LOSS (-10.0% ROE = ₹500 max loss on ₹5,000 margin)
+                    elif roe_pct <= -10.0:
                         should_close = True
-                        reason = f"HARD_STOP_LOSS (-2.5% ROE | Capital Protected)"
+                        reason = f"HARD_STOP_LOSS (-10.0% ROE | Capital Protected)"
                         
                     if should_close:
                         log_trade(sym, "CLOSE", side, entry, current_price, margin, LEVERAGE, round(pnl_inr, 2))
