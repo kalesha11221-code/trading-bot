@@ -27,7 +27,11 @@ class AngelOneEngine:
             "ITC-EQ": {"token": "1660", "name": "ITC", "lotsize": "1"},
             "ICICIBANK-EQ": {"token": "4963", "name": "ICICIBANK", "lotsize": "1"},
             "SBIN-EQ": {"token": "3045", "name": "SBIN", "lotsize": "1"},
-            "RELIANCE-EQ": {"token": "2885", "name": "RELIANCE", "lotsize": "1"}
+            "RELIANCE-EQ": {"token": "2885", "name": "RELIANCE", "lotsize": "1"},
+            "TATASTEEL-EQ": {"token": "3499", "name": "TATASTEEL", "lotsize": "1"},
+            "ONGC-EQ": {"token": "2475", "name": "ONGC", "lotsize": "1"},
+            "IOC-EQ": {"token": "1624", "name": "IOC", "lotsize": "1"},
+            "SUZLON-EQ": {"token": "12018", "name": "SUZLON", "lotsize": "1"}
         }
 
     def _get_credentials(self):

@@ -674,30 +674,58 @@ mode_options = [
     "💰 Live Trading (Binance Real Money)"
 ]
 
-saved_mode = "🌐🇮🇳 Dual Trading (Crypto 24/7 + Indian Stocks NSE)"
+saved_mode = "🇮🇳💰 Angel One Live Trading (Real Indian Stocks)"
+# 1. Check MongoDB Cloud state first (highest priority across Streamlit Cloud & Render)
+try:
+    c_doc = db_helper.get_state('trading_mode')
+    if c_doc:
+        c_val = str(c_doc.get('mode', c_doc) if isinstance(c_doc, dict) else c_doc).lower()
+        if "angel" in c_val:
+            saved_mode = "🇮🇳💰 Angel One Live Trading (Real Indian Stocks)"
+        elif "dual" in c_val:
+            saved_mode = "🌐🇮🇳 Dual Trading (Crypto 24/7 + Indian Stocks NSE)"
+        elif "zerodha" in c_val or "nse" in c_val or "indian" in c_val:
+            saved_mode = "🇮🇳 Paper Trading (Indian Stocks - Zerodha Virtual)"
+        elif "binance_live" in c_val or ("live" in c_val and "angel" not in c_val):
+            saved_mode = "💰 Live Trading (Binance Real Money)"
+        elif "paper" in c_val:
+            saved_mode = "📝 Paper Trading (Crypto - Binance Virtual)"
+except Exception:
+    pass
+
+# 2. Check local trading_mode.txt fallback
 if os.path.exists('trading_mode.txt'):
     try:
         with open('trading_mode.txt', 'r') as f:
-            c = f.read().strip()
-            if "Angel" in c:
+            c = f.read().strip().lower()
+            if "angel" in c:
                 saved_mode = "🇮🇳💰 Angel One Live Trading (Real Indian Stocks)"
-            elif "Dual" in c:
+            elif "dual" in c:
                 saved_mode = "🌐🇮🇳 Dual Trading (Crypto 24/7 + Indian Stocks NSE)"
-            elif "Zerodha" in c or "Indian" in c:
+            elif "zerodha" in c or "indian" in c or "nse" in c:
                 saved_mode = "🇮🇳 Paper Trading (Indian Stocks - Zerodha Virtual)"
-            elif "Live" in c:
+            elif "binance_live" in c or ("live" in c and "angel" not in c):
                 saved_mode = "💰 Live Trading (Binance Real Money)"
-            else:
+            elif "paper" in c:
                 saved_mode = "📝 Paper Trading (Crypto - Binance Virtual)"
     except: pass
 
-mode_idx = mode_options.index(saved_mode) if saved_mode in mode_options else 0
+mode_idx = mode_options.index(saved_mode) if saved_mode in mode_options else 1
 trading_mode = st.sidebar.radio("Trading Mode Switch", mode_options, index=mode_idx)
 st.sidebar.markdown("---")
 
 is_dual_mode = "Dual" in trading_mode
 is_angel_live = "Angel" in trading_mode
 is_zerodha_mode = ("Zerodha" in trading_mode or is_dual_mode or is_angel_live)
+
+# Persist mode selection immediately to both local file and MongoDB Atlas
+try:
+    clean_mode_str = "ANGEL_LIVE" if is_angel_live else ("DUAL_TRADING" if is_dual_mode else ("ZERODHA_PAPER" if "Zerodha" in trading_mode else ("BINANCE_LIVE" if "Live" in trading_mode else "BINANCE_PAPER")))
+    with open('trading_mode.txt', 'w') as f:
+        f.write(clean_mode_str)
+    db_helper.save_state('trading_mode', {'mode': clean_mode_str})
+except Exception:
+    pass
 
 angel_live_cash = 0.0
 try:
@@ -903,7 +931,12 @@ except Exception:
 
 st.sidebar.markdown("---")
 
-portfolio_value = 50000.0 if "Live" not in trading_mode else ((live_usdt_balance * 84.5) if live_usdt_balance > 0 else 50000.0)
+if is_angel_live:
+    portfolio_value = max(300.0, angel_live_cash)
+elif "Live" in trading_mode and live_usdt_balance > 0:
+    portfolio_value = live_usdt_balance * 84.5
+else:
+    portfolio_value = 50000.0
 roi = 0.0
 invested_amount = 0.0
 available_cash = portfolio_value
@@ -1431,23 +1464,58 @@ for sym_k, price_info in live_prices.items():
 # ─────────────────────────────────────────────────────────────
 # ⚡ LIVE TICKER TAPE
 # ─────────────────────────────────────────────────────────────
-_TICKER_META = [
-    ("BTC-USD",  "Bitcoin",  "BTC"),
-    ("ETH-USD",  "Ethereum", "ETH"),
-    ("SOL-USD",  "Solana",   "SOL"),
-    ("BNB-USD",  "Binance",  "BNB"),
-    ("DOGE-USD", "Dogecoin", "DOGE"),
-    ("XRP-USD",  "Ripple",   "XRP"),
-]
+if is_angel_live or (is_zerodha_mode and not is_dual_mode):
+    _TICKER_META = [
+        ("ITC.NS",       "ITC Limited",         "ITC"),
+        ("TATASTEEL.NS", "Tata Steel",          "TATASTEEL"),
+        ("ONGC.NS",      "Oil & Natural Gas",   "ONGC"),
+        ("IOC.NS",       "Indian Oil Corp",     "IOC"),
+        ("SUZLON.NS",    "Suzlon Energy",       "SUZLON"),
+        ("SBIN.NS",      "State Bank of India", "SBIN"),
+        ("HDFCBANK.NS",  "HDFC Bank",           "HDFCBANK"),
+        ("RELIANCE.NS",  "Reliance Industries", "RELIANCE"),
+    ]
+else:
+    _TICKER_META = [
+        ("BTC-USD",  "Bitcoin",  "BTC"),
+        ("ETH-USD",  "Ethereum", "ETH"),
+        ("SOL-USD",  "Solana",   "SOL"),
+        ("BNB-USD",  "Binance",  "BNB"),
+        ("DOGE-USD", "Dogecoin", "DOGE"),
+        ("XRP-USD",  "Ripple",   "XRP"),
+    ]
+
+# Populate live prices for any missing symbols in _TICKER_META
+for sym_t, _, _ in _TICKER_META:
+    if sym_t not in live_prices or live_prices[sym_t].get("price", 0) <= 0:
+        if sym_t in scanned_assets and float(scanned_assets[sym_t].get("price", 0)) > 0:
+            p = float(scanned_assets[sym_t]["price"])
+            c_pct = float(scanned_assets[sym_t].get("change_pct", scanned_assets[sym_t].get("pnl_pct", 0.0)))
+            live_prices[sym_t] = {"price": p, "change_pct": c_pct, "high": p*1.01, "low": p*0.99, "volume": 0.0}
+        else:
+            try:
+                t = yf.Ticker(sym_t)
+                p = float(t.fast_info['lastPrice'])
+                prev = float(t.fast_info.get('previousClose', p))
+                c_pct = ((p - prev) / prev * 100) if prev > 0 else 0.0
+                live_prices[sym_t] = {"price": p, "change_pct": c_pct, "high": p*1.01, "low": p*0.99, "volume": 0.0}
+            except Exception:
+                live_prices[sym_t] = {"price": 0.0, "change_pct": 0.0, "high": 0.0, "low": 0.0, "volume": 0.0}
 
 # Real-Time WebSocket Streaming Ticker (Live 0 Page Reloads)
 try:
-    _tape_html = """
-    <div class="tradingview-widget-container" style="background:#131722; border-radius:8px; overflow:hidden;">
-      <div class="tradingview-widget-container__widget"></div>
-      <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js" async>
-      {
-      "symbols": [
+    if is_angel_live:
+        _ticker_symbols_json = """[
+        {"proName": "BSE:ITC", "title": "ITC"},
+        {"proName": "BSE:TATASTEEL", "title": "TATASTEEL"},
+        {"proName": "BSE:ONGC", "title": "ONGC"},
+        {"proName": "BSE:IOC", "title": "IOC"},
+        {"proName": "BSE:SBIN", "title": "SBIN"},
+        {"proName": "BSE:HDFCBANK", "title": "HDFC"},
+        {"proName": "BSE:RELIANCE", "title": "RELIANCE"}
+      ]"""
+    else:
+        _ticker_symbols_json = """[
         {"proName": "BINANCE:BTCUSDT", "title": "BTC/USDT"},
         {"proName": "BINANCE:ETHUSDT", "title": "ETH/USDT"},
         {"proName": "BINANCE:SOLUSDT", "title": "SOL/USDT"},
@@ -1456,13 +1524,19 @@ try:
         {"proName": "BINANCE:XRPUSDT", "title": "XRP/USDT"},
         {"proName": "BSE:RELIANCE", "title": "RELIANCE"},
         {"proName": "BSE:SBIN", "title": "SBIN"}
-      ],
+      ]"""
+    _tape_html = f"""
+    <div class="tradingview-widget-container" style="background:#131722; border-radius:8px; overflow:hidden;">
+      <div class="tradingview-widget-container__widget"></div>
+      <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js" async>
+      {{
+      "symbols": {_ticker_symbols_json},
       "showSymbolLogo": true,
       "isTransparent": true,
       "displayMode": "adaptive",
       "colorTheme": "dark",
       "locale": "en"
-    }
+    }}
       </script>
     </div>
     """
@@ -1480,7 +1554,8 @@ for idx, (sym_t, long_nm, short_nm) in enumerate(_TICKER_META):
     pr_t  = price_info.get("price", 0.0)
     chg_t = price_info.get("change_pct", 0.0)
     chg_sym = "🟢" if chg_t >= 0 else "🔴"
-    pr_str  = f"${pr_t:,.4f}" if pr_t < 1 else f"${pr_t:,.2f}"
+    curr_s = "₹" if (".NS" in sym_t or ".BO" in sym_t) else "$"
+    pr_str  = f"{curr_s}{pr_t:,.4f}" if (0 < pr_t < 1) else f"{curr_s}{pr_t:,.2f}"
     btn_label = f"{chg_sym} {short_nm}  {pr_str}  ({chg_t:+.2f}%)"
     is_active_tick = (st.session_state.get('inspect_trade_key') == sym_t)
     btn_type = "primary" if is_active_tick else "secondary"
@@ -1492,11 +1567,8 @@ for idx, (sym_t, long_nm, short_nm) in enumerate(_TICKER_META):
 st.markdown("<br>", unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# 🏦 2. TOP ZERODHA PORTFOLIO BALANCE RIBBON
+# 🏦 2. TOP PORTFOLIO BALANCE RIBBON & CORE METRICS
 # -------------------------------------------------------------
-initial_capital = 50000.00
-
-# USD → INR rate
 USD_TO_INR = 84.5
 try:
     _inr_url = "https://api.exchangerate-api.com/v4/latest/USD"
@@ -1509,65 +1581,104 @@ try:
 except:
     pass
 
-# 1. Spot Realized Profit (Calculated in INR)
-spot_profit = 0.0
-try:
-    hist_df = db_helper.get_trade_history_df(is_futures=False)
-    if not hist_df.empty and 'Profit' in hist_df.columns:
-        g_prof = 0.0
-        g_loss = 0.0
-        taxes = 0.0
-        for idx, row in hist_df.iterrows():
-            sym_r = str(row.get('Symbol', ''))
-            if not (sym_r.endswith('-USD') or sym_r.endswith('.NS') or sym_r.endswith('.BO')):
-                continue
-            if row['Action'] == 'SELL' and str(row['Profit']) != '-':
-                p_str = str(row['Profit']).replace('₹', '').replace('$', '').replace(',', '').strip()
-                try:
-                    p = -float(p_str.replace('-', '')) if p_str.startswith('-') else float(p_str)
-                    p_inr = p * USD_TO_INR if sym_r.endswith('-USD') else p
-                    if p_inr > 0: g_prof += p_inr
-                    elif p_inr < 0: g_loss += abs(p_inr)
-                    taxes += abs(p_inr) * 0.001
-                except: pass
-        spot_profit = (g_prof - g_loss) - taxes
-except: pass
+all_dca_positions = get_state_smart('dca_state')
+if not isinstance(all_dca_positions, dict):
+    all_dca_positions = {}
 
-# 2. Futures Realized Profit (Net of fees)
-futures_profit = 0.0
-try:
-    df_fo_hist = db_helper.get_trade_history_df(is_futures=True)
-    if not df_fo_hist.empty:
-        for idx, r in df_fo_hist.iterrows():
-            if str(r.get('Action', '')).upper() == 'CLOSE':
-                margin = float(r.get('Margin', 5000.0))
-                lev = int(r.get('Leverage', 5))
-                notional = margin * lev
-                fee = round(notional * 0.001, 2)
-                p = float(r.get('Profit_INR', 0.0))
-                futures_profit += (p - fee)
-except: pass
+if is_angel_live:
+    # 🇮🇳 Angel One Live Mode: Strictly Real Indian Stocks on NSE
+    dca_positions = {k: v for k, v in all_dca_positions.items() if ('.NS' in k or '.BO' in k)}
+    futures_positions = {}
 
-total_profit = spot_profit + futures_profit
+    # Spot Realized Profit for Indian Stocks only
+    spot_profit = 0.0
+    try:
+        hist_df = db_helper.get_trade_history_df(is_futures=False)
+        if not hist_df.empty and 'Profit' in hist_df.columns:
+            for idx, row in hist_df.iterrows():
+                sym_r = str(row.get('Symbol', ''))
+                if not (sym_r.endswith('.NS') or sym_r.endswith('.BO')):
+                    continue
+                if row['Action'] == 'SELL' and str(row['Profit']) != '-':
+                    p_str = str(row['Profit']).replace('₹', '').replace('$', '').replace(',', '').strip()
+                    try:
+                        p = -float(p_str.replace('-', '')) if p_str.startswith('-') else float(p_str)
+                        spot_profit += p
+                    except: pass
+    except: pass
 
-# 1. Read Active Spot (DCA) Positions
-dca_positions = get_state_smart('dca_state')
-spot_invested = 0.0
-for d_sym, d_info in dca_positions.items():
-    spot_invested += float(d_info.get('total_cost', 0.0))
+    futures_profit = 0.0
+    total_profit = spot_profit
 
-# 2. Read Active Futures (5x) Positions & Margin
-futures_positions = get_state_smart('fo_state')
-futures_invested = 0.0
-for f_sym, f_info in futures_positions.items():
-    futures_invested += float(f_info.get('margin', 5000.0))
+    # Real Angel One live cash from RMS
+    live_cash = angel_live_cash if angel_live_cash > 0 else 300.0
+    spot_invested = sum(float(d_info.get('total_cost', 0.0)) for d_info in dca_positions.values())
+    futures_invested = 0.0
+    total_invested = spot_invested
 
-# 3. Combined Total Invested & Cash
-portfolio_value = initial_capital + total_profit
-total_invested = spot_invested + futures_invested
-invested_amount = min(portfolio_value, max(0.0, total_invested))
-available_cash = max(0.0, portfolio_value - invested_amount)
-roi = (total_profit / initial_capital) * 100 if initial_capital > 0 else 0.0
+    initial_capital = max(300.0, round(live_cash + spot_invested - total_profit, 2))
+    portfolio_value = live_cash + spot_invested
+    invested_amount = spot_invested
+    available_cash = live_cash
+    roi = (total_profit / initial_capital) * 100 if initial_capital > 0 else 0.0
+
+else:
+    # Virtual / Paper / Dual Modes
+    dca_positions = all_dca_positions
+    futures_positions = get_state_smart('fo_state')
+    if not isinstance(futures_positions, dict):
+        futures_positions = {}
+    initial_capital = 50000.00
+
+    # 1. Spot Realized Profit (Calculated in INR)
+    spot_profit = 0.0
+    try:
+        hist_df = db_helper.get_trade_history_df(is_futures=False)
+        if not hist_df.empty and 'Profit' in hist_df.columns:
+            g_prof = 0.0
+            g_loss = 0.0
+            taxes = 0.0
+            for idx, row in hist_df.iterrows():
+                sym_r = str(row.get('Symbol', ''))
+                if not (sym_r.endswith('-USD') or sym_r.endswith('.NS') or sym_r.endswith('.BO')):
+                    continue
+                if row['Action'] == 'SELL' and str(row['Profit']) != '-':
+                    p_str = str(row['Profit']).replace('₹', '').replace('$', '').replace(',', '').strip()
+                    try:
+                        p = -float(p_str.replace('-', '')) if p_str.startswith('-') else float(p_str)
+                        p_inr = p * USD_TO_INR if sym_r.endswith('-USD') else p
+                        if p_inr > 0: g_prof += p_inr
+                        elif p_inr < 0: g_loss += abs(p_inr)
+                        taxes += abs(p_inr) * 0.001
+                    except: pass
+            spot_profit = (g_prof - g_loss) - taxes
+    except: pass
+
+    # 2. Futures Realized Profit (Net of fees)
+    futures_profit = 0.0
+    try:
+        df_fo_hist = db_helper.get_trade_history_df(is_futures=True)
+        if not df_fo_hist.empty:
+            for idx, r in df_fo_hist.iterrows():
+                if str(r.get('Action', '')).upper() == 'CLOSE':
+                    margin = float(r.get('Margin', 5000.0))
+                    lev = int(r.get('Leverage', 5))
+                    notional = margin * lev
+                    fee = round(notional * 0.001, 2)
+                    p = float(r.get('Profit_INR', 0.0))
+                    futures_profit += (p - fee)
+    except: pass
+
+    total_profit = spot_profit + futures_profit
+
+    spot_invested = sum(float(d_info.get('total_cost', 0.0)) for d_info in dca_positions.values())
+    futures_invested = sum(float(f_info.get('margin', 5000.0)) for f_info in futures_positions.values())
+
+    portfolio_value = initial_capital + total_profit
+    total_invested = spot_invested + futures_invested
+    invested_amount = min(portfolio_value, max(0.0, total_invested))
+    available_cash = max(0.0, portfolio_value - invested_amount)
+    roi = (total_profit / initial_capital) * 100 if initial_capital > 0 else 0.0
 
 # 4. Spot Floating P&L
 spot_floating_pnl = 0.0
@@ -1634,7 +1745,26 @@ total_floating_pnl_pct = (total_floating_pnl / invested_amount) * 100 if investe
 live_portfolio_value = portfolio_value + total_floating_pnl
 
 # ─── PROFESSIONAL PORTFOLIO HEADER RIBBON ───
-st.markdown("""
+if is_angel_live:
+    st.markdown("""
+<div style="background: linear-gradient(135deg, #0a192f 0%, #172a45 100%);
+            border: 2px solid #00c853; border-radius: 14px; padding: 18px 24px; margin-bottom: 18px;
+            box-shadow: 0 4px 24px rgba(0,200,83,0.25);">
+  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; margin-bottom: 6px;">
+    <div style="font-size: 15px; color: #00e676; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;">
+      🇮🇳 ANGEL ONE SMARTAPI — LIVE ACCOUNT SNAPSHOT
+    </div>
+    <div style="background:#00c853; color:#0d1117; font-weight:800; font-size:11px; padding:4px 12px; border-radius:20px; letter-spacing:.5px;">
+      🟢 REAL MONEY TRADING ACTIVE
+    </div>
+  </div>
+  <div style="font-size: 13px; color: #8892b0;">
+    👤 <b>Account Holder:</b> SHAIK KALESHA (<code>AABZ864543</code>) &nbsp;|&nbsp; 🏛️ <b>Broker:</b> Angel One Ltd &nbsp;|&nbsp; ⚡ <b>Exchange:</b> NSE India Live
+  </div>
+</div>
+""", unsafe_allow_html=True)
+else:
+    st.markdown("""
 <div style="background: linear-gradient(135deg, #0d1117 0%, #1a1f2e 100%);
             border: 1px solid #2962ff; border-radius: 14px; padding: 18px 24px; margin-bottom: 18px;
             box-shadow: 0 4px 24px rgba(41,98,255,0.2);">
@@ -1648,56 +1778,86 @@ with top_b1:
     st.markdown(fancy_metric("🏦 Net Portfolio", f"₹{portfolio_value:,.2f}", f"{roi:+.2f}% Booked ROI"), unsafe_allow_html=True)
     with st.popover("🔍 Realized Profit Details", use_container_width=True):
         st.markdown("### 🏦 Net Portfolio Details")
-        st.info(f"**Initial Capital:** ₹50,000.00\n\n- **Spot Realized:** ₹{spot_profit:+,.2f}\n- **Futures Realized:** ₹{futures_profit:+,.2f}\n\n**Total Booked P&L:** ₹{total_profit:+,.2f}\n**Total Account Balance:** ₹{portfolio_value:,.2f}")
+        if is_angel_live:
+            st.info(f"**👤 Account:** SHAIK KALESHA (`AABZ864543`)\n\n**Initial Deposit:** ₹{initial_capital:,.2f}\n\n- **NSE Stock Realized P&L:** ₹{spot_profit:+,.2f}\n\n**Total Booked P&L:** ₹{total_profit:+,.2f}\n**Total Account Value:** ₹{portfolio_value:,.2f}")
+        else:
+            st.info(f"**Initial Capital:** ₹50,000.00\n\n- **Spot Realized:** ₹{spot_profit:+,.2f}\n- **Futures Realized:** ₹{futures_profit:+,.2f}\n\n**Total Booked P&L:** ₹{total_profit:+,.2f}\n**Total Account Balance:** ₹{portfolio_value:,.2f}")
 
 with top_b2:
     st_tot_trades = len(dca_positions) + len(futures_positions)
-    st.markdown(fancy_metric("🔒 Total Invested", f"₹{invested_amount:,.2f}", f"Spot + Futures ({st_tot_trades})"), unsafe_allow_html=True)
+    sub_title = f"NSE Stocks ({len(dca_positions)})" if is_angel_live else f"Spot + Futures ({st_tot_trades})"
+    st.markdown(fancy_metric("🔒 Total Invested", f"₹{invested_amount:,.2f}", sub_title), unsafe_allow_html=True)
     with st.popover("🔍 Capital Allocation Details", use_container_width=True):
         st.markdown("### 🔒 Investment Capital Breakdown")
-        st.markdown(f"**📌 Spot Investment:** ₹{spot_invested:,.2f} ({len(dca_positions)} assets)")
-        if dca_positions:
-            for s, p in dca_positions.items():
-                st.write(f"- {s}: ₹{p.get('total_cost', 0):,.2f}")
-        st.divider()
-        st.markdown(f"**🚀 Futures Margin (5x):** ₹{futures_invested:,.2f} ({len(futures_positions)} trades)")
-        if futures_positions:
-            for fs, fp in futures_positions.items():
-                st.write(f"- {fs} ({fp.get('side', 'LONG')} 5x): ₹{fp.get('margin', 5000):,.2f}")
+        if is_angel_live:
+            st.markdown(f"**📌 Angel One Stock Investment:** ₹{spot_invested:,.2f} ({len(dca_positions)} stocks)")
+            if dca_positions:
+                for s, p in dca_positions.items():
+                    st.write(f"- {s}: ₹{p.get('total_cost', 0):,.2f}")
+            else:
+                st.caption("No capital currently locked in stocks. 100% available as liquid cash.")
+        else:
+            st.markdown(f"**📌 Spot Investment:** ₹{spot_invested:,.2f} ({len(dca_positions)} assets)")
+            if dca_positions:
+                for s, p in dca_positions.items():
+                    st.write(f"- {s}: ₹{p.get('total_cost', 0):,.2f}")
+            st.divider()
+            st.markdown(f"**🚀 Futures Margin (5x):** ₹{futures_invested:,.2f} ({len(futures_positions)} trades)")
+            if futures_positions:
+                for fs, fp in futures_positions.items():
+                    st.write(f"- {fs} ({fp.get('side', 'LONG')} 5x): ₹{fp.get('margin', 5000):,.2f}")
 
 with top_b3:
-    st.markdown(fancy_metric("💵 Free Liquid Cash", f"₹{available_cash:,.2f}", "Available Capital"), unsafe_allow_html=True)
+    st.markdown(fancy_metric("💵 Free Liquid Cash", f"₹{available_cash:,.2f}", "Angel One Live Cash" if is_angel_live else "Available Capital"), unsafe_allow_html=True)
     with st.popover("🔍 Cash Allocation Details", use_container_width=True):
         st.markdown("### 💵 Free Cash Balance")
-        st.write("Unallocated liquid cash available for new spot entries and margin buffers.")
-        st.write(f"- Total Portfolio Capital: ₹{portfolio_value:,.2f}")
-        st.write(f"- Spot Capital Allocated: ₹{spot_invested:,.2f}")
-        st.write(f"- Futures Margin Allocated: ₹{futures_invested:,.2f}")
-        st.divider()
-        st.success(f"Remaining Liquid Cash: ₹{available_cash:,.2f}")
+        if is_angel_live:
+            st.write("Live available funds in your Angel One trading account (RMS Limit).")
+            st.write(f"- Angel One Client: `AABZ864543`")
+            st.write(f"- Allocated in Open Stocks: ₹{spot_invested:,.2f}")
+            st.divider()
+            st.success(f"Live Available Cash: ₹{available_cash:,.2f}")
+        else:
+            st.write("Unallocated liquid cash available for new spot entries and margin buffers.")
+            st.write(f"- Total Portfolio Capital: ₹{portfolio_value:,.2f}")
+            st.write(f"- Spot Capital Allocated: ₹{spot_invested:,.2f}")
+            st.write(f"- Futures Margin Allocated: ₹{futures_invested:,.2f}")
+            st.divider()
+            st.success(f"Remaining Liquid Cash: ₹{available_cash:,.2f}")
 
 with top_b4:
     top_pnl_color = "normal" if total_floating_pnl >= 0 else "inverse"
     st.markdown(fancy_metric("📈 Floating P&L (Unrealized)", f"₹{total_floating_pnl:+,.2f}", f"{total_floating_pnl_pct:+.2f}% Total", top_pnl_color), unsafe_allow_html=True)
     with st.popover("🔍 Live P&L Breakdown", use_container_width=True):
         st.markdown("### 📈 Floating (Unrealized) P&L")
-        st.markdown(f"**📌 Spot Floating P&L:** ₹{spot_floating_pnl:+.2f}")
-        if dca_positions:
-            for s, pd_info in per_position_pnl.items():
-                pnl = pd_info['pnl_inr']
-                c = "🟢" if pnl >= 0 else "🔴"
-                st.write(f"- {c} {s}: ₹{pnl:+.2f} ({pd_info['pnl_pct']:+.2f}%)")
-        st.divider()
-        st.markdown(f"**🚀 Futures Floating P&L (5x):** ₹{futures_floating_pnl:+.2f}")
-        if futures_positions:
-            for fs, fpd in per_futures_pnl.items():
-                fpnl = fpd['pnl_inr']
-                fc = "🟢" if fpnl >= 0 else "🔴"
-                st.write(f"- {fc} {fs} ({fpd['side']} 5x): ₹{fpnl:+.2f} ({fpd['roe_pct']:+.2f}% ROE)")
+        if is_angel_live:
+            st.markdown(f"**📌 Angel One Stocks Floating P&L:** ₹{spot_floating_pnl:+.2f}")
+            if dca_positions:
+                for s, pd_info in per_position_pnl.items():
+                    pnl = pd_info['pnl_inr']
+                    c = "🟢" if pnl >= 0 else "🔴"
+                    st.write(f"- {c} {s}: ₹{pnl:+.2f} ({pd_info['pnl_pct']:+.2f}%)")
+            else:
+                st.caption("No active open stock positions. Floating P&L is ₹0.00.")
+        else:
+            st.markdown(f"**📌 Spot Floating P&L:** ₹{spot_floating_pnl:+.2f}")
+            if dca_positions:
+                for s, pd_info in per_position_pnl.items():
+                    pnl = pd_info['pnl_inr']
+                    c = "🟢" if pnl >= 0 else "🔴"
+                    st.write(f"- {c} {s}: ₹{pnl:+.2f} ({pd_info['pnl_pct']:+.2f}%)")
+            st.divider()
+            st.markdown(f"**🚀 Futures Floating P&L (5x):** ₹{futures_floating_pnl:+.2f}")
+            if futures_positions:
+                for fs, fpd in per_futures_pnl.items():
+                    fpnl = fpd['pnl_inr']
+                    fc = "🟢" if fpnl >= 0 else "🔴"
+                    st.write(f"- {fc} {fs} ({fpd['side']} 5x): ₹{fpnl:+.2f} ({fpd['roe_pct']:+.2f}% ROE)")
 
 with top_b5:
     live_pf_color = "normal" if live_portfolio_value >= portfolio_value else "inverse"
-    st.markdown(fancy_metric("⚡ Total Portfolio Valuation", f"₹{live_portfolio_value:,.2f}", f"1 USD = ₹{USD_TO_INR:.2f}", live_pf_color), unsafe_allow_html=True)
+    delta_text = "Real Equity" if is_angel_live else f"1 USD = ₹{USD_TO_INR:.2f}"
+    st.markdown(fancy_metric("⚡ Total Portfolio Valuation", f"₹{live_portfolio_value:,.2f}", delta_text, live_pf_color), unsafe_allow_html=True)
     with st.popover("🔍 Valuation Summary", use_container_width=True):
         st.markdown("### ⚡ Net Valuation Details")
         st.write("Total current equity combining booked capital and real-time open positions.")
@@ -1707,15 +1867,15 @@ with top_b5:
         st.divider()
         st.write(f"**Total Live Valuation:** ₹{live_portfolio_value:,.2f}")
 
-
 st.markdown("</div>", unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# 🌟 3. TOP-LEVEL ZERODHA PRO WEB TABS
+# 🌟 3. TOP-LEVEL PRO WEB TABS
 # -------------------------------------------------------------
+tab_spot_title = "📌 Live Positions (Angel One)" if is_angel_live else "📌 Live Positions (Spot)"
 tab_pos, tab_futures, tab_mind, tab_charts, tab_orders, tab_search, tab_voice = st.tabs([
-    "📌 Live Positions (Spot)",
+    tab_spot_title,
     "🚀 Futures (Paper 5x)",
     "🧠 AI Brain & Reasoning",
     "📊 Pro Charts & Patterns",
@@ -1725,18 +1885,22 @@ tab_pos, tab_futures, tab_mind, tab_charts, tab_orders, tab_search, tab_voice = 
 ])
 
 # =============================================================
-# TAB 1: 📌 Live Positions (Spot DCA)
+# TAB 1: 📌 Live Positions
 # =============================================================
 with tab_pos:
-    st.markdown("### 🎯 Active Spot Positions (Live DCA)")
-    st.caption("Click any open position below to inspect detailed DCA entries, target progress, and risk parameters:")
+    if is_angel_live:
+        st.markdown("### 🎯 Active Angel One Positions (NSE Live)")
+        st.caption("Real-time live positions executed on National Stock Exchange (NSE) via Angel One SmartAPI:")
+    else:
+        st.markdown("### 🎯 Active Spot Positions (Live DCA)")
+        st.caption("Click any open position below to inspect detailed DCA entries, target progress, and risk parameters:")
 
     if dca_positions:
         trade_keys = list(dca_positions.keys())
         if 'inspect_trade_key' not in st.session_state or st.session_state['inspect_trade_key'] not in trade_keys:
             st.session_state['inspect_trade_key'] = trade_keys[0]
 
-        # ─── ZERODHA KITE STYLE POSITIONS TABLE (HTML) ───
+        # ─── ZERODHA / ANGEL ONE STYLE POSITIONS TABLE (HTML) ───
         rows_html = ""
         for d_sym, d_info in dca_positions.items():
             pnl_data = per_position_pnl.get(d_sym, {})
@@ -1757,10 +1921,13 @@ with tab_pos:
             pr_fmt   = f"{curr_sym}{live_p:,.4f}" if live_p < 1 else f"{curr_sym}{live_p:,.2f}"
             avg_fmt  = f"{curr_sym}{avg_p:,.4f}" if avg_p < 1 else f"{curr_sym}{avg_p:,.2f}"
             tgt_fmt  = f"{curr_sym}{target_p:,.4f}" if target_p < 1 else f"{curr_sym}{target_p:,.2f}"
+            pos_badge = "ANGEL ONE LIVE (NSE)" if is_angel_live else ("NSE STOCK" if is_ind else "CRYPTO SPOT")
+            badge_color = "#00e676" if is_angel_live else ("#00bcd4" if is_ind else "#2962ff")
+            qty_fmt = f"{int(qty)}" if qty == int(qty) else f"{qty:.5f}"
             rows_html += f"""<tr>
   <td><b style="color:#e0e3eb;">{clean_nm}</b><br>
-      <span style="font-size:11px;color:#2962ff;">CRYPTO SPOT</span></td>
-  <td style="color:#9e9e9e;font-size:12px;">{qty:.5f}</td>
+      <span style="font-size:11px;color:{badge_color};font-weight:600;">{pos_badge}</span></td>
+  <td style="color:#9e9e9e;font-size:12px;">{qty_fmt}</td>
   <td>{avg_fmt}</td>
   <td style="color:#00bcd4;font-weight:600;">{pr_fmt}</td>
   <td style="color:#ffa726;">{tgt_fmt}</td>
@@ -1796,7 +1963,7 @@ with tab_pos:
         st.markdown(textwrap.dedent(positions_table_html), unsafe_allow_html=True)
 
         st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-        st.markdown("##### 🔍 Click any coin below to inspect live candlestick chart & AI pattern:")
+        st.markdown("##### 🔍 Click any asset below to inspect live candlestick chart & AI pattern:")
         s_cols = st.columns(max(1, len(dca_positions)))
         for s_idx, ssym_btn in enumerate(dca_positions.keys()):
             with s_cols[s_idx]:
@@ -1806,7 +1973,9 @@ with tab_pos:
                     st.rerun()
 
     else:
-        if futures_positions:
+        if is_angel_live:
+            st.info(f"ℹ️ **No open positions in Angel One currently.**\n\nLive Cash: **₹{available_cash:,.2f}** | Client: **SHAIK KALESHA (AABZ864543)**\n\nThe bot is actively scanning NSE (ITC, TATASTEEL, ONGC, IOC, SUZLON, SBIN, HDFCBANK) and will place a live BUY order as soon as a high-confluence entry triggers.")
+        elif futures_positions:
             f_names = ", ".join([f"{k} ({v.get('side', 'SHORT')} 5x)" for k, v in futures_positions.items()])
             st.success(f"🚀 **Active Futures Trade Running:** {f_names} with ₹{futures_invested:,.2f} margin! Click the **🚀 Futures (Paper 5x)** tab next door to inspect live entry, target, and ROE.")
         else:
@@ -1817,6 +1986,8 @@ with tab_pos:
 # TAB 2: 🚀 FUTURES PAPER TRADING (5x LEVERAGE)
 # =============================================================
 with tab_futures:
+    if is_angel_live:
+        st.info("ℹ️ **Angel One Live Mode Active!** Your real money (₹300.00) is reserved strictly for Indian Equities on NSE. Crypto Futures below operates independently in simulated paper practice.")
     st.markdown("### 🚀 Crypto Futures Paper Trading (5x Leverage)")
     st.caption("Simulated institutional paper trading with ₹5,000/trade margin, 5x leverage, and strict loss-protection guards. Real-time PnL updates:")
     
@@ -2256,10 +2427,13 @@ with tab_orders:
 
     df_fo_cnt = len(db_helper.get_trade_history_df(is_futures=True))
     df_sp_cnt = len(db_helper.get_trade_history_df(is_futures=False))
-    hist_tab_fut, hist_tab_spot = st.tabs([
-        f"🚀 5x Futures Orders Log ({df_fo_cnt} Trades)",
-        f"📌 Spot Trading Orders Log ({df_sp_cnt} Trades)"
-    ])
+    spot_tab_title = f"🇮🇳 Angel One NSE Trades ({df_sp_cnt} Trades)" if is_angel_live else f"📌 Spot Trading Orders Log ({df_sp_cnt} Trades)"
+    fut_tab_title = f"🚀 5x Futures Orders Log ({df_fo_cnt} Trades)"
+    
+    if is_angel_live:
+        hist_tab_spot, hist_tab_fut = st.tabs([spot_tab_title, fut_tab_title])
+    else:
+        hist_tab_fut, hist_tab_spot = st.tabs([fut_tab_title, spot_tab_title])
 
     with hist_tab_fut:
         col_f1, col_f2 = st.columns([3, 1])

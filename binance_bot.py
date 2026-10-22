@@ -67,9 +67,9 @@ CRYPTO_SYMBOLS = [
 ]
 
 NSE_SYMBOLS = [
-    # 🇮🇳 Top High-Volume Indian Stocks (NSE Zerodha)
-    "RELIANCE.NS", "TMCV.NS", "HDFCBANK.NS", "INFY.NS", 
-    "SBIN.NS", "TCS.NS", "ICICIBANK.NS", "ITC.NS"
+    # 🇮🇳 Top High-Volume Indian Stocks (NSE Zerodha / Angel One)
+    "ITC.NS", "TATASTEEL.NS", "ONGC.NS", "IOC.NS", "SUZLON.NS",
+    "SBIN.NS", "HDFCBANK.NS", "ICICIBANK.NS", "RELIANCE.NS", "INFY.NS", "TCS.NS"
 ]
 
 SYMBOL_ALIASES = {
@@ -1147,8 +1147,13 @@ def process_symbol(sym):
         is_dca_dip = current_price <= (avg_price * dip_needed)
 
         if dca_layers < 3 and is_dca_dip:
-            current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
-            if slice_qty > 0 and (current_invested + slice_cost_inr) <= portfolio_cap:
+            if is_indian and live_mode and HAS_ANGEL:
+                can_afford_dca = (slice_qty > 0 and slice_cost_inr <= angel_cash)
+            else:
+                current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
+                can_afford_dca = (slice_qty > 0 and (current_invested + slice_cost_inr) <= portfolio_cap)
+
+            if can_afford_dca:
                 if live_mode:
                     success, res = execute_live_order("BUY", sym, quantity=slice_qty, quote_amount=slice_cost_usd)
                     if not success:
@@ -1205,43 +1210,52 @@ def process_symbol(sym):
     # -------------------------------------------------------------
     elif pos is None and signal == 'buy' and ml_brain.get_ml_signal(sym) == 1 and ml_brain.get_smc_analysis(sym).get('bias') != 'BEARISH':
         max_positions = 8 if is_scalp_style else MAX_ACTIVE_POSITIONS
-        if len(dca_state) < max_positions:
+        if is_indian and live_mode and HAS_ANGEL:
+            active_angel_pos = {k: v for k, v in dca_state.items() if ('.NS' in k or '.BO' in k)}
+            can_enter = (len(active_angel_pos) < max_positions)
+            can_afford = (slice_qty > 0 and slice_cost_inr <= angel_cash)
+        else:
+            can_enter = (len(dca_state) < max_positions)
             current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
-            if slice_qty > 0 and (current_invested + slice_cost_inr) <= portfolio_cap:
-                if live_mode:
-                    success, res = execute_live_order("BUY", sym, quantity=slice_qty, quote_amount=slice_cost_usd)
-                    if not success:
-                        log_status(f"⚠️ Live Buy Warning ({sym}): {res}")
-                        
-                target_p = current_price * (1.009 if is_scalp_style else 1.015)
-                dca_state[sym] = {
-                    "entries": [{
-                        "price": current_price,
-                        "qty": slice_qty,
-                        "cost": slice_cost_inr,
-                        "time": get_ist_now().strftime('%Y-%m-%d %H:%M:%S')
-                    }],
-                    "avg_price": current_price,
-                    "total_qty": slice_qty,
-                    "total_cost": slice_cost_inr,
-                    "target_sell_price": target_p,
-                    "peak_price": current_price,
-                    "strategy": strat_used
-                }
-                save_dca_state(dca_state)
-                pos = dca_state[sym]
-                
-                qty_label = f"{int(slice_qty)} షేర్లు" if (is_indian and slice_qty == int(slice_qty)) else f"Qty: {slice_qty:.5f}"
-                price_disp = f"₹{current_price:,.2f}" if is_indian else f"${current_price:,.2f}"
-                cost_disp = f"₹{slice_cost_inr:,.2f}" if is_indian else f"${slice_cost_usd} / ₹{slice_cost_inr:,.2f}"
-                target_disp = f"₹{target_p:,.2f}" if is_indian else f"${target_p:,.2f}"
-                
-                msg = f"🎯 [{mode_str} స్కామర్ బ్రెయిన్ 🥷 స్నైపర్ DCA | 🏛️ SMC Institutional Confluence]: {sym} డిప్ లో కొన్నాను @ {price_disp} ({cost_disp} | {qty_label})\n🎯 టార్గెట్ (+3.5% బెస్ట్ ప్రాఫిట్): {target_disp} | టెక్నిక్: {strat_used}\n{thought}"
-                voice_msg = f"Alert. Buying fractional slice of {clean_name}."
-                log_status(f"[{get_ist_now().strftime('%H:%M:%S IST')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
-                log_trade("BUY", sym, current_price, slice_qty, 0.0)
-                send_telegram_message(f"✅ {msg}")
-                action_taken = "BUY"
+            can_afford = (slice_qty > 0 and (current_invested + slice_cost_inr) <= portfolio_cap)
+
+        if can_enter and can_afford:
+            if live_mode:
+                success, res = execute_live_order("BUY", sym, quantity=slice_qty, quote_amount=slice_cost_usd)
+                if not success:
+                    log_status(f"⚠️ Live Buy Warning ({sym}): {res}")
+                    
+            target_p = current_price * (1.009 if is_scalp_style else 1.015)
+            dca_state[sym] = {
+                "entries": [{
+                    "price": current_price,
+                    "qty": slice_qty,
+                    "cost": slice_cost_inr,
+                    "time": get_ist_now().strftime('%Y-%m-%d %H:%M:%S')
+                }],
+                "avg_price": current_price,
+                "total_qty": slice_qty,
+                "total_cost": slice_cost_inr,
+                "target_sell_price": target_p,
+                "peak_price": current_price,
+                "strategy": strat_used,
+                "mode": mode_str,
+                "is_live": live_mode
+            }
+            save_dca_state(dca_state)
+            pos = dca_state[sym]
+            
+            qty_label = f"{int(slice_qty)} షేర్లు" if (is_indian and slice_qty == int(slice_qty)) else f"Qty: {slice_qty:.5f}"
+            price_disp = f"₹{current_price:,.2f}" if is_indian else f"${current_price:,.2f}"
+            cost_disp = f"₹{slice_cost_inr:,.2f}" if is_indian else f"${slice_cost_usd} / ₹{slice_cost_inr:,.2f}"
+            target_disp = f"₹{target_p:,.2f}" if is_indian else f"${target_p:,.2f}"
+            
+            msg = f"🎯 [{mode_str} స్కామర్ బ్రెయిన్ 🥷 స్నైపర్ DCA | 🏛️ SMC Institutional Confluence]: {sym} డిప్ లో కొన్నాను @ {price_disp} ({cost_disp} | {qty_label})\n🎯 టార్గెట్ (+3.5% బెస్ట్ ప్రాఫిట్): {target_disp} | టెక్నిక్: {strat_used}\n{thought}"
+            voice_msg = f"Alert. Buying fractional slice of {clean_name}."
+            log_status(f"[{get_ist_now().strftime('%H:%M:%S IST')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
+            log_trade("BUY", sym, current_price, slice_qty, 0.0)
+            send_telegram_message(f"✅ {msg}")
+            action_taken = "BUY"
 
     # Return full diagnostic radar status
     return {
@@ -1292,7 +1306,10 @@ def run_bot_loop():
             custom_crypto = [s for s, d in custom_wl.items() if d.get('type') == 'CRYPTO' or s.endswith('-USD')]
             custom_nse = [s for s, d in custom_wl.items() if d.get('type') == 'NSE' or s.endswith('.NS') or s.endswith('.BO')]
 
-            if mode == "DUAL_TRADING":
+            if mode == "ANGEL_LIVE":
+                default_symbols = list(dict.fromkeys(NSE_SYMBOLS + custom_nse))
+                broker_name = "Angel One SmartAPI (Live NSE)"
+            elif mode == "DUAL_TRADING":
                 default_symbols = list(dict.fromkeys(CRYPTO_SYMBOLS + NSE_SYMBOLS + list(custom_wl.keys())))
                 broker_name = "Dual Hybrid (Crypto 24/7 + Zerodha NSE)"
             elif mode == "ZERODHA_PAPER":
