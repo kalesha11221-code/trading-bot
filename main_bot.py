@@ -82,13 +82,8 @@ class DummyHandler(BaseHTTPRequestHandler):
             else:
                 out["heartbeat"] = "No heartbeat file found locally"
                 
-            if os.path.exists("dca_state.json"):
-                with open("dca_state.json", "r") as f:
-                    out["dca_state"] = json.load(f)
-                    
-            if os.path.exists("fo_state.json"):
-                with open("fo_state.json", "r") as f:
-                    out["fo_state"] = json.load(f)
+            out["dca_state"] = db_helper.get_state("dca_state", {})
+            out["fo_state"] = db_helper.get_state("fo_state", {})
                     
             if os.path.exists("live_scan_status.json"):
                 with open("live_scan_status.json", "r") as f:
@@ -120,6 +115,15 @@ def run_spot():
 def run_futures():
     while True:
         try:
+            # Check if paper futures trading is allowed
+            try:
+                c_mode = db_helper.get_state('trading_mode')
+                c_str = str(c_mode.get('mode', c_mode) if isinstance(c_mode, dict) else c_mode).lower()
+                if "angel" in c_str:
+                    time.sleep(15)
+                    continue
+            except Exception:
+                pass
             print("Starting Futures Bot...", flush=True)
             futures_bot.run_futures_bot()
         except Exception as e:

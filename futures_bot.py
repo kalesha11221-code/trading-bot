@@ -157,6 +157,24 @@ def generate_futures_signal(df, sym="BTC-USD"):
             
     return 'HOLD', last['close']
 
+def is_paper_trading_allowed():
+    try:
+        c_mode = db_helper.get_state('trading_mode')
+        c_str = str(c_mode.get('mode', c_mode) if isinstance(c_mode, dict) else c_mode).lower()
+        if "angel" in c_str:
+            return False  # ANGEL_LIVE is active: Stop paper trading!
+    except Exception:
+        pass
+    if os.path.exists('trading_mode.txt'):
+        try:
+            with open('trading_mode.txt', 'r') as f:
+                c = f.read().strip().lower()
+                if "angel" in c:
+                    return False
+        except Exception:
+            pass
+    return True
+
 def run_futures_bot():
     init_files()
     cooldown_dict = {}
@@ -164,6 +182,9 @@ def run_futures_bot():
     
     while True:
         try:
+            if not is_paper_trading_allowed():
+                time.sleep(15)
+                continue
             state = get_state()
             open_symbols = list(state.keys())
             
