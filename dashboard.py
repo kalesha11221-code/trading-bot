@@ -1621,10 +1621,13 @@ if is_angel_live:
     futures_invested = 0.0
     total_invested = spot_invested
 
-    initial_capital = max(300.0, round(live_cash + spot_invested - total_profit, 2))
-    portfolio_value = live_cash + spot_invested
+    # 5x Intraday MIS Leverage:
+    # Margin blocked from user capital is 20% (1/5th) of spot_invested
+    blocked_margin = round(spot_invested / 5.0, 2)
+    initial_capital = 300.0
+    available_cash = max(0.0, round(initial_capital + spot_profit - blocked_margin, 2))
+    portfolio_value = round(initial_capital + spot_profit, 2)
     invested_amount = spot_invested
-    available_cash = live_cash
     roi = (total_profit / initial_capital) * 100 if initial_capital > 0 else 0.0
 
 else:
@@ -1790,15 +1793,21 @@ with top_b1:
 
 with top_b2:
     st_tot_trades = len(dca_positions) + len(futures_positions)
-    sub_title = f"NSE Stocks ({len(dca_positions)})" if is_angel_live else f"Spot + Futures ({st_tot_trades})"
-    st.markdown(fancy_metric("🔒 Total Invested", f"₹{invested_amount:,.2f}", sub_title), unsafe_allow_html=True)
+    if is_angel_live:
+        sub_title = f"5x Margin: ₹{blocked_margin:,.2f} Blocked"
+        st.markdown(fancy_metric("🚀 5x Market Exposure", f"₹{invested_amount:,.2f}", sub_title), unsafe_allow_html=True)
+    else:
+        sub_title = f"Spot + Futures ({st_tot_trades})"
+        st.markdown(fancy_metric("🔒 Total Invested", f"₹{invested_amount:,.2f}", sub_title), unsafe_allow_html=True)
     with st.popover("🔍 Capital Allocation Details", use_container_width=True):
         st.markdown("### 🔒 Investment Capital Breakdown")
         if is_angel_live:
-            st.markdown(f"**📌 Angel One Stock Investment:** ₹{spot_invested:,.2f} ({len(dca_positions)} stocks)")
+            st.markdown(f"**📌 Angel One 5x Market Exposure:** ₹{spot_invested:,.2f} ({len(dca_positions)} stocks)")
+            st.markdown(f"**⚡ Actual Cash Margin Blocked (20%):** ₹{blocked_margin:,.2f}")
             if dca_positions:
                 for s, p in dca_positions.items():
-                    st.write(f"- {s}: ₹{p.get('total_cost', 0):,.2f}")
+                    c_cost = float(p.get('total_cost', 0))
+                    st.write(f"- {s}: ₹{c_cost:,.2f} (Margin: ₹{c_cost/5.0:,.2f})")
             else:
                 st.caption("No capital currently locked in stocks. 100% available as liquid cash.")
         else:
@@ -1813,13 +1822,13 @@ with top_b2:
                     st.write(f"- {fs} ({fp.get('side', 'LONG')} 5x): ₹{fp.get('margin', 5000):,.2f}")
 
 with top_b3:
-    st.markdown(fancy_metric("💵 Free Liquid Cash", f"₹{available_cash:,.2f}", "Angel One Live Cash" if is_angel_live else "Available Capital"), unsafe_allow_html=True)
+    st.markdown(fancy_metric("💵 Free Liquid Cash", f"₹{available_cash:,.2f}", "Angel One Free Buffer" if is_angel_live else "Available Capital"), unsafe_allow_html=True)
     with st.popover("🔍 Cash Allocation Details", use_container_width=True):
         st.markdown("### 💵 Free Cash Balance")
         if is_angel_live:
-            st.write("Live available funds in your Angel One trading account (RMS Limit).")
+            st.write("Live available funds in your Angel One trading account.")
             st.write(f"- Angel One Client: `AABZ864543`")
-            st.write(f"- Allocated in Open Stocks: ₹{spot_invested:,.2f}")
+            st.write(f"- Blocked Margin (5x MIS): ₹{blocked_margin:,.2f}")
             st.divider()
             st.success(f"Live Available Cash: ₹{available_cash:,.2f}")
         else:
@@ -1832,7 +1841,8 @@ with top_b3:
 
 with top_b4:
     top_pnl_color = "normal" if total_floating_pnl >= 0 else "inverse"
-    st.markdown(fancy_metric("📈 Floating P&L (Unrealized)", f"₹{total_floating_pnl:+,.2f}", f"{total_floating_pnl_pct:+.2f}% Total", top_pnl_color), unsafe_allow_html=True)
+    pnl_sub = f"{((total_floating_pnl / portfolio_value) * 100 if portfolio_value > 0 else 0):+.2f}% on Capital" if is_angel_live else f"{total_floating_pnl_pct:+.2f}% Total"
+    st.markdown(fancy_metric("📈 Floating P&L (Unrealized)", f"₹{total_floating_pnl:+,.2f}", pnl_sub, top_pnl_color), unsafe_allow_html=True)
     with st.popover("🔍 Live P&L Breakdown", use_container_width=True):
         st.markdown("### 📈 Floating (Unrealized) P&L")
         if is_angel_live:
@@ -1861,8 +1871,8 @@ with top_b4:
 
 with top_b5:
     live_pf_color = "normal" if live_portfolio_value >= portfolio_value else "inverse"
-    delta_text = "Real Equity" if is_angel_live else f"1 USD = ₹{USD_TO_INR:.2f}"
-    st.markdown(fancy_metric("⚡ Total Portfolio Valuation", f"₹{live_portfolio_value:,.2f}", delta_text, live_pf_color), unsafe_allow_html=True)
+    delta_text = "Real Live Equity" if is_angel_live else f"1 USD = ₹{USD_TO_INR:.2f}"
+    st.markdown(fancy_metric("⚡ Total Real Equity", f"₹{live_portfolio_value:,.2f}", delta_text, live_pf_color), unsafe_allow_html=True)
     with st.popover("🔍 Valuation Summary", use_container_width=True):
         st.markdown("### ⚡ Net Valuation Details")
         st.write("Total current equity combining booked capital and real-time open positions.")
@@ -1870,6 +1880,7 @@ with top_b5:
         c = "+" if total_floating_pnl >= 0 else ""
         st.write(f"**Floating P&L:** {c}₹{total_floating_pnl:,.2f}")
         st.divider()
+        st.write(f"**Total Live Valuation:** ₹{live_portfolio_value:,.2f}")
         st.write(f"**Total Live Valuation:** ₹{live_portfolio_value:,.2f}")
 
 st.markdown("</div>", unsafe_allow_html=True)

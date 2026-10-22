@@ -163,11 +163,14 @@ class AngelOneEngine:
         with self._lock:
             try:
                 print(f"🚀 Placing Angel One {action} order: {quantity} shares of {tradingsymbol} ({product_type})...", flush=True)
-                order_res = self.smart_api.placeOrder(order_params)
+                order_res = self.smart_api.placeOrderFullResponse(order_params)
                 if order_res and isinstance(order_res, dict) and order_res.get('status'):
                     order_id = order_res.get('data', {}).get('orderid', 'SUCCESS')
                     print(f"✅ Angel One {action} Executed Successfully! Order ID: {order_id}", flush=True)
                     return True, order_id
+                elif isinstance(order_res, str) and len(order_res) > 5:
+                    print(f"✅ Angel One {action} Executed Successfully! Order ID: {order_res}", flush=True)
+                    return True, order_res
                 else:
                     err_msg = order_res.get('message', str(order_res)) if isinstance(order_res, dict) else str(order_res)
                     print(f"⚠️ Angel One Order Warning: {err_msg}", flush=True)

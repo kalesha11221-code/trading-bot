@@ -1150,6 +1150,7 @@ def process_symbol(sym):
                 success, res = execute_live_order("SELL", sym, quantity=total_qty)
                 if not success:
                     log_status(f"⚠️ Live Sell Warning ({sym}): {res}")
+                    return
             
             qty_label = f"{int(total_qty)} షేర్లు" if (is_indian and total_qty == int(total_qty)) else f"Qty: {total_qty:.5f}"
             price_disp = f"₹{current_price:,.2f}" if is_indian else f"${current_price:,.2f}"
@@ -1184,7 +1185,11 @@ def process_symbol(sym):
 
         if dca_layers < 3 and is_dca_dip:
             if is_indian and live_mode and HAS_ANGEL:
-                can_afford_dca = (slice_qty > 0 and slice_cost_inr <= angel_cash)
+                active_angel_pos = {k: v for k, v in dca_state.items() if ('.NS' in k or '.BO' in k)}
+                current_blocked_margin = sum(float(p.get('total_cost', 0.0)) / 5.0 for p in active_angel_pos.values())
+                available_margin = max(0.0, angel_cash - current_blocked_margin)
+                margin_required = slice_cost_inr / 5.0
+                can_afford_dca = (slice_qty > 0 and margin_required <= available_margin)
             else:
                 current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
                 can_afford_dca = (slice_qty > 0 and (current_invested + slice_cost_inr) <= portfolio_cap)
@@ -1194,6 +1199,7 @@ def process_symbol(sym):
                     success, res = execute_live_order("BUY", sym, quantity=slice_qty, quote_amount=slice_cost_usd)
                     if not success:
                         log_status(f"⚠️ Live DCA Buy Warning ({sym}): {res}")
+                        return
                 
                 layer = dca_layers + 1
                 pos['entries'].append({
@@ -1227,7 +1233,7 @@ def process_symbol(sym):
         elif (dca_layers >= 3 and profit_pct <= -5.0) or profit_pct <= -6.0:
             profit = (current_price - avg_price) * total_qty
             last_exit_times[sym] = time.time()
-            if live_mode and is_crypto:
+            if live_mode:
                 execute_live_order("SELL", sym, quantity=total_qty)
             loss_disp = f"₹{profit:,.2f}"
             msg = f"🛑 [{mode_str} ఎమర్జెన్సీ షీల్డ్]: {sym} -6.0% డీప్ క్రాష్ లో క్యాపిటల్ ని కాపాడేందుకు అమ్మేసాను! (Loss: {loss_disp})"
@@ -1245,13 +1251,15 @@ def process_symbol(sym):
     # 3. FIRST DIP ENTRY (INITIAL FRACTIONAL SLICE)
     # -------------------------------------------------------------
     elif pos is None and signal == 'buy' and ml_brain.get_ml_signal(sym) == 1 and ml_brain.get_smc_analysis(sym).get('bias') != 'BEARISH':
-        max_positions = 8 if is_scalp_style else MAX_ACTIVE_POSITIONS
+        max_positions = 1 if (is_indian and live_mode and angel_cash <= 500) else (8 if is_scalp_style else MAX_ACTIVE_POSITIONS)
         if is_indian and live_mode and HAS_ANGEL:
             active_angel_pos = {k: v for k, v in dca_state.items() if ('.NS' in k or '.BO' in k)}
+            current_blocked_margin = sum(float(p.get('total_cost', 0.0)) / 5.0 for p in active_angel_pos.values())
+            available_margin = max(0.0, angel_cash - current_blocked_margin)
             can_enter = (len(active_angel_pos) < max_positions)
             # With 5x Intraday MIS, margin required is 20% of slice_cost_inr
             margin_required = slice_cost_inr / 5.0
-            can_afford = (slice_qty > 0 and margin_required <= angel_cash)
+            can_afford = (slice_qty > 0 and margin_required <= available_margin)
         else:
             can_enter = (len(dca_state) < max_positions)
             current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
@@ -1262,6 +1270,7 @@ def process_symbol(sym):
                 success, res = execute_live_order("BUY", sym, quantity=slice_qty, quote_amount=slice_cost_usd)
                 if not success:
                     log_status(f"⚠️ Live Buy Warning ({sym}): {res}")
+                    return
                     
             target_p = current_price * (1.009 if is_scalp_style else 1.015)
             dca_state[sym] = {
