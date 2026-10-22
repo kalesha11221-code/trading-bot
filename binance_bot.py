@@ -291,6 +291,23 @@ def load_custom_watchlist():
     return {}
 
 def get_current_trading_mode():
+    # 1. Cloud-synced Mode (Immediate real-time switch across Render & Streamlit)
+    try:
+        c_mode = db_helper.get_state('trading_mode')
+        if c_mode:
+            content = str(c_mode.get('mode', c_mode) if isinstance(c_mode, dict) else c_mode)
+            if "Angel" in content or "ANGEL" in content:
+                return "ANGEL_LIVE"
+            elif "Dual" in content:
+                return "DUAL_TRADING"
+            elif "Zerodha" in content or "Indian" in content or "NSE" in content:
+                return "ZERODHA_PAPER"
+            elif "Live" in content and "Binance" in content:
+                return "BINANCE_LIVE"
+    except Exception:
+        pass
+
+    # 2. Local fallback file
     if os.path.exists('trading_mode.txt'):
         try:
             with open('trading_mode.txt', 'r') as f:
@@ -997,33 +1014,49 @@ def process_symbol(sym):
                 brain_conf = json.load(f_b).get('small_capital_compounding', {}).get('confidence_multiplier', 1.0)
         except: pass
         
-    # Indian Stocks (Zerodha Paper) vs Crypto (Binance) sizing (Optimized for ₹50,000 Capital)
+    # Indian Stocks (Zerodha Paper vs Angel One Live) sizing
     if is_indian:
-        mode_str = "🇮🇳 ZERODHA VIRTUAL"
-        if cap_mode == "High Profit" or is_scalp_style:
-            portfolio_cap = 50000.0  # ₹50,000 active capital (Velocity Multi-Asset Scalper)
-            if current_price > 2500:
-                slice_qty = 2.0   # 2 shares for Reliance/TCS (~₹5,000-₹6,000) -> Fast rotation
-            elif current_price > 700:
-                slice_qty = 7.0   # 7 shares for TMCV, SBI, Infosys, HDFC Bank (~₹5,000-₹6,000)
-            elif current_price > 100:
-                slice_qty = 20.0  # 20 shares for ITC, Zomato/Eternal (~₹5,000-₹5,500)
+        if live_mode and HAS_ANGEL:
+            mode_str = "🇮🇳💰 ANGEL ONE LIVE"
+            angel_cash = angel_helper.angel_engine.get_available_cash()
+            portfolio_cap = max(angel_cash, 300.0)
+            if angel_cash >= current_price:
+                # If cash is small (e.g. ₹300 - ₹3000), buy what fits in cash
+                if angel_cash < 5000:
+                    slice_qty = float(max(1, int(angel_cash // current_price)))
+                else:
+                    slice_qty = float(max(1, int(5000.0 // current_price)))
             else:
-                slice_qty = 75.0  # 75 shares for Suzlon (~₹5,000)
-        elif cap_mode == "Smart Dynamic":
-            portfolio_cap = 50000.0
-            if current_price > 2500: slice_qty = 2.0
-            elif current_price > 700: slice_qty = 6.0
-            elif current_price > 100: slice_qty = 20.0
-            else: slice_qty = 75.0
-        else: # Micro Safe
-            portfolio_cap = 50000.0
-            if current_price > 2500: slice_qty = 1.0
-            elif current_price > 700: slice_qty = 3.0
-            elif current_price > 100: slice_qty = 10.0
-            else: slice_qty = 25.0
-        slice_cost_inr = round(slice_qty * current_price, 2)
-        slice_cost_usd = round(slice_cost_inr / 84.5, 2)
+                # Stock price is higher than available cash (e.g. SBIN @ ₹954 vs cash ₹300)
+                slice_qty = 0.0
+            slice_cost_inr = round(slice_qty * current_price, 2)
+            slice_cost_usd = round(slice_cost_inr / 84.5, 2)
+        else:
+            mode_str = "🇮🇳 ZERODHA VIRTUAL"
+            if cap_mode == "High Profit" or is_scalp_style:
+                portfolio_cap = 50000.0  # ₹50,000 active capital (Velocity Multi-Asset Scalper)
+                if current_price > 2500:
+                    slice_qty = 2.0   # 2 shares for Reliance/TCS (~₹5,000-₹6,000) -> Fast rotation
+                elif current_price > 700:
+                    slice_qty = 7.0   # 7 shares for TMCV, SBI, Infosys, HDFC Bank (~₹5,000-₹6,000)
+                elif current_price > 100:
+                    slice_qty = 20.0  # 20 shares for ITC, Zomato/Eternal (~₹5,000-₹5,500)
+                else:
+                    slice_qty = 75.0  # 75 shares for Suzlon (~₹5,000)
+            elif cap_mode == "Smart Dynamic":
+                portfolio_cap = 50000.0
+                if current_price > 2500: slice_qty = 2.0
+                elif current_price > 700: slice_qty = 6.0
+                elif current_price > 100: slice_qty = 20.0
+                else: slice_qty = 75.0
+            else: # Micro Safe
+                portfolio_cap = 50000.0
+                if current_price > 2500: slice_qty = 1.0
+                elif current_price > 700: slice_qty = 3.0
+                elif current_price > 100: slice_qty = 10.0
+                else: slice_qty = 25.0
+            slice_cost_inr = round(slice_qty * current_price, 2)
+            slice_cost_usd = round(slice_cost_inr / 84.5, 2)
     else:
         mode_str = "💰 LIVE BINANCE" if (live_mode and is_crypto) else "📝 VIRTUAL"
         if cap_mode == "High Profit" or is_scalp_style:
@@ -1115,7 +1148,7 @@ def process_symbol(sym):
 
         if dca_layers < 3 and is_dca_dip:
             current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
-            if (current_invested + slice_cost_inr) <= portfolio_cap:
+            if slice_qty > 0 and (current_invested + slice_cost_inr) <= portfolio_cap:
                 if live_mode:
                     success, res = execute_live_order("BUY", sym, quantity=slice_qty, quote_amount=slice_cost_usd)
                     if not success:
@@ -1174,7 +1207,7 @@ def process_symbol(sym):
         max_positions = 8 if is_scalp_style else MAX_ACTIVE_POSITIONS
         if len(dca_state) < max_positions:
             current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
-            if (current_invested + slice_cost_inr) <= portfolio_cap:
+            if slice_qty > 0 and (current_invested + slice_cost_inr) <= portfolio_cap:
                 if live_mode:
                     success, res = execute_live_order("BUY", sym, quantity=slice_qty, quote_amount=slice_cost_usd)
                     if not success:
