@@ -367,6 +367,44 @@ def execute_live_order(action, sym, quantity=None, quote_amount=None):
 macro_trends = {}
 last_exit_times = {}
 
+# 🌐 NIFTY 50 MOTHER MARKET CONFLUENCE (Indian Market Regime Filter)
+nifty_regime_cache = {'timestamp': 0, 'status': 'NEUTRAL', 'thought': ''}
+
+def get_nifty_market_regime():
+    global nifty_regime_cache
+    now_ts = time.time()
+    # Cache for 180 seconds to protect against rate limits and keep bot ultra-fast
+    if (now_ts - nifty_regime_cache['timestamp']) < 180:
+        return nifty_regime_cache['status'], nifty_regime_cache['thought']
+        
+    try:
+        df_n = fetch_data('^NSEI')
+        if df_n is None or df_n.empty or len(df_n) < 15:
+            return 'NEUTRAL', 'Nifty 50 స్థిరంగా ఉంది.'
+            
+        c_now = float(df_n['close'].iloc[-1])
+        c_prev = float(df_n['close'].iloc[-15])
+        pct_change = ((c_now - c_prev) / c_prev) * 100.0
+        
+        # Severe Market Crash Guard: If Nifty drops > 0.60% in 15 mins, hold back new buys
+        if pct_change <= -0.60:
+            status = 'SEVERE_CRASH'
+            thought = f"🛑 [NIFTY CRASH SHIELD]: నిఫ్టీ 50 లో సడెన్ సెల్లింగ్ ({pct_change:.2f}%) జరుగుతోంది. రిస్క్ అవాయిడ్ చేస్తున్నాను!"
+        elif pct_change >= 0.20:
+            status = 'BULLISH'
+            thought = f"🟢 [NIFTY BULL RUN]: నిఫ్టీ 50 స్ట్రాంగ్ బుల్లిష్ మొమెంటమ్ ({pct_change:+.2f}%) లో ఉంది."
+        elif pct_change <= -0.25:
+            status = 'BEARISH'
+            thought = f"🔴 [NIFTY WEAK]: నిఫ్టీ 50 బలహీనంగా ఉంది ({pct_change:.2f}%)."
+        else:
+            status = 'NEUTRAL'
+            thought = f"⚪ [NIFTY STABLE]: నిఫ్టీ 50 స్థిరంగా కన్సాలిడేషన్ లో ఉంది ({pct_change:+.2f}%)."
+            
+        nifty_regime_cache = {'timestamp': now_ts, 'status': status, 'thought': thought}
+        return status, thought
+    except Exception:
+        return 'NEUTRAL', 'Nifty 50 న్యూట్రల్ గా ఉంది.'
+
 def get_macro_trend(sym):
     global macro_trends
     import time
@@ -691,6 +729,17 @@ def generate_signal(df, sym):
     pred_pts = 0.0
     
     # --- PILLAR 1: TREND ALIGNMENT ---
+    # 🌐 NIFTY 50 MOTHER MARKET CONFLUENCE (Protects real money from market-wide crashes)
+    if is_indian:
+        n_status, n_thought = get_nifty_market_regime()
+        if n_status == 'SEVERE_CRASH' and not extreme_capitulation:
+            return 'hold', f" 🧠 AI ఆలోచన: {n_thought}"
+        elif n_status == 'BULLISH':
+            trend_pts += 1.5
+            thoughts.append(n_thought)
+        elif n_status == 'BEARISH':
+            sell_score += 0.5
+
     if htf_status == 'BULLISH':
         trend_pts += 2.0
         thoughts.append("15-నిమిషాల ట్రెండ్ స్ట్రాంగ్ బుల్లిష్ గా ఉంది.")
@@ -751,9 +800,22 @@ def generate_signal(df, sym):
     buy_score += mom_pts
 
     # --- PILLAR 3: VOLUME & WHALE CONFIRMATION ---
+    is_fii_volume_surge = False
+    vol_ratio = 1.0
+    if len(df) >= 20:
+        vol_sma_20 = df['volume'].iloc[-21:-1].mean()
+        if vol_sma_20 > 0:
+            vol_ratio = last['volume'] / vol_sma_20
+            if vol_ratio >= 2.5 and is_bullish_candle:
+                is_fii_volume_surge = True
+                vol_pts += 3.0
+                thoughts.append(f"⚡ [FII/DII వాల్యూమ్ బ్లాస్ట్]: సాధారణం కంటే {vol_ratio:.1f}x భారీ ఇన్స్టిట్యూషనల్ వాల్యూమ్ తో బ్రేక్‌అవుట్ వచ్చింది!")
+
     if is_whale_pump:
         vol_pts += 3.5
         thoughts.append("🐋 [WHALE RADAR]: వేల్స్ భారీ వాల్యూమ్ తో మార్కెట్ లోకి ఎంటర్ అయ్యారు!")
+    elif is_fii_volume_surge:
+        pass # already added vol_pts and thought above
     elif volume_strong and is_bullish_candle:
         vol_pts += 2.0
         thoughts.append("హై వాల్యూమ్ తో బయ్యర్స్ మార్కెట్ ని గ్రీన్ లో క్లోజ్ చేస్తున్నారు.")
@@ -775,6 +837,19 @@ def generate_signal(df, sym):
     if near_resistance:
         sell_score += 2.0
         thoughts.append("రెసిస్టెన్స్ ఏరియా దగ్గరికి చేరింది.")
+
+    # ⏰ PRO TECHNIQUE 0: 9:15-9:30 AM Opening Range Slingshot (ORB)
+    is_orb_breakout = False
+    if is_indian:
+        curr_t = now.time()
+        t_915 = datetime.strptime("09:15", "%H:%M").time()
+        t_930 = datetime.strptime("09:30", "%H:%M").time()
+        if t_915 <= curr_t <= t_930 and len(df) >= 5:
+            open_high = df['high'].head(15).max()
+            if (last['close'] >= open_high * 0.999) and is_bullish_candle and (volume_strong or is_fii_volume_surge):
+                is_orb_breakout = True
+                pred_pts += 2.5
+                thoughts.append("⏰ [ORB స్లింగ్‌షాట్]: 9:15 AM ఓపెనింగ్ రేంజ్ బ్రేక్‌అవుట్ కన్ఫర్మ్ అయ్యింది! మార్నింగ్ ర్యాలీ!")
 
     # 💎 PRO TECHNIQUE 1: Smart Money Order Block & Liquidity Sweep (SMC)
     strat_dict = ai_brain.get('strategies', {})
@@ -800,7 +875,11 @@ def generate_signal(df, sym):
 
     # Determine Dominant Pro Strategy for Self-Learning Tracker
     chosen_strategy = "rsi_vwap_confluence"
-    if is_liquidity_sweep:
+    if is_fii_volume_surge:
+        chosen_strategy = "institutional_volume_surge"
+    elif is_orb_breakout:
+        chosen_strategy = "opening_range_breakout"
+    elif is_liquidity_sweep:
         chosen_strategy = "order_block_bounce"
     elif is_fvg_fill:
         chosen_strategy = "fvg_imbalance_fill"
@@ -1054,8 +1133,8 @@ def process_symbol(sym):
             # 5x Intraday MIS Leverage (Angel One provides 5x margin for intraday equity)
             intraday_buying_power = angel_cash * 5.0
             portfolio_cap = intraday_buying_power
-            # Per trade allocation: up to 85% of buying power (max ₹1,400 for ₹300 capital)
-            trade_budget = min(intraday_buying_power * 0.85, 1400.0 if angel_cash <= 500 else angel_cash * 3.5)
+            # Auto-Compounding Allocation: Up to 85% of buying power (leaving 15% cash safety buffer)
+            trade_budget = round(intraday_buying_power * 0.85, 2)
             if current_price > 0 and trade_budget >= current_price:
                 slice_qty = float(max(1, int(trade_budget // current_price)))
             else:
@@ -1258,7 +1337,7 @@ def process_symbol(sym):
     # 3. FIRST DIP ENTRY (INITIAL FRACTIONAL SLICE)
     # -------------------------------------------------------------
     elif pos is None and signal == 'buy' and ml_brain.get_ml_signal(sym) == 1 and ml_brain.get_smc_analysis(sym).get('bias') != 'BEARISH':
-        max_positions = 1 if (is_indian and live_mode and angel_cash <= 500) else (8 if is_scalp_style else MAX_ACTIVE_POSITIONS)
+        max_positions = 1 if (is_indian and live_mode and angel_cash <= 750) else (2 if (is_indian and live_mode and angel_cash <= 1500) else (8 if is_scalp_style else MAX_ACTIVE_POSITIONS))
         if is_indian and live_mode and HAS_ANGEL:
             active_angel_pos = {k: v for k, v in dca_state.items() if ('.NS' in k or '.BO' in k)}
             current_blocked_margin = sum(float(p.get('total_cost', 0.0)) / 5.0 for p in active_angel_pos.values())
