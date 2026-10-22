@@ -67,7 +67,8 @@ CRYPTO_SYMBOLS = [
 ]
 
 NSE_SYMBOLS = [
-    # 🇮🇳 Top High-Volume Indian Stocks (NSE Zerodha / Angel One)
+    # 🇮🇳 Top High-Volume & High-Momentum Indian Stocks (NSE Angel One / 5x MIS Scalper)
+    "BEL.NS", "GAIL.NS", "PNB.NS", "IRFC.NS", "MOTHERSON.NS", "NHPC.NS",
     "ITC.NS", "TATASTEEL.NS", "ONGC.NS", "IOC.NS", "SUZLON.NS",
     "SBIN.NS", "HDFCBANK.NS", "ICICIBANK.NS", "RELIANCE.NS", "INFY.NS", "TCS.NS"
 ]
@@ -907,6 +908,33 @@ def log_status(msg, voice_alert=None, color_code='\033[0m'):
 
 
 
+def calculate_trade_charges(sym, buy_value, sell_value):
+    """
+    Calculates exact real-world exchange and broker charges:
+    - For Indian Stocks (Angel One Intraday MIS):
+      Brokerage: 0.25% or ₹20 whichever is lower (on both Buy and Sell)
+      STT: 0.025% on sell turnover
+      Exchange Txn (NSE): 0.00297% on both legs
+      GST: 18% on (Brokerage + Exchange Txn)
+      SEBI: 0.0001%
+      Stamp Duty: 0.003% on buy
+    - For Crypto (Binance Spot):
+      0.10% buy + 0.10% sell
+    """
+    is_ind = (".NS" in sym or ".BO" in sym or sym in ["^NSEI", "^NSEBANK"])
+    if is_ind:
+        brok_buy = min(20.0, buy_value * 0.0025)
+        brok_sell = min(20.0, sell_value * 0.0025)
+        stt = sell_value * 0.00025
+        exch = (buy_value + sell_value) * 0.0000297
+        gst = (brok_buy + brok_sell + exch) * 0.18
+        stamp = buy_value * 0.00003
+        sebi = (buy_value + sell_value) * 0.000001
+        return round(brok_buy + brok_sell + stt + exch + gst + stamp + sebi, 2)
+    else:
+        return round((buy_value + sell_value) * 0.001, 2)
+
+
 def process_symbol(sym):
     now = get_ist_now()
     is_crypto = sym.endswith("-USD")
@@ -1017,17 +1045,18 @@ def process_symbol(sym):
     # Indian Stocks (Zerodha Paper vs Angel One Live) sizing
     if is_indian:
         if live_mode and HAS_ANGEL:
-            mode_str = "🇮🇳💰 ANGEL ONE LIVE"
+            mode_str = "🇮🇳💰 ANGEL ONE LIVE (5x MIS Scalper)"
             angel_cash = angel_helper.angel_engine.get_available_cash()
-            portfolio_cap = max(angel_cash, 300.0)
-            if angel_cash >= current_price:
-                # If cash is small (e.g. ₹300 - ₹3000), buy what fits in cash
-                if angel_cash < 5000:
-                    slice_qty = float(max(1, int(angel_cash // current_price)))
-                else:
-                    slice_qty = float(max(1, int(5000.0 // current_price)))
+            if angel_cash <= 0:
+                angel_cash = 300.0
+            # 5x Intraday MIS Leverage (Angel One provides 5x margin for intraday equity)
+            intraday_buying_power = angel_cash * 5.0
+            portfolio_cap = intraday_buying_power
+            # Per trade allocation: up to 85% of buying power (max ₹1,400 for ₹300 capital)
+            trade_budget = min(intraday_buying_power * 0.85, 1400.0 if angel_cash <= 500 else angel_cash * 3.5)
+            if current_price > 0 and trade_budget >= current_price:
+                slice_qty = float(max(1, int(trade_budget // current_price)))
             else:
-                # Stock price is higher than available cash (e.g. SBIN @ ₹954 vs cash ₹300)
                 slice_qty = 0.0
             slice_cost_inr = round(slice_qty * current_price, 2)
             slice_cost_usd = round(slice_cost_inr / 84.5, 2)
@@ -1091,25 +1120,29 @@ def process_symbol(sym):
             
         peak_gain_pct = ((peak_p - avg_price) / avg_price) * 100.0
         
+        gross_profit = (current_price - avg_price) * total_qty
+        buy_val = avg_price * total_qty
+        sell_val = current_price * total_qty
+        trade_charges = calculate_trade_charges(sym, buy_val, sell_val)
+        net_profit = gross_profit - trade_charges
+
         # 🏛️ INSTITUTIONAL FEE-AWARE SPOT PROFIT ENGINE:
-        # Roundtrip Spot Trading Fee: 0.10% Buy + 0.10% Sell = 0.20%
-        # Exits strictly cover exchange fees and lock positive net cash:
+        # Exits strictly cover broker fees and taxes to lock positive net cash:
         if is_scalp_style:
-            # ⚡ LIGHTNING SCALPING ENGINE (Minutes-based Micro-Momentum: 2-10 mins):
-            # Target is +0.90%, Trailing locks at +0.75%, Breakeven locks at +0.55%
-            is_breakeven_exit = (peak_gain_pct >= 0.55 and profit_pct <= 0.30)
-            is_trailing_exit = (peak_gain_pct >= 0.75 and current_price <= (peak_p * 0.998))
-            is_target_exit = (profit_pct >= 0.90)
-            is_reversal_exit = (profit_pct >= 0.50 and signal == 'sell')
+            # ⚡ LIGHTNING SCALPING ENGINE: Target +0.90%, Trailing +0.75%, Breakeven +0.55%
+            is_breakeven_exit = (peak_gain_pct >= 0.55 and profit_pct <= 0.35 and net_profit > 0)
+            is_trailing_exit = (peak_gain_pct >= 0.75 and current_price <= (peak_p * 0.998) and net_profit > 0)
+            is_target_exit = (profit_pct >= 0.90 and net_profit > 0)
+            is_reversal_exit = (profit_pct >= 0.45 and signal == 'sell')
         else:
             # 🏛️ INSTITUTIONAL SWING ENGINE (Hours/Days Trend):
-            is_breakeven_exit = (peak_gain_pct >= 1.5 and profit_pct <= 0.8)
-            is_trailing_exit = (peak_gain_pct >= 2.0 and current_price <= (peak_p * 0.994))
-            is_target_exit = (profit_pct >= 2.5)
-            is_reversal_exit = (profit_pct >= 1.5 and signal == 'sell')
+            is_breakeven_exit = (peak_gain_pct >= 1.5 and profit_pct <= 0.8 and net_profit > 0)
+            is_trailing_exit = (peak_gain_pct >= 2.0 and current_price <= (peak_p * 0.994) and net_profit > 0)
+            is_target_exit = (profit_pct >= 2.0 and net_profit > 0)
+            is_reversal_exit = (profit_pct >= 1.0 and signal == 'sell')
         
         if is_trailing_exit or is_target_exit or is_reversal_exit or is_breakeven_exit:
-            profit = (current_price - avg_price) * total_qty
+            profit = gross_profit
             last_exit_times[sym] = time.time()
             
             # Execute real order if in Live Mode on Binance or Angel One
@@ -1121,9 +1154,12 @@ def process_symbol(sym):
             qty_label = f"{int(total_qty)} షేర్లు" if (is_indian and total_qty == int(total_qty)) else f"Qty: {total_qty:.5f}"
             price_disp = f"₹{current_price:,.2f}" if is_indian else f"${current_price:,.2f}"
             profit_disp = f"₹{profit:,.2f}"
+            net_disp = f"₹{net_profit:,.2f}"
+            charges_disp = f"₹{trade_charges:,.2f}"
             exit_badge = "🔒 బ్రేక్‌ఈవెన్ లాక్ (Zero Loss)" if is_breakeven_exit and not (is_target_exit or is_trailing_exit) else "🎯 ప్రాఫిట్ మాక్సిమైజర్"
             
-            msg = f"{exit_badge} [{mode_str}]: {sym} ({qty_label}) | ఫలితం: {profit_disp} (+{profit_pct:.2f}%)\n{thought} 🧠 [Peak: +{peak_gain_pct:.2f}% | DCA Layers: {len(pos.get('entries', []))}]"
+            fee_note = f" (ఛార్జీలు: {charges_disp} | చేతికి వచ్చిన నికర లాభం: {net_disp})" if is_indian else ""
+            msg = f"{exit_badge} [{mode_str}]: {sym} ({qty_label}) | ఫలితం: {profit_disp}{fee_note} (+{profit_pct:.2f}%)\n{thought} 🧠 [Peak: +{peak_gain_pct:.2f}% | DCA Layers: {len(pos.get('entries', []))}]"
             voice_msg = f"Alert. Profit taken on {clean_name}. Trade closed successfully."
             log_status(f"[{get_ist_now().strftime('%H:%M:%S IST')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
             strat_key = pos.get('strategy', 'rsi_vwap_confluence')
@@ -1213,7 +1249,9 @@ def process_symbol(sym):
         if is_indian and live_mode and HAS_ANGEL:
             active_angel_pos = {k: v for k, v in dca_state.items() if ('.NS' in k or '.BO' in k)}
             can_enter = (len(active_angel_pos) < max_positions)
-            can_afford = (slice_qty > 0 and slice_cost_inr <= angel_cash)
+            # With 5x Intraday MIS, margin required is 20% of slice_cost_inr
+            margin_required = slice_cost_inr / 5.0
+            can_afford = (slice_qty > 0 and margin_required <= angel_cash)
         else:
             can_enter = (len(dca_state) < max_positions)
             current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())

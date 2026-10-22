@@ -53,5 +53,35 @@
         "token": "12018",
         "name": "SUZLON",
         "lotsize": "1"
+    },
+    "BEL-EQ": {
+        "token": "383",
+        "name": "BEL",
+        "lotsize": "1"
+    },
+    "GAIL-EQ": {
+        "token": "4717",
+        "name": "GAIL",
+        "lotsize": "1"
+    },
+    "PNB-EQ": {
+        "token": "10666",
+        "name": "PNB",
+        "lotsize": "1"
+    },
+    "IRFC-EQ": {
+        "token": "2029",
+        "name": "IRFC",
+        "lotsize": "1"
+    },
+    "MOTHERSON-EQ": {
+        "token": "4204",
+        "name": "MOTHERSON",
+        "lotsize": "1"
+    },
+    "NHPC-EQ": {
+        "token": "17400",
+        "name": "NHPC",
+        "lotsize": "1"
     }
 }

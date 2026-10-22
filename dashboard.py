@@ -1466,6 +1466,12 @@ for sym_k, price_info in live_prices.items():
 # ─────────────────────────────────────────────────────────────
 if is_angel_live or (is_zerodha_mode and not is_dual_mode):
     _TICKER_META = [
+        ("BEL.NS",       "Bharat Electronics",  "BEL"),
+        ("GAIL.NS",      "GAIL India",          "GAIL"),
+        ("PNB.NS",       "Punjab Natl Bank",    "PNB"),
+        ("IRFC.NS",      "Indian Railway Fin",  "IRFC"),
+        ("MOTHERSON.NS", "Samvardhana Motherson","MOTHERSON"),
+        ("NHPC.NS",      "NHPC Limited",        "NHPC"),
         ("ITC.NS",       "ITC Limited",         "ITC"),
         ("TATASTEEL.NS", "Tata Steel",          "TATASTEEL"),
         ("ONGC.NS",      "Oil & Natural Gas",   "ONGC"),
@@ -1473,7 +1479,6 @@ if is_angel_live or (is_zerodha_mode and not is_dual_mode):
         ("SUZLON.NS",    "Suzlon Energy",       "SUZLON"),
         ("SBIN.NS",      "State Bank of India", "SBIN"),
         ("HDFCBANK.NS",  "HDFC Bank",           "HDFCBANK"),
-        ("RELIANCE.NS",  "Reliance Industries", "RELIANCE"),
     ]
 else:
     _TICKER_META = [
