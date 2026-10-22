@@ -42,7 +42,15 @@ class AngelOneEngine:
             "PNB-EQ": {"token": "10666", "name": "PNB", "lotsize": "1"},
             "IRFC-EQ": {"token": "2029", "name": "IRFC", "lotsize": "1"},
             "MOTHERSON-EQ": {"token": "4204", "name": "MOTHERSON", "lotsize": "1"},
-            "NHPC-EQ": {"token": "17400", "name": "NHPC", "lotsize": "1"}
+            "NHPC-EQ": {"token": "17400", "name": "NHPC", "lotsize": "1"},
+            "TATAPOWER-EQ": {"token": "3426", "name": "TATAPOWER", "lotsize": "1"},
+            "BHEL-EQ": {"token": "438", "name": "BHEL", "lotsize": "1"},
+            "COALINDIA-EQ": {"token": "20374", "name": "COALINDIA", "lotsize": "1"},
+            "NTPC-EQ": {"token": "11630", "name": "NTPC", "lotsize": "1"},
+            "CANBK-EQ": {"token": "10794", "name": "CANBK", "lotsize": "1"},
+            "FEDERALBNK-EQ": {"token": "1023", "name": "FEDERALBNK", "lotsize": "1"},
+            "IDFCFIRSTB-EQ": {"token": "11184", "name": "IDFCFIRSTB", "lotsize": "1"},
+            "ASHOKLEY-EQ": {"token": "212", "name": "ASHOKLEY", "lotsize": "1"}
         }
 
     def _get_credentials(self):

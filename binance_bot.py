@@ -69,6 +69,8 @@ CRYPTO_SYMBOLS = [
 NSE_SYMBOLS = [
     # 🇮🇳 Top High-Volume & High-Momentum Indian Stocks (NSE Angel One / 5x MIS Scalper)
     "BEL.NS", "GAIL.NS", "PNB.NS", "IRFC.NS", "MOTHERSON.NS", "NHPC.NS",
+    "TATAPOWER.NS", "BHEL.NS", "COALINDIA.NS", "NTPC.NS", "CANBK.NS",
+    "FEDERALBNK.NS", "IDFCFIRSTB.NS", "ASHOKLEY.NS",
     "ITC.NS", "TATASTEEL.NS", "ONGC.NS", "IOC.NS", "SUZLON.NS",
     "SBIN.NS", "HDFCBANK.NS", "ICICIBANK.NS", "RELIANCE.NS", "INFY.NS", "TCS.NS"
 ]
@@ -1129,11 +1131,16 @@ def process_symbol(sym):
         # 🏛️ INSTITUTIONAL FEE-AWARE SPOT PROFIT ENGINE:
         # Exits strictly cover broker fees and taxes to lock positive net cash:
         if is_scalp_style:
-            # ⚡ LIGHTNING SCALPING ENGINE: Target +0.90%, Trailing +0.75%, Breakeven +0.55%
-            is_breakeven_exit = (peak_gain_pct >= 0.55 and profit_pct <= 0.35 and net_profit > 0)
-            is_trailing_exit = (peak_gain_pct >= 0.75 and current_price <= (peak_p * 0.998) and net_profit > 0)
-            is_target_exit = (profit_pct >= 0.90 and net_profit > 0)
-            is_reversal_exit = (profit_pct >= 0.45 and signal == 'sell')
+            # ⚡ AUTONOMOUS TRAILING PROFIT ENGINE (Unlimited Upside + Fee-Safe Floor):
+            # 1. Trailing Profit: Activates at +0.90%, lets profit run to +1.5%, +2.5%, +4.0%+!
+            #    Exits only if price retraces 0.35% from its highest peak (locking max gains).
+            is_trailing_exit = (peak_gain_pct >= 0.90 and current_price <= (peak_p * 0.9965) and net_profit > 0)
+            # 2. Breakeven / Safe Floor: If gain was >= 0.70% but is dropping near entry, exit before turning red
+            is_breakeven_exit = (peak_gain_pct >= 0.70 and profit_pct <= 0.40 and net_profit > 0)
+            # 3. Super Target Exit: Mega run-up target at +3.50%
+            is_target_exit = (profit_pct >= 3.50 and net_profit > 0)
+            # 4. Reversal Exit: If sell signal appears after fee-safe threshold
+            is_reversal_exit = (profit_pct >= 0.85 and signal == 'sell' and net_profit > 0)
         else:
             # 🏛️ INSTITUTIONAL SWING ENGINE (Hours/Days Trend):
             is_breakeven_exit = (peak_gain_pct >= 1.5 and profit_pct <= 0.8 and net_profit > 0)
