@@ -1293,7 +1293,31 @@ def process_symbol(sym):
             mode_str = "🇮🇳 ZERODHA VIRTUAL"
             portfolio_cap = 0.0
 
-        if cap_mode == "High Profit" or is_scalp_style:
+        # 🛡️ DYNAMIC CAPITAL ALLOCATION GUARD FOR MICRO/SMALL ACCOUNTS (₹100 - ₹50,000)
+        if mode == "ANGEL_ONE_LIVE" and portfolio_cap > 0 and portfolio_cap < 3000:
+            # For micro accounts (like ₹291), size precisely so margin never exceeds available cash
+            max_margin = portfolio_cap * 0.85
+            calc_q = int((max_margin * 5.0) // current_price)
+            if calc_q >= 1:
+                slice_qty = float(calc_q)
+            else:
+                # If even 1 share margin exceeds total capital, skip safely
+                if (current_price / 5.0) > portfolio_cap:
+                    return {
+                        "symbol": sym,
+                        "clean_name": clean_name,
+                        "price": current_price,
+                        "signal": "WAIT",
+                        "thought": f"ఖాతాలో ఉన్న లైవ్ క్యాష్ (₹{portfolio_cap:,.2f}) కంటే {clean_name} మార్జిన్ ఎక్కువ. ఆర్డర్ రిజెక్ట్ అవ్వకుండా సేఫ్ గా స్కిప్ చేశాను.",
+                        "strategy": "capital_guard",
+                        "rsi": 50.0, "trend": "WAIT", "action_taken": "WAIT",
+                        "has_position": False, "pnl_pct": 0.0, "avg_price": 0.0, "total_qty": 0.0,
+                        "target_price": 0.0, "peak_price": 0.0, "invested": 0.0, "dca_layer": 0,
+                        "timestamp": now.strftime('%H:%M:%S'), "is_indian": is_indian
+                    }
+                else:
+                    slice_qty = 1.0
+        elif cap_mode == "High Profit" or is_scalp_style:
             if portfolio_cap < 20000:
                 if current_price > 2500: slice_qty = 1.0
                 elif current_price > 700: slice_qty = 3.0
