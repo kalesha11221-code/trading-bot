@@ -1341,7 +1341,7 @@ def process_symbol(sym):
     # -------------------------------------------------------------
     # 3. FIRST DIP ENTRY (INITIAL FRACTIONAL SLICE)
     # -------------------------------------------------------------
-    elif pos is None and signal == 'buy' and ml_brain.get_ml_signal(sym) == 1 and ml_brain.get_smc_analysis(sym).get('bias') != 'BEARISH':
+    elif pos is None and signal == 'buy':
         max_positions = 1 if (is_indian and live_mode and angel_cash <= 750) else (2 if (is_indian and live_mode and angel_cash <= 1500) else (8 if is_scalp_style else MAX_ACTIVE_POSITIONS))
         if is_indian and live_mode and HAS_ANGEL:
             active_angel_pos = {k: v for k, v in dca_state.items() if ('.NS' in k or '.BO' in k)}
