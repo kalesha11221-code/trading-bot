@@ -1,3 +1,6 @@
+import warnings
+warnings.filterwarnings("ignore")
+
 import time
 import ml_brain
 import pandas as pd
@@ -583,6 +586,8 @@ def get_htf_trend(df):
 
 
 def generate_signal(df, sym):
+    now = get_ist_now()
+    is_indian = sym.endswith(".NS") or sym.endswith(".BO") or sym in ["^NSEI", "^NSEBANK"]
     # 🧠 SELF-LEARNING AI BRAIN
     import json
 
