@@ -711,6 +711,13 @@ try:
     db_helper.save_state('trading_mode', {'mode': trading_mode})
 except Exception:
     pass
+# Direct Real-Time Sync with Render Server: Notify Render immediately!
+try:
+    import urllib.parse
+    enc_m = urllib.parse.quote(trading_mode)
+    requests.get(f"https://trading-bot-leaw.onrender.com/set_mode?mode={enc_m}", timeout=3, verify=False)
+except Exception:
+    pass
 
 # Angel One SmartAPI live funds check
 angel_funds = angel_one.get_angel_funds() if ('angel_one' in globals()) else {"status": False, "availablecash": 0.0, "net": 0.0}
@@ -1729,6 +1736,11 @@ if not dca_positions:
                     "peak_price": pk_p,
                     "strategy": adata.get('strategy', 'Fair Value Gap (FVG)')
                 }
+# In Angel Real Money mode: Strictly filter out any virtual crypto positions!
+if is_angel_mode:
+    dca_positions = {k: v for k, v in dca_positions.items() if not k.endswith('-USD')}
+    futures_positions = {}
+
 spot_invested = 0.0
 for d_sym, d_info in dca_positions.items():
     spot_invested += float(d_info.get('total_cost', 0.0))

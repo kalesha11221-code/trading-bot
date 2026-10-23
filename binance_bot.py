@@ -511,8 +511,10 @@ def get_current_trading_mode():
                 return "ZERODHA_PAPER"
             elif "Live" in c and "Binance" in c:
                 return "BINANCE_LIVE"
-            else:
+            elif "Binance" in c or "Virtual" in c or "Crypto" in c:
                 return "BINANCE_PAPER"
+            else:
+                return "ANGEL_ONE_LIVE"
     except Exception:
         pass
 
@@ -529,8 +531,10 @@ def get_current_trading_mode():
                 return "ZERODHA_PAPER"
             elif "Live" in content and "Binance" in content:
                 return "BINANCE_LIVE"
-            else:
+            elif "Binance" in content or "Virtual" in content or "Crypto" in content:
                 return "BINANCE_PAPER"
+            else:
+                return "ANGEL_ONE_LIVE"
         except Exception:
             pass
     return "ANGEL_ONE_LIVE"
@@ -1730,11 +1734,21 @@ def run_bot_loop():
                         active_symbols = default_symbols
                 except: pass
 
-            # In Angel One Live Mode: Strictly trade Indian NSE Stocks only
+            # 🛑 100% STRICT ISOLATION: REAL MONEY MODE (ANGEL ONE LIVE)
+            # When Real Money mode is active, ABSOLUTELY ZERO VIRTUAL / CRYPTO TRADES ARE ALLOWED!
             if mode == "ANGEL_ONE_LIVE":
-                active_symbols = [s for s in active_symbols if s.endswith('.NS') or s.endswith('.BO') or s in ['^NSEI', '^NSEBANK']]
+                active_symbols = [s for s in active_symbols if s.endswith('.NS') or s.endswith('.BO')]
                 if not active_symbols:
                     active_symbols = list(dict.fromkeys(NSE_SYMBOLS + custom_nse))
+                
+                # Auto-purge any leftover virtual crypto positions from dca_state
+                try:
+                    dca_curr = load_dca_state()
+                    if any(k.endswith('-USD') for k in dca_curr.keys()):
+                        dca_curr = {k: v for k, v in dca_curr.items() if not k.endswith('-USD')}
+                        save_dca_state(dca_curr)
+                except Exception:
+                    pass
 
             actions_taken = []
             # Multi-Threading for active symbols
