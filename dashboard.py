@@ -503,6 +503,8 @@ st.markdown("""
 # Live Bot Toast Notifications (Right Corner Alerts)
 if 'last_toast_log' not in st.session_state:
     st.session_state.last_toast_log = ""
+if 'selected_chart_sym' not in st.session_state:
+    st.session_state['selected_chart_sym'] = "BEL.NS" if ("Angel" in open('trading_mode.txt').read() if os.path.exists('trading_mode.txt') else False) else "BTC-USD"
 
 if os.path.exists('bot_logs.txt'):
     try:
@@ -2227,10 +2229,16 @@ with tab_charts:
     st.markdown("### 📊 Live Candlestick Charts & AI Pattern Scanner")
     st.caption("**Click any coin or stock below** for instant live candlestick charts, pattern recognition, and institutional indicators:")
     
-    # Ensure selected chart symbol matches active mode
+    # Ensure selected chart symbol is always initialized and strictly matches active mode
+    target_default = "BEL.NS" if is_angel_live else "BTC-USD"
+    if "selected_chart_sym" not in st.session_state or not st.session_state.get("selected_chart_sym"):
+        st.session_state["selected_chart_sym"] = target_default
+    elif is_angel_live and not str(st.session_state.get("selected_chart_sym", "")).endswith((".NS", ".BO")):
+        st.session_state["selected_chart_sym"] = target_default
+    elif not is_angel_live and str(st.session_state.get("selected_chart_sym", "")).endswith((".NS", ".BO")):
+        st.session_state["selected_chart_sym"] = target_default
+
     if is_angel_live:
-        if not st.session_state.get("selected_chart_sym", "").endswith((".NS", ".BO")):
-            st.session_state["selected_chart_sym"] = "BEL.NS"
         st.markdown("##### 🇮🇳 Top Indian Stocks (NSE):")
         dyn_chips = [
             ("🇮🇳 BEL", "BEL.NS"),
@@ -2243,8 +2251,6 @@ with tab_charts:
         all_symbols = [s for s in symbol_options.values() if s.endswith(('.NS', '.BO')) or '^NSE' in s]
         sel_label = "Or select any other NSE Indian Stock:"
     else:
-        if st.session_state.get("selected_chart_sym", "").endswith((".NS", ".BO")):
-            st.session_state["selected_chart_sym"] = "BTC-USD"
         st.markdown("##### 🪙 Popular Cryptos (24/7):")
         dyn_chips = [
             ("🪙 BTC", "BTC-USD"),
@@ -2272,7 +2278,7 @@ with tab_charts:
 
     st.markdown("<div style='margin-top: 6px;'></div>", unsafe_allow_html=True)
 
-    curr_sym = st.session_state.get("selected_chart_sym", all_symbols[0])
+    curr_sym = st.session_state.get("selected_chart_sym", target_default)
     curr_idx = all_symbols.index(curr_sym) if curr_sym in all_symbols else 0
 
     col_sel1, col_sel2 = st.columns([3, 1])
@@ -2283,7 +2289,7 @@ with tab_charts:
             index=curr_idx,
             key="chart_sym_select_box"
         )
-        if sel_chart_sym != st.session_state["selected_chart_sym"]:
+        if sel_chart_sym != st.session_state.get("selected_chart_sym"):
             st.session_state["selected_chart_sym"] = sel_chart_sym
             st.rerun()
 
@@ -2292,7 +2298,7 @@ with tab_charts:
             st.rerun()
 
     # Load data & Candlestick analysis
-    active_sym = st.session_state["selected_chart_sym"]
+    active_sym = st.session_state.get("selected_chart_sym", target_default)
     df, signal, last = fetch_and_analyze(active_sym)
     current_price = last['close'] if last is not None else 65000.0
     signal = signal if signal else "HOLD"
