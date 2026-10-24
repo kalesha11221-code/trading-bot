@@ -59,11 +59,26 @@ class AngelOneEngine:
         if os.path.exists(cred_file):
             try:
                 with open(cred_file, 'r') as f:
-                    return json.load(f)
+                    data = json.load(f)
+                    if data and data.get('api_key') and data.get('totp_secret'):
+                        return data
             except Exception:
                 pass
-        # 2. Try MongoDB
-        return db_helper.get_state('angel_credentials', {})
+        # 2. Try MongoDB Cloud State
+        try:
+            db_creds = db_helper.get_state('angel_credentials', {})
+            if db_creds and db_creds.get('api_key') and db_creds.get('totp_secret'):
+                return db_creds
+        except Exception:
+            pass
+
+        # 3. Permanent hardcoded fallback (Shaik Kalesha - AABZ864543) so it NEVER asks again
+        return {
+            "api_key": "eVNyHHxR",
+            "client_code": "AABZ864543",
+            "pin": "1122",
+            "totp_secret": "MDXMIH4K46DYD77VFGFT4FO6YU"
+        }
 
     def login(self):
         # Minimum 30s throttle on login attempts to avoid rate limits
