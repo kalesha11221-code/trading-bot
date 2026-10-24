@@ -127,10 +127,10 @@ def load_angel_config():
     3. Environment Variables
     """
     config = {
-        "client_code": "",
-        "pin": "",
-        "api_key": "",
-        "totp_secret": "",
+        "client_code": "AABZ864543",
+        "pin": "1122",
+        "api_key": "eVNyHHxR",
+        "totp_secret": "MDXMIH4K46DYD77VFGFT4FO6YU",
         "product_type": "INTRADAY",
         "is_live": True
     }
@@ -147,7 +147,7 @@ def load_angel_config():
 
     # 2. MongoDB Atlas (Cloud Sync)
     try:
-        cloud_cfg = db_helper.get_state('angel_config', {})
+        cloud_cfg = db_helper.get_state('angel_config', {}) or db_helper.get_state('angel_credentials', {})
         if cloud_cfg and isinstance(cloud_cfg, dict):
             for k, v in cloud_cfg.items():
                 if v and not config.get(k):
@@ -428,89 +428,6 @@ def execute_angel_order(action, symbol, quantity, order_type="MARKET", product_t
             return False, f"Angel One Order Error [{err_code}]: {msg}"
     except Exception as e:
         return False, f"Angel One Order Exception: {e}"
-
-def get_angel_positions():
-    """
-    Calls Angel One /getPosition endpoint to fetch real open and closed positions for today.
-    Enables 100% sync so ghost positions never appear on dashboard when broker squares off.
-    Returns:
-        dict: {"status": bool, "net_positions": list, "open_symbols": list, "raw": list}
-    """
-    cfg = load_angel_config()
-    api_key = cfg.get("api_key", "").strip()
-    token, err = get_session()
-    if not token:
-        return {"status": False, "error": err, "net_positions": [], "open_symbols": [], "raw": []}
-
-    url = "https://apiconnect.angelone.in/rest/secure/angelbroking/order/v1/getPosition"
-    auth_header = token if token.startswith("Bearer ") else f"Bearer {token}"
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "X-UserType": "USER",
-        "X-SourceID": "WEB",
-        "X-ClientLocalIP": "127.0.0.1",
-        "X-ClientPublicIP": "106.193.147.98",
-        "X-MACAddress": "fe80::216e:6507:4b9c:9045",
-        "X-PrivateKey": api_key,
-        "Authorization": auth_header
-    }
-
-    try:
-        resp = requests.get(url, headers=headers, timeout=8)
-        data = resp.json()
-        if data.get("status") is True and "data" in data and data["data"]:
-            positions = data["data"]
-            open_syms = []
-            for p in positions:
-                try:
-                    net_q = int(float(p.get("netqty", 0)))
-                except Exception:
-                    net_q = 0
-                if net_q != 0:
-                    open_syms.append(p.get("tradingsymbol", ""))
-            return {
-                "status": True,
-                "net_positions": positions,
-                "open_symbols": open_syms,
-                "raw": positions
-            }
-        return {"status": True, "net_positions": [], "open_symbols": [], "raw": []}
-    except Exception as e:
-        return {"status": False, "error": str(e), "net_positions": [], "open_symbols": [], "raw": []}
-
-def get_angel_tradebook():
-    """
-    Calls Angel One /getTradeBook endpoint to fetch all trades executed today.
-    """
-    cfg = load_angel_config()
-    api_key = cfg.get("api_key", "").strip()
-    token, err = get_session()
-    if not token:
-        return {"status": False, "error": err, "trades": []}
-
-    url = "https://apiconnect.angelone.in/rest/secure/angelbroking/order/v1/getTradeBook"
-    auth_header = token if token.startswith("Bearer ") else f"Bearer {token}"
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "X-UserType": "USER",
-        "X-SourceID": "WEB",
-        "X-ClientLocalIP": "127.0.0.1",
-        "X-ClientPublicIP": "106.193.147.98",
-        "X-MACAddress": "fe80::216e:6507:4b9c:9045",
-        "X-PrivateKey": api_key,
-        "Authorization": auth_header
-    }
-
-    try:
-        resp = requests.get(url, headers=headers, timeout=8)
-        data = resp.json()
-        if data.get("status") is True and "data" in data and data["data"]:
-            return {"status": True, "trades": data["data"]}
-        return {"status": True, "trades": []}
-    except Exception as e:
-        return {"status": False, "error": str(e), "trades": []}
 
 def is_connected():
     """Tests Angel One connectivity and credentials validity."""
