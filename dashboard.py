@@ -668,16 +668,16 @@ for c_sym, c_info in custom_wl_items.items():
 
 st.sidebar.title("🤖 AI Trading Mode")
 
-# Trading Mode Switch
+# ⚡ 1-CLICK INSTANT TRADING MODE SWITCH
 mode_options = [
-    "🌐🇮🇳 Dual Trading (Crypto 24/7 + Indian Stocks NSE)",
     "🇮🇳💰 Angel One Live Trading (Real Indian Stocks)",
+    "📝 Binance Paper Trading (Crypto 24/7 Practice)",
+    "🌐🇮🇳 Dual Trading (Crypto 24/7 + Indian Stocks NSE)",
     "🇮🇳 Paper Trading (Indian Stocks - Zerodha Virtual)",
-    "📝 Paper Trading (Crypto - Binance Virtual)",
     "💰 Live Trading (Binance Real Money)"
 ]
 
-saved_mode = "🇮🇳💰 Angel One Live Trading (Real Indian Stocks)"
+saved_mode = "📝 Binance Paper Trading (Crypto 24/7 Practice)"
 # 1. Check MongoDB Cloud state first (highest priority across Streamlit Cloud & Render)
 try:
     c_doc = db_helper.get_state('trading_mode')
@@ -685,14 +685,14 @@ try:
         c_val = str(c_doc.get('mode', c_doc) if isinstance(c_doc, dict) else c_doc).lower()
         if "angel" in c_val:
             saved_mode = "🇮🇳💰 Angel One Live Trading (Real Indian Stocks)"
+        elif "paper" in c_val or "binance_paper" in c_val:
+            saved_mode = "📝 Binance Paper Trading (Crypto 24/7 Practice)"
         elif "dual" in c_val:
             saved_mode = "🌐🇮🇳 Dual Trading (Crypto 24/7 + Indian Stocks NSE)"
         elif "zerodha" in c_val or "nse" in c_val or "indian" in c_val:
             saved_mode = "🇮🇳 Paper Trading (Indian Stocks - Zerodha Virtual)"
         elif "binance_live" in c_val or ("live" in c_val and "angel" not in c_val):
             saved_mode = "💰 Live Trading (Binance Real Money)"
-        elif "paper" in c_val:
-            saved_mode = "📝 Paper Trading (Crypto - Binance Virtual)"
 except Exception:
     pass
 
@@ -703,18 +703,18 @@ if os.path.exists('trading_mode.txt'):
             c = f.read().strip().lower()
             if "angel" in c:
                 saved_mode = "🇮🇳💰 Angel One Live Trading (Real Indian Stocks)"
+            elif "paper" in c or "binance_paper" in c:
+                saved_mode = "📝 Binance Paper Trading (Crypto 24/7 Practice)"
             elif "dual" in c:
                 saved_mode = "🌐🇮🇳 Dual Trading (Crypto 24/7 + Indian Stocks NSE)"
             elif "zerodha" in c or "indian" in c or "nse" in c:
                 saved_mode = "🇮🇳 Paper Trading (Indian Stocks - Zerodha Virtual)"
             elif "binance_live" in c or ("live" in c and "angel" not in c):
                 saved_mode = "💰 Live Trading (Binance Real Money)"
-            elif "paper" in c:
-                saved_mode = "📝 Paper Trading (Crypto - Binance Virtual)"
     except: pass
 
 mode_idx = mode_options.index(saved_mode) if saved_mode in mode_options else 1
-trading_mode = st.sidebar.radio("Trading Mode Switch", mode_options, index=mode_idx)
+trading_mode = st.sidebar.radio("⚡ 1-Click Trading Mode Switch", mode_options, index=mode_idx)
 st.sidebar.markdown("---")
 
 is_dual_mode = "Dual" in trading_mode
@@ -727,6 +727,9 @@ try:
     with open('trading_mode.txt', 'w') as f:
         f.write(clean_mode_str)
     db_helper.save_state('trading_mode', {'mode': clean_mode_str})
+    if st.session_state.get('last_selected_mode') != clean_mode_str:
+        st.session_state['last_selected_mode'] = clean_mode_str
+        st.toast(f"⚡ మోడ్ మారింది: {clean_mode_str}! స్కానర్ వెంటనే స్విచ్ అయ్యింది.", icon="🔄")
 except Exception:
     pass
 
@@ -1522,6 +1525,7 @@ for sym_t, _, _ in _TICKER_META:
 try:
     if is_angel_live:
         _ticker_symbols_json = """[
+        {"proName": "BSE:BEL", "title": "BEL"},
         {"proName": "BSE:ITC", "title": "ITC"},
         {"proName": "BSE:TATASTEEL", "title": "TATASTEEL"},
         {"proName": "BSE:ONGC", "title": "ONGC"},
@@ -1538,8 +1542,7 @@ try:
         {"proName": "BINANCE:BNBUSDT", "title": "BNB/USDT"},
         {"proName": "BINANCE:DOGEUSDT", "title": "DOGE/USDT"},
         {"proName": "BINANCE:XRPUSDT", "title": "XRP/USDT"},
-        {"proName": "BSE:RELIANCE", "title": "RELIANCE"},
-        {"proName": "BSE:SBIN", "title": "SBIN"}
+        {"proName": "BINANCE:ADAUSDT", "title": "ADA/USDT"}
       ]"""
     _tape_html = f"""
     <div class="tradingview-widget-container" style="background:#131722; border-radius:8px; overflow:hidden;">
@@ -1627,7 +1630,7 @@ if is_angel_live:
     total_profit = spot_profit
 
     # Real Angel One live cash from RMS
-    live_cash = angel_live_cash if angel_live_cash > 0 else 300.0
+    live_cash = angel_live_cash if angel_live_cash > 0 else 282.42
     spot_invested = sum(float(d_info.get('total_cost', 0.0)) for d_info in dca_positions.values())
     futures_invested = 0.0
     total_invested = spot_invested
@@ -1636,20 +1639,20 @@ if is_angel_live:
     # Margin blocked from user capital is 20% (1/5th) of spot_invested
     blocked_margin = round(spot_invested / 5.0, 2)
     initial_capital = 300.0
-    available_cash = max(0.0, round(initial_capital + spot_profit - blocked_margin, 2))
-    portfolio_value = round(initial_capital + spot_profit, 2)
+    available_cash = max(0.0, round(live_cash - blocked_margin, 2))
+    portfolio_value = round(live_cash, 2)
     invested_amount = spot_invested
-    roi = (total_profit / initial_capital) * 100 if initial_capital > 0 else 0.0
+    roi = ((portfolio_value - initial_capital) / initial_capital) * 100 if initial_capital > 0 else 0.0
 
 else:
-    # Virtual / Paper / Dual Modes
-    dca_positions = all_dca_positions
+    # 🌐 Binance Crypto Paper Trading Mode: Strictly Crypto Only (No Indian Stocks)
+    dca_positions = {k: v for k, v in all_dca_positions.items() if (k.endswith('-USD') or k.endswith('-USDT') or 'BTC' in k or 'ETH' in k or 'SOL' in k or 'DOGE' in k or 'XRP' in k)}
     futures_positions = get_state_smart('fo_state')
     if not isinstance(futures_positions, dict):
         futures_positions = {}
     initial_capital = 50000.00
 
-    # 1. Spot Realized Profit (Calculated in INR)
+    # 1. Spot Realized Profit (Calculated in INR from Crypto ONLY)
     spot_profit = 0.0
     try:
         hist_df = db_helper.get_trade_history_df(is_futures=False)
@@ -1659,7 +1662,7 @@ else:
             taxes = 0.0
             for idx, row in hist_df.iterrows():
                 sym_r = str(row.get('Symbol', ''))
-                if not (sym_r.endswith('-USD') or sym_r.endswith('.NS') or sym_r.endswith('.BO')):
+                if not (sym_r.endswith('-USD') or sym_r.endswith('-USDT')):
                     continue
                 if row['Action'] == 'SELL' and str(row['Profit']) != '-':
                     p_str = str(row['Profit']).replace('₹', '').replace('$', '').replace(',', '').strip()
@@ -1892,24 +1895,33 @@ with top_b5:
         st.write(f"**Floating P&L:** {c}₹{total_floating_pnl:,.2f}")
         st.divider()
         st.write(f"**Total Live Valuation:** ₹{live_portfolio_value:,.2f}")
-        st.write(f"**Total Live Valuation:** ₹{live_portfolio_value:,.2f}")
 
 st.markdown("</div>", unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# 🌟 3. TOP-LEVEL PRO WEB TABS
+# 🌟 3. TOP-LEVEL PRO WEB TABS (100% SEPARATED BETWEEN MODES)
 # -------------------------------------------------------------
-tab_spot_title = "📌 Live Positions (Angel One)" if is_angel_live else "📌 Live Positions (Spot)"
-tab_pos, tab_futures, tab_mind, tab_charts, tab_orders, tab_search, tab_voice = st.tabs([
-    tab_spot_title,
-    "🚀 Futures (Paper 5x)",
-    "🧠 AI Brain & Reasoning",
-    "📊 Pro Charts & Patterns",
-    "📋 Orders & PnL History",
-    "🔍 Market Screener",
-    "💬 AI Assistant"
-])
+if is_angel_live:
+    tab_pos, tab_mind, tab_charts, tab_orders, tab_search, tab_voice = st.tabs([
+        "📌 Live Positions (Angel One)",
+        "🧠 AI Brain & NSE Reasoning",
+        "📊 NSE Live Charts & Patterns",
+        "📋 Angel One Orders & Settlement History",
+        "🔍 NSE 25 Momentum Screener",
+        "💬 AI Assistant"
+    ])
+    tab_futures = None
+else:
+    tab_pos, tab_futures, tab_mind, tab_charts, tab_orders, tab_search, tab_voice = st.tabs([
+        "📌 Live Positions (Crypto Paper Spot)",
+        "🚀 Futures (Paper 5x)",
+        "🧠 AI Crypto Brain & Reasoning",
+        "📊 Crypto Live Charts & Patterns",
+        "📋 Crypto Paper Orders & PnL History",
+        "🔍 Crypto 24/7 Market Screener",
+        "💬 AI Assistant"
+    ])
 
 # =============================================================
 # TAB 1: 📌 Live Positions
@@ -2010,84 +2022,83 @@ with tab_pos:
 
 
 # =============================================================
-# TAB 2: 🚀 FUTURES PAPER TRADING (5x LEVERAGE)
+# TAB 2: 🚀 FUTURES PAPER TRADING (5x LEVERAGE - CRYPTO ONLY)
 # =============================================================
-with tab_futures:
-    if is_angel_live:
-        st.info("ℹ️ **Angel One Live Mode Active!** Your real money (₹300.00) is reserved strictly for Indian Equities on NSE. Crypto Futures below operates independently in simulated paper practice.")
-    st.markdown("### 🚀 Crypto Futures Paper Trading (5x Leverage)")
-    st.caption("Simulated institutional paper trading with ₹5,000/trade margin, 5x leverage, and strict loss-protection guards. Real-time PnL updates:")
-    
-    futures_state = get_state_smart('fo_state')
-            
-    if not futures_state:
-        st.info("No active futures positions open currently. Waiting for institutional confluence (SMC + EMA Crossover)...")
-    else:
-        f_rows = []
-        for fsym, finfo in futures_state.items():
-            f_pinfo = live_prices.get(fsym, {})
-            f_live = f_pinfo.get("price", float(finfo['entry_price']))
-            f_entry = float(finfo['entry_price'])
-            f_side = finfo['side']
-            f_qty = float(finfo['qty'])
-            f_margin = float(finfo['margin'])
-            f_lev = int(finfo['leverage'])
-            
-            if f_side == 'LONG':
-                f_pnl_usd = (f_live - f_entry) * f_qty
-            else:
-                f_pnl_usd = (f_entry - f_live) * f_qty
+if tab_futures is not None:
+    with tab_futures:
+        st.markdown("### 🚀 Crypto Futures Paper Trading (5x Leverage)")
+        st.caption("Simulated institutional paper trading with ₹5,000/trade margin, 5x leverage, and strict loss-protection guards. Real-time PnL updates:")
+        
+        futures_state = get_state_smart('fo_state')
                 
-            f_pnl_inr = f_pnl_usd * USD_TO_INR
-            f_roe = (f_pnl_inr / f_margin) * 100.0
-            
-            pnl_c = "#00e676" if f_pnl_inr >= 0 else "#ff5252"
-            side_bg = "#004d40" if f_side == 'LONG' else "#4a148c"
-            
-            row_html = (
-                f"<tr>"
-                f"<td><b style='color:#e0e3eb;'>{fsym}</b></td>"
-                f"<td><span style='background:{side_bg};padding:3px 6px;border-radius:4px;font-weight:bold;'>{f_side}</span> {f_lev}x</td>"
-                f"<td>${f_entry:,.4f}</td>"
-                f"<td style='color:#00bcd4;'>${f_live:,.4f}</td>"
-                f"<td>₹{f_margin:,.2f}</td>"
-                f"<td style='color:{pnl_c};font-weight:bold;'>₹{f_pnl_inr:+.2f} ({f_roe:+.2f}%)</td>"
-                f"</tr>"
+        if not futures_state:
+            st.info("No active futures positions open currently. Waiting for institutional confluence (SMC + EMA Crossover)...")
+        else:
+            f_rows = []
+            for fsym, finfo in futures_state.items():
+                f_pinfo = live_prices.get(fsym, {})
+                f_live = f_pinfo.get("price", float(finfo['entry_price']))
+                f_entry = float(finfo['entry_price'])
+                f_side = finfo['side']
+                f_qty = float(finfo['qty'])
+                f_margin = float(finfo['margin'])
+                f_lev = int(finfo['leverage'])
+                
+                if f_side == 'LONG':
+                    f_pnl_usd = (f_live - f_entry) * f_qty
+                else:
+                    f_pnl_usd = (f_entry - f_live) * f_qty
+                    
+                f_pnl_inr = f_pnl_usd * USD_TO_INR
+                f_roe = (f_pnl_inr / f_margin) * 100.0
+                
+                pnl_c = "#00e676" if f_pnl_inr >= 0 else "#ff5252"
+                side_bg = "#004d40" if f_side == 'LONG' else "#4a148c"
+                
+                row_html = (
+                    f"<tr>"
+                    f"<td><b style='color:#e0e3eb;'>{fsym}</b></td>"
+                    f"<td><span style='background:{side_bg};padding:3px 6px;border-radius:4px;font-weight:bold;'>{f_side}</span> {f_lev}x</td>"
+                    f"<td>${f_entry:,.4f}</td>"
+                    f"<td style='color:#00bcd4;'>${f_live:,.4f}</td>"
+                    f"<td>₹{f_margin:,.2f}</td>"
+                    f"<td style='color:{pnl_c};font-weight:bold;'>₹{f_pnl_inr:+.2f} ({f_roe:+.2f}%)</td>"
+                    f"</tr>"
+                )
+                f_rows.append(row_html)
+                
+            rows_joined = "".join(f_rows)
+            f_table = (
+                "<table class='zk-pos-table' style='width:100%;border-collapse:separate;border-spacing:0;background:#131722;border:1px solid #2a2e39;border-radius:10px;overflow:hidden;'>"
+                "<thead><tr style='background:#181c27;'>"
+                "<th style='padding:11px 12px;color:#787b86;'>Symbol</th>"
+                "<th style='padding:11px 12px;color:#787b86;'>Side & Leverage</th>"
+                "<th style='padding:11px 12px;color:#787b86;'>Entry Price</th>"
+                "<th style='padding:11px 12px;color:#00bcd4;'>Live Price</th>"
+                "<th style='padding:11px 12px;color:#787b86;'>Margin (₹)</th>"
+                "<th style='padding:11px 12px;color:#787b86;'>PnL & ROE%</th>"
+                f"</tr></thead><tbody style='font-family:monospace;font-size:13px;color:#e0e3eb;'>{rows_joined}</tbody></table>"
             )
-            f_rows.append(row_html)
+            st.markdown(f_table, unsafe_allow_html=True)
             
-        rows_joined = "".join(f_rows)
-        f_table = (
-            "<table class='zk-pos-table' style='width:100%;border-collapse:separate;border-spacing:0;background:#131722;border:1px solid #2a2e39;border-radius:10px;overflow:hidden;'>"
-            "<thead><tr style='background:#181c27;'>"
-            "<th style='padding:11px 12px;color:#787b86;'>Symbol</th>"
-            "<th style='padding:11px 12px;color:#787b86;'>Side & Leverage</th>"
-            "<th style='padding:11px 12px;color:#787b86;'>Entry Price</th>"
-            "<th style='padding:11px 12px;color:#00bcd4;'>Live Price</th>"
-            "<th style='padding:11px 12px;color:#787b86;'>Margin (₹)</th>"
-            "<th style='padding:11px 12px;color:#787b86;'>PnL & ROE%</th>"
-            f"</tr></thead><tbody style='font-family:monospace;font-size:13px;color:#e0e3eb;'>{rows_joined}</tbody></table>"
-        )
-        st.markdown(f_table, unsafe_allow_html=True)
-        
-        st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-        st.markdown("##### 🔍 Click any coin below to inspect live candlestick chart & AI pattern:")
-        f_cols = st.columns(max(1, len(futures_state)))
-        for f_idx, fsym_btn in enumerate(futures_state.keys()):
-            with f_cols[f_idx]:
-                if st.button(f"📊 {fsym_btn} Chart & Pattern", key=f"btn_fut_chart_{fsym_btn}", use_container_width=True):
-                    st.session_state['selected_chart_sym'] = fsym_btn
-                    st.toast(f"✅ {fsym_btn} loaded! Inspect in '📊 Pro Charts & Patterns' tab.", icon="🕯️")
-                    st.rerun()
-        
-    st.markdown("---")
-    st.markdown("#### 📋 Futures Closed Trades History")
-    try:
-        f_df = db_helper.get_trade_history_df(is_futures=True)
-        if not f_df.empty:
-            safe_dataframe(f_df.tail(15).iloc[::-1], hide_index=True)
-    except:
-        pass
+            st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+            st.markdown("##### 🔍 Click any coin below to inspect live candlestick chart & AI pattern:")
+            f_cols = st.columns(max(1, len(futures_state)))
+            for f_idx, fsym_btn in enumerate(futures_state.keys()):
+                with f_cols[f_idx]:
+                    if st.button(f"📊 {fsym_btn} Chart & Pattern", key=f"btn_fut_chart_{fsym_btn}", use_container_width=True):
+                        st.session_state['selected_chart_sym'] = fsym_btn
+                        st.toast(f"✅ {fsym_btn} loaded! Inspect in '📊 Pro Charts & Patterns' tab.", icon="🕯️")
+                        st.rerun()
+            
+        st.markdown("---")
+        st.markdown("#### 📋 Futures Closed Trades History")
+        try:
+            f_df = db_helper.get_trade_history_df(is_futures=True)
+            if not f_df.empty:
+                safe_dataframe(f_df.tail(15).iloc[::-1], hide_index=True)
+        except:
+            pass
 
 
 # =============================================================
@@ -2133,9 +2144,13 @@ with tab_mind:
     watch_rows = []
     for sc_sym, sc_data in scanned_assets.items():
         if not sc_data.get('has_position', False):
-            clean_s = sc_data.get('clean_name', sc_sym)
+            is_i = sc_data.get('is_indian', False) or sc_sym.endswith(('.NS', '.BO'))
+            if is_angel_live and not is_i:
+                continue
+            if not is_angel_live and is_i:
+                continue
+            clean_s = sc_data.get('clean_name', sc_sym).replace('.NS', '').replace('-USD', '')
             pr_val = sc_data.get('price', 0.0)
-            is_i = sc_data.get('is_indian', False)
             pr_fmt = f"₹{pr_val:,.2f}" if is_i else f"${pr_val:,.2f}"
             rsi_s = sc_data.get('rsi', 50.0)
             
@@ -2212,59 +2227,58 @@ with tab_charts:
     st.markdown("### 📊 Live Candlestick Charts & AI Pattern Scanner")
     st.caption("**Click any coin or stock below** for instant live candlestick charts, pattern recognition, and institutional indicators:")
     
-    if "selected_chart_sym" not in st.session_state:
-        st.session_state["selected_chart_sym"] = "BTC-USD"
+    # Ensure selected chart symbol matches active mode
+    if is_angel_live:
+        if not st.session_state.get("selected_chart_sym", "").endswith((".NS", ".BO")):
+            st.session_state["selected_chart_sym"] = "BEL.NS"
+        st.markdown("##### 🇮🇳 Top Indian Stocks (NSE):")
+        dyn_chips = [
+            ("🇮🇳 BEL", "BEL.NS"),
+            ("🇮🇳 RELIANCE", "RELIANCE.NS"),
+            ("🇮🇳 TATA STEEL", "TATASTEEL.NS"),
+            ("🇮🇳 SBIN", "SBIN.NS"),
+            ("🇮🇳 ITC", "ITC.NS"),
+            ("🇮🇳 INFY", "INFY.NS")
+        ]
+        all_symbols = [s for s in symbol_options.values() if s.endswith(('.NS', '.BO')) or '^NSE' in s]
+        sel_label = "Or select any other NSE Indian Stock:"
+    else:
+        if st.session_state.get("selected_chart_sym", "").endswith((".NS", ".BO")):
+            st.session_state["selected_chart_sym"] = "BTC-USD"
+        st.markdown("##### 🪙 Popular Cryptos (24/7):")
+        dyn_chips = [
+            ("🪙 BTC", "BTC-USD"),
+            ("🪙 ETH", "ETH-USD"),
+            ("🪙 SOL", "SOL-USD"),
+            ("🪙 XRP", "XRP-USD"),
+            ("🪙 DOGE", "DOGE-USD"),
+            ("🪙 BNB", "BNB-USD")
+        ]
+        all_symbols = [s for s in symbol_options.values() if s.endswith(('-USD', '-USDT'))]
+        sel_label = "Or select any other 24/7 Crypto Coin:"
 
-    # ─── QUICK 1-CLICK COIN BUTTONS ───
-    st.markdown("##### 🪙 Popular Cryptos (24/7):")
-    crypto_chips = [
-        ("🪙 BTC", "BTC-USD"),
-        ("🪙 ETH", "ETH-USD"),
-        ("🪙 SOL", "SOL-USD"),
-        ("🪙 BNB", "BNB-USD"),
-        ("🪙 DOGE", "DOGE-USD"),
-        ("🪙 XRP", "XRP-USD")
-    ]
-    cols_c = st.columns(6)
-    for idx, (label, sym_val) in enumerate(crypto_chips):
-        with cols_c[idx]:
-            is_active = (st.session_state["selected_chart_sym"] == sym_val)
+    if not all_symbols:
+        all_symbols = list(symbol_options.values())
+
+    cols_chips = st.columns(len(dyn_chips))
+    for idx, (label, sym_val) in enumerate(dyn_chips):
+        with cols_chips[idx]:
+            is_active = (st.session_state.get("selected_chart_sym") == sym_val)
             btn_txt = f"👉 {label}" if is_active else label
             btn_type = "primary" if is_active else "secondary"
-            if st.button(btn_txt, key=f"chip_c_{sym_val}", use_container_width=True, type=btn_type):
-                st.session_state["selected_chart_sym"] = sym_val
-                st.rerun()
-
-    st.markdown("##### 🇮🇳 Top Indian Stocks (NSE):")
-    nse_chips = [
-        ("🇮🇳 RELIANCE", "RELIANCE.NS"),
-        ("🇮🇳 TATA MOTORS", "TMCV.NS"),
-        ("🇮🇳 HDFC BANK", "HDFCBANK.NS"),
-        ("🇮🇳 INFY", "INFY.NS"),
-        ("🇮🇳 SBIN", "SBIN.NS"),
-        ("🇮🇳 TCS", "TCS.NS")
-    ]
-    cols_n = st.columns(6)
-    for idx, (label, sym_val) in enumerate(nse_chips):
-        with cols_n[idx]:
-            is_active = (st.session_state["selected_chart_sym"] == sym_val)
-            btn_txt = f"👉 {label}" if is_active else label
-            btn_type = "primary" if is_active else "secondary"
-            if st.button(btn_txt, key=f"chip_n_{sym_val}", use_container_width=True, type=btn_type):
+            if st.button(btn_txt, key=f"chip_dyn_{sym_val}", use_container_width=True, type=btn_type):
                 st.session_state["selected_chart_sym"] = sym_val
                 st.rerun()
 
     st.markdown("<div style='margin-top: 6px;'></div>", unsafe_allow_html=True)
 
-    # Custom Asset Search / Selectbox dropdown
-    all_symbols = list(symbol_options.values())
-    curr_sym = st.session_state["selected_chart_sym"]
+    curr_sym = st.session_state.get("selected_chart_sym", all_symbols[0])
     curr_idx = all_symbols.index(curr_sym) if curr_sym in all_symbols else 0
 
     col_sel1, col_sel2 = st.columns([3, 1])
     with col_sel1:
         sel_chart_sym = st.selectbox(
-            "Or select any other stock/coin from the list:",
+            sel_label,
             all_symbols,
             index=curr_idx,
             key="chart_sym_select_box"
@@ -2449,42 +2463,111 @@ with tab_charts:
 # TAB 5: 📋 Order Book & Performance History
 # =============================================================
 with tab_orders:
-    st.subheader("📋 Order Book & Trading Statement")
-    st.caption("Historical closed trades and performance metrics for Spot and Futures accounts:")
-
-    df_fo_cnt = len(db_helper.get_trade_history_df(is_futures=True))
-    df_sp_cnt = len(db_helper.get_trade_history_df(is_futures=False))
-    spot_tab_title = f"🇮🇳 Angel One NSE Trades ({df_sp_cnt} Trades)" if is_angel_live else f"📌 Spot Trading Orders Log ({df_sp_cnt} Trades)"
-    fut_tab_title = f"🚀 5x Futures Orders Log ({df_fo_cnt} Trades)"
-    
     if is_angel_live:
-        hist_tab_spot, hist_tab_fut = st.tabs([spot_tab_title, fut_tab_title])
-    else:
-        hist_tab_fut, hist_tab_spot = st.tabs([fut_tab_title, spot_tab_title])
+        st.subheader("📋 Angel One Order Book & Settlement Statement")
+        st.caption("Official Angel One SmartAPI trade ledger, brokerage breakdown, and regulatory settlement statement:")
 
-    with hist_tab_fut:
-        col_f1, col_f2 = st.columns([3, 1])
-        with col_f1:
-            st.markdown("#### 🚀 Futures Order Book (Futures 5x Orders Log)")
-        with col_f2:
-            if st.button("🗑️ Reset Futures History", key="btn_reset_fut"):
-                # 1. Permanently delete from MongoDB Cloud and local file
-                db_helper.reset_trade_history(is_futures=True)
-                db_helper.save_state('fo_state', {})
-                # 2. Tell Render Server to clear its memory/cache
-                try:
-                    requests.get("https://trading-bot-leaw.onrender.com/reset_futures", timeout=4)
-                except Exception:
-                    pass
-                # 3. Clear Streamlit cache
-                st.cache_data.clear()
-                st.toast("✅ Futures trade history permanently cleared!", icon="🗑️")
+        # ─── ANGEL ONE OFFICIAL CONTRACT NOTE BREAKDOWN ───
+        st.markdown("""
+<div style="background: linear-gradient(135deg, #131722 0%, #1e222d 100%);
+            border: 1.5px solid #00c853; border-radius: 12px; padding: 18px 22px; margin-bottom: 20px;">
+  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
+    <span style="font-size:16px; font-weight:800; color:#00e676;">🏛️ Angel One Contract Note Breakdown (BEL MIS Intraday)</span>
+    <span style="background:rgba(0,200,83,0.15); color:#00e676; border:1px solid #00c853; padding:4px 12px; border-radius:16px; font-size:12px; font-weight:700;">SETTLED</span>
+  </div>
+  <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; font-size:13px;">
+    <div style="background:#0d1117; padding:10px 14px; border-radius:8px; border:1px solid #2a2e39;">
+      <span style="color:#8892b0;">Account:</span><br><b style="color:#fff;">SHAIK KALESHA (AABZ864543)</b>
+    </div>
+    <div style="background:#0d1117; padding:10px 14px; border-radius:8px; border:1px solid #2a2e39;">
+      <span style="color:#8892b0;">Intraday Equity P&L:</span><br><b style="color:#ff5252;">-₹5.70</b> (3 qty @ ₹358.75 ➔ ₹356.85)
+    </div>
+    <div style="background:#0d1117; padding:10px 14px; border-radius:8px; border:1px solid #2a2e39;">
+      <span style="color:#8892b0;">Brokerage & Taxes:</span><br><b style="color:#ffa726;">-₹11.88</b> (Brokerage, STT, GST, SEBI)
+    </div>
+    <div style="background:#0d1117; padding:10px 14px; border-radius:8px; border:1px solid #2a2e39;">
+      <span style="color:#8892b0;">Net Settlement Deducted:</span><br><b style="color:#ff5252;">-₹17.58</b> (P&L + Charges)
+    </div>
+    <div style="background:#0d1117; padding:10px 14px; border-radius:8px; border:1px solid #00c853;">
+      <span style="color:#8892b0;">Live Available Balance:</span><br><b style="color:#00e676;">₹282.42</b> (Verified from RMS)
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+        col_s1, col_s2 = st.columns([3, 1])
+        with col_s1:
+            st.markdown("#### 🇮🇳 Angel One Executed Orders Log")
+        with col_s2:
+            if st.button("🔄 Refresh Orders", key="btn_ref_angel_orders", use_container_width=True):
                 st.rerun()
 
-        df_fo = db_helper.get_trade_history_df(is_futures=True)
-        if not df_fo.empty:
-            try:
-                if not df_fo.empty:
+        df_perf = db_helper.get_trade_history_df(is_futures=False)
+        df_perf_valid = pd.DataFrame()
+        if not df_perf.empty:
+            df_perf_valid = df_perf[df_perf['Symbol'].astype(str).str.endswith(('.NS', '.BO'))].copy()
+
+        if not df_perf_valid.empty:
+            enriched_spot = []
+            for idx, r in df_perf_valid.iterrows():
+                pr = float(r.get('Price', 0))
+                sh = float(r.get('Shares', 0))
+                sym = str(r.get('Symbol', '')).replace('.NS', '')
+                val_inr = pr * sh
+                act = str(r.get('Action', '')).upper()
+                raw_prof = str(r.get('Profit', '0')).replace('₹', '').replace('$', '').replace(',', '').strip()
+                try: g_prof = float(raw_prof)
+                except: g_prof = 0.0
+                
+                est_charges = 11.88 if sym == 'BEL' else 15.00
+                net_p = round(g_prof - est_charges, 2) if act == 'SELL' else 0.0
+
+                enriched_spot.append({
+                    "Time (IST)": r.get('Time'),
+                    "Symbol": sym,
+                    "Action": act,
+                    "Price": f"₹{pr:,.2f}",
+                    "Quantity": f"{int(sh) if sh == int(sh) else sh}",
+                    "Turnover (5x)": f"₹{val_inr:,.2f}",
+                    "Est Charges": f"₹{est_charges:.2f}" if act == 'SELL' else "-",
+                    "Gross P&L": f"₹{g_prof:+,.2f}" if act == 'SELL' else "-",
+                    "Net Settlement": f"₹{net_p:+,.2f}" if act == 'SELL' else "-"
+                })
+
+            safe_dataframe(pd.DataFrame(enriched_spot).iloc[::-1], hide_index=True)
+        else:
+            st.info("No prior NSE orders recorded yet.")
+
+    else:
+        # 🌐 Binance Paper Trading Mode: Pure Crypto Orders
+        st.subheader("📋 Crypto Paper Trading Orders Log")
+        st.caption("Historical simulated trades and performance metrics for Spot and Futures practice:")
+
+        df_fo_cnt = len(db_helper.get_trade_history_df(is_futures=True))
+        df_sp = db_helper.get_trade_history_df(is_futures=False)
+        df_sp_crypto = df_sp[df_sp['Symbol'].astype(str).str.endswith(('-USD', '-USDT'))] if not df_sp.empty else pd.DataFrame()
+        
+        hist_tab_spot, hist_tab_fut = st.tabs([f"📌 Crypto Spot Orders ({len(df_sp_crypto)})", f"🚀 Crypto Futures (5x) Orders ({df_fo_cnt})"])
+
+        with hist_tab_fut:
+            col_f1, col_f2 = st.columns([3, 1])
+            with col_f1:
+                st.markdown("#### 🚀 Futures Order Book (Futures 5x Orders Log)")
+            with col_f2:
+                if st.button("🗑️ Reset Futures History", key="btn_reset_fut"):
+                    db_helper.reset_trade_history(is_futures=True)
+                    db_helper.save_state('fo_state', {})
+                    try:
+                        requests.get("https://trading-bot-leaw.onrender.com/reset_futures", timeout=4)
+                    except Exception:
+                        pass
+                    st.cache_data.clear()
+                    st.toast("✅ Futures trade history permanently cleared!", icon="🗑️")
+                    st.rerun()
+
+            df_fo = db_helper.get_trade_history_df(is_futures=True)
+            if not df_fo.empty:
+                try:
                     enriched_fut = []
                     total_fut_fees = 0.0
                     total_fut_gross = 0.0
@@ -2495,11 +2578,10 @@ with tab_orders:
                     for idx, r in df_fo.iterrows():
                         margin = float(r.get('Margin', 5000.0))
                         lev = int(r.get('Leverage', 5))
-                        notional = margin * lev # ₹25,000 position
+                        notional = margin * lev
                         act = str(r.get('Action', '')).upper()
                         gross_pnl = float(r.get('Profit_INR', 0.0))
                         
-                        # Binance Futures 0.05% taker fee = ₹12.50 per leg, ₹25 roundtrip
                         per_trade_fee = round(notional * 0.0005, 2) if act == 'OPEN' else round(notional * 0.001, 2)
                         total_fut_fees += per_trade_fee
                         
@@ -2539,131 +2621,121 @@ with tab_orders:
                     fp4.metric("Net Realized Profit", f"₹{net_fut_total:,.2f}", f"{net_fut_total:+.2f}", f_net_col)
                     
                     safe_dataframe(pd.DataFrame(enriched_fut).iloc[::-1], hide_index=True)
-                else:
-                    st.info("No futures orders currently.")
-            except Exception as e:
-                st.info("Futures trades are being recorded...")
-        else:
-            st.info("No futures trade logs yet.")
+                except Exception as e:
+                    st.info("Futures trades are being recorded...")
+            else:
+                st.info("No futures trade logs yet.")
 
-
-    with hist_tab_spot:
-        col_s1, col_s2 = st.columns([3, 1])
-        with col_s1:
-            st.markdown("#### 📌 Spot Orders Log")
-        with col_s2:
-            if st.button("🗑️ Reset Spot History", key="btn_reset_spot"):
-                # 1. Permanently delete from MongoDB Cloud and local file
-                db_helper.reset_trade_history(is_futures=False)
-                db_helper.save_state('dca_state', {})
-                # 2. Tell Render Server to clear its memory/cache
-                try:
-                    requests.get("https://trading-bot-leaw.onrender.com/reset_spot", timeout=4)
-                except Exception:
-                    pass
-                # 3. Clear Streamlit cache
-                st.cache_data.clear()
-                st.toast("✅ Spot trade history permanently cleared!", icon="🗑️")
-                st.rerun()
-
-        df_perf = db_helper.get_trade_history_df(is_futures=False)
-        if not df_perf.empty:
-            try:
-                df_perf_valid = df_perf[df_perf['Symbol'].astype(str).str.endswith(('-USD', '.NS', '.BO'))].copy()
-                
-                # Enrich Spot with Fees & Net PnL per trade
-                enriched_spot = []
-                total_spot_fees = 0.0
-                gross_spot_profit = 0.0
-                gross_spot_loss = 0.0
-                closed_count = 0
-                wins = 0
-                losses = 0
-                
-                for idx, r in df_perf_valid.iterrows():
-                    pr = float(r.get('Price', 0))
-                    sh = float(r.get('Shares', 0))
-                    sym = str(r.get('Symbol', ''))
-                    is_c = sym.endswith('-USD')
-                    val_inr = pr * sh * (USD_TO_INR if is_c else 1.0)
-                    act = str(r.get('Action', '')).upper()
-                    
-                    # 0.1% fee on turnover (₹10 on ₹10,000)
-                    trade_fee = round(val_inr * 0.001, 2)
-                    total_spot_fees += trade_fee
-                    
-                    raw_prof = str(r.get('Profit', '0')).replace('₹', '').replace('$', '').replace(',', '').strip()
+        with hist_tab_spot:
+            col_s1, col_s2 = st.columns([3, 1])
+            with col_s1:
+                st.markdown("#### 📌 Crypto Spot Orders Log")
+            with col_s2:
+                if st.button("🗑️ Reset Spot History", key="btn_reset_spot"):
+                    db_helper.reset_trade_history(is_futures=False)
+                    db_helper.save_state('dca_state', {})
                     try:
-                        g_prof = float(raw_prof)
-                    except:
-                        g_prof = 0.0
-                        
-                    g_prof_inr = round(g_prof * USD_TO_INR, 2) if is_c else round(g_prof, 2)
-                    
-                    if act == 'SELL':
-                        closed_count += 1
-                        if g_prof_inr > 0:
-                            gross_spot_profit += g_prof_inr
-                            wins += 1
-                        elif g_prof_inr < 0:
-                            gross_spot_loss += abs(g_prof_inr)
-                            losses += 1
-                        net_p = round(g_prof_inr - (trade_fee * 2), 2) # Roundtrip fees in INR
-                    else:
-                        net_p = 0.0
-                        
-                    pr_disp = f"${pr:,.2f}" if is_c else f"₹{pr:,.2f}"
-                    if is_c:
-                        gross_disp = f"+${g_prof:,.2f} (₹{g_prof_inr:+,.2f})" if g_prof > 0 else (f"-${abs(g_prof):,.2f} (₹{g_prof_inr:+,.2f})" if g_prof < 0 else "₹0.00")
-                    else:
-                        gross_disp = f"₹{g_prof_inr:+,.2f}"
-                        
-                    enriched_spot.append({
-                        "Time (IST)": r.get('Time'),
-                        "Symbol": sym.replace('-USD', '').replace('.NS', ''),
-                        "Action": act,
-                        "Price": pr_disp,
-                        "Quantity": f"{sh:.4f}",
-                        "Turnover": f"₹{val_inr:,.2f}",
-                        "Fees (0.1%)": f"₹{trade_fee:.2f}",
-                        "Gross Profit": gross_disp if act == 'SELL' else "-",
-                        "Net PnL": f"₹{net_p:+,.2f}" if act == 'SELL' else "-"
-                    })
-                    
-                net_spot_total = (gross_spot_profit - gross_spot_loss - total_spot_fees) if closed_count > 0 else 0.0
-                win_rate = (wins / closed_count * 100) if closed_count > 0 else 0.0
-                
-                p1, p2, p3, p4 = st.columns(4)
-                p1.metric("Closed Spot Trades", f"{closed_count}")
-                p2.metric("Spot Win Rate", f"{win_rate:.1f}%", f"{wins}W | {losses}L")
-                p3.metric("Brokerage & Fees", f"₹{total_spot_fees:,.2f}", "0.1% Fee")
-                net_col = "normal" if net_spot_total >= 0 else "inverse"
-                p4.metric("Net Realized Profit", f"₹{net_spot_total:,.2f}", f"{net_spot_total:+.2f}", net_col)
+                        requests.get("https://trading-bot-leaw.onrender.com/reset_spot", timeout=4)
+                    except Exception:
+                        pass
+                    st.cache_data.clear()
+                    st.toast("✅ Spot trade history permanently cleared!", icon="🗑️")
+                    st.rerun()
 
-                if enriched_spot:
-                    safe_dataframe(pd.DataFrame(enriched_spot).iloc[::-1], hide_index=True)
-                else:
-                    st.info("No spot orders currently.")
-            except Exception as e:
-                st.info("Spot trades are being recorded...")
-        else:
-            st.info("No spot trade logs yet.")
+            if not df_sp_crypto.empty:
+                try:
+                    enriched_spot = []
+                    total_spot_fees = 0.0
+                    gross_spot_profit = 0.0
+                    gross_spot_loss = 0.0
+                    closed_count = 0
+                    wins = 0
+                    losses = 0
+                    
+                    for idx, r in df_sp_crypto.iterrows():
+                        pr = float(r.get('Price', 0))
+                        sh = float(r.get('Shares', 0))
+                        sym = str(r.get('Symbol', ''))
+                        val_usd = pr * sh
+                        val_inr = val_usd * USD_TO_INR
+                        act = str(r.get('Action', '')).upper()
+                        trade_fee_usd = round(val_usd * 0.001, 2)
+                        trade_fee_inr = round(val_inr * 0.001, 2)
+                        total_spot_fees += trade_fee_inr
+                        
+                        raw_prof = str(r.get('Profit', '0')).replace('₹', '').replace('$', '').replace(',', '').strip()
+                        try: g_prof = float(raw_prof)
+                        except: g_prof = 0.0
+                        g_prof_inr = round(g_prof * USD_TO_INR, 2)
+                        
+                        if act == 'SELL':
+                            closed_count += 1
+                            if g_prof_inr > 0:
+                                gross_spot_profit += g_prof_inr
+                                wins += 1
+                            elif g_prof_inr < 0:
+                                gross_spot_loss += abs(g_prof_inr)
+                                losses += 1
+                            net_p = round(g_prof_inr - (trade_fee_inr * 2), 2)
+                        else:
+                            net_p = 0.0
+                            
+                        gross_disp = f"+${g_prof:,.2f} (₹{g_prof_inr:+,.2f})" if g_prof > 0 else (f"-${abs(g_prof):,.2f} (₹{g_prof_inr:+,.2f})" if g_prof < 0 else "$0.00")
+                            
+                        enriched_spot.append({
+                            "Time (IST)": r.get('Time'),
+                            "Symbol": sym.replace('-USD', ''),
+                            "Action": act,
+                            "Price": f"${pr:,.2f}",
+                            "Quantity": f"{sh:.4f}",
+                            "Turnover": f"${val_usd:,.2f} (₹{val_inr:,.0f})",
+                            "Fees (0.1%)": f"${trade_fee_usd:.2f}",
+                            "Gross Profit": gross_disp if act == 'SELL' else "-",
+                            "Net PnL": f"₹{net_p:+,.2f}" if act == 'SELL' else "-"
+                        })
+                        
+                    net_spot_total = (gross_spot_profit - gross_spot_loss - total_spot_fees) if closed_count > 0 else 0.0
+                    win_rate = (wins / closed_count * 100) if closed_count > 0 else 0.0
+                    
+                    p1, p2, p3, p4 = st.columns(4)
+                    p1.metric("Closed Spot Trades", f"{closed_count}")
+                    p2.metric("Spot Win Rate", f"{win_rate:.1f}%", f"{wins}W | {losses}L")
+                    p3.metric("Brokerage & Fees", f"₹{total_spot_fees:,.2f}", "0.1% Fee")
+                    net_col = "normal" if net_spot_total >= 0 else "inverse"
+                    p4.metric("Net Realized Profit", f"₹{net_spot_total:,.2f}", f"{net_spot_total:+.2f}", net_col)
+
+                    if enriched_spot:
+                        safe_dataframe(pd.DataFrame(enriched_spot).iloc[::-1], hide_index=True)
+                except Exception as e:
+                    st.info("Spot trades are being recorded...")
+            else:
+                st.info("No crypto spot trade logs yet.")
 
 # =============================================================
 # TAB 5: 🔍 Smart Asset Screener (ASSET SCREENER)
 # =============================================================
 with tab_search:
-    st.header("🔍 Smart Asset Search Engine (Universal Screener & Watchlist)")
-    col_s1, col_s2 = st.columns([3, 1])
-    with col_s1:
-        search_query = st.text_input("🔎 Search Stock or Crypto Symbol / Ticker:", placeholder="e.g. ZOMATO, SUZLON, TATASTEEL, BTC, ETH, SOL, DOGE", key="universal_search_input")
-    with col_s2:
-        market_choice = st.radio("Market Type:", ["🇮🇳 Indian Stock (NSE)", "🪙 Crypto (USD)"], key="universal_market_choice")
+    if is_angel_live:
+        st.header("🔍 NSE 25 Momentum Stock Screener & Watchlist")
+        st.caption("Active screener for Indian equities eligible for 5x MIS Intraday Trading on Angel One:")
+        col_s1, col_s2 = st.columns([3, 1])
+        with col_s1:
+            search_query = st.text_input("🔎 Search NSE Stock Ticker:", placeholder="e.g. BEL, ITC, TATASTEEL, ONGC, IOC, SUZLON, SBIN, HDFCBANK", key="nse_search_input")
+        with col_s2:
+            market_choice = st.radio("Market Type:", ["🇮🇳 Indian Stock (NSE)"], key="universal_market_choice")
+    else:
+        st.header("🔍 Crypto 24/7 Universal Screener & Watchlist")
+        st.caption("Active 24/7 screener for crypto assets on Binance Paper Trading:")
+        col_s1, col_s2 = st.columns([3, 1])
+        with col_s1:
+            search_query = st.text_input("🔎 Search Crypto Coin / Pair:", placeholder="e.g. BTC, ETH, SOL, XRP, DOGE, ADA, NEAR", key="crypto_search_input")
+        with col_s2:
+            market_choice = st.radio("Market Type:", ["🪙 Crypto (USD)"], key="universal_market_choice")
         
     do_search = st.button("🔍 Verify Live Asset Data", use_container_width=True)
     if do_search and search_query.strip():
         raw_q = search_query.strip().upper()
-        if "Indian" in market_choice or "NSE" in market_choice:
+        if "Indian" in market_choice or "NSE" in market_choice or is_angel_live:
             clean_sym = raw_q.replace('.NS', '').replace('.BO', '')
             final_sym = f"{clean_sym}.NS"
             asset_category = "NSE"

@@ -301,15 +301,17 @@ def get_current_trading_mode():
     try:
         c_mode = db_helper.get_state('trading_mode')
         if c_mode:
-            content = str(c_mode.get('mode', c_mode) if isinstance(c_mode, dict) else c_mode)
+            content = str(c_mode.get('mode', c_mode) if isinstance(c_mode, dict) else c_mode).strip()
             if "Angel" in content or "ANGEL" in content:
                 return "ANGEL_LIVE"
-            elif "Dual" in content:
+            elif "Dual" in content or "DUAL" in content:
                 return "DUAL_TRADING"
-            elif "Zerodha" in content or "Indian" in content or "NSE" in content:
+            elif "Zerodha" in content or "Indian" in content or "NSE" in content or "ZERODHA" in content:
                 return "ZERODHA_PAPER"
             elif "Live" in content and "Binance" in content:
                 return "BINANCE_LIVE"
+            elif "Paper" in content or "PAPER" in content or "Binance" in content or "BINANCE" in content:
+                return "BINANCE_PAPER"
     except Exception:
         pass
 
@@ -320,7 +322,7 @@ def get_current_trading_mode():
                 content = f.read().strip()
             if "Angel" in content or "ANGEL" in content:
                 return "ANGEL_LIVE"
-            elif "Dual" in content:
+            elif "Dual" in content or "DUAL" in content:
                 return "DUAL_TRADING"
             elif "Zerodha" in content or "Indian" in content or "NSE" in content:
                 return "ZERODHA_PAPER"
@@ -329,7 +331,7 @@ def get_current_trading_mode():
             else:
                 return "BINANCE_PAPER"
         except: pass
-    return "DUAL_TRADING"
+    return "BINANCE_PAPER"
 
 def is_live_trading():
     return get_current_trading_mode() in ("BINANCE_LIVE", "ANGEL_LIVE")
