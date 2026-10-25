@@ -4,6 +4,7 @@ import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import binance_bot
 import futures_bot
+import overnight_brain
 import db_helper
 
 print("Starting 24/7 Trading Bot Backend Worker (Render Web Service)...", flush=True)
@@ -64,32 +65,6 @@ class DummyHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({"status": "ERROR", "error": str(e)}).encode('utf-8'))
                 return
 
-        # 🔄 REMOTE STRICT MODE SWITCH (Angel Real Money vs Virtual Paper)
-        if self.path.startswith('/set_mode'):
-            self.send_response(200)
-            self.send_header("Content-type", "application/json; charset=utf-8")
-            self.end_headers()
-            try:
-                import urllib.parse
-                parsed = urllib.parse.urlparse(self.path)
-                params = urllib.parse.parse_qs(parsed.query)
-                new_mode = params.get('mode', ['ANGEL_ONE_LIVE'])[0]
-                db_helper.save_state('trading_mode', {'mode': new_mode})
-                with open('trading_mode.txt', 'w', encoding='utf-8') as f:
-                    f.write(new_mode)
-                if "Angel" in new_mode:
-                    # In Real Money Angel mode: Instantly purge all virtual crypto positions!
-                    db_helper.save_state('fo_state', {})
-                    cur_dca = db_helper.get_state('dca_state', {})
-                    clean_dca = {k: v for k, v in cur_dca.items() if not k.endswith('-USD')}
-                    db_helper.save_state('dca_state', clean_dca)
-                msg = {"status": "SUCCESS", "mode": new_mode, "message": f"Trading mode locked to {new_mode}"}
-                self.wfile.write(json.dumps(msg, ensure_ascii=False, indent=4).encode('utf-8'))
-                return
-            except Exception as e:
-                self.wfile.write(json.dumps({"status": "ERROR", "error": str(e)}).encode('utf-8'))
-                return
-
         self.send_response(200)
         self.send_header("Content-type", "application/json; charset=utf-8")
         self.end_headers()
@@ -141,11 +116,15 @@ def run_spot():
 def run_futures():
     while True:
         try:
-            mode = binance_bot.get_current_trading_mode()
-            if mode == "ANGEL_ONE_LIVE":
-                # Binance trading is paused when Angel One Live Indian stocks mode is active
-                time.sleep(30)
-                continue
+            # Check if paper futures trading is allowed
+            try:
+                c_mode = db_helper.get_state('trading_mode')
+                c_str = str(c_mode.get('mode', c_mode) if isinstance(c_mode, dict) else c_mode).lower()
+                if "angel" in c_str:
+                    time.sleep(15)
+                    continue
+            except Exception:
+                pass
             print("Starting Futures Bot...", flush=True)
             futures_bot.run_futures_bot()
         except Exception as e:
@@ -179,6 +158,9 @@ if __name__ == "__main__":
     
     t3 = threading.Thread(target=keep_alive_worker, daemon=True)
     t3.start()
+
+    t4 = threading.Thread(target=overnight_brain.overnight_research_worker, daemon=True)
+    t4.start()
     
     run_dummy_server()
 

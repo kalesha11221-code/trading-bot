@@ -2110,6 +2110,153 @@ with tab_mind:
     st.markdown("### 🧠 AI Brain & Real-Time Trading Reasoning Hub")
     st.caption("Transparent real-time breakdown of why the AI entered, holds, or skips assets across all tracked markets:")
 
+    # =========================================================
+    # 🌙 0. AI OVERNIGHT RESEARCH & 9:15 AM MORNING BATTLEPLAN
+    # =========================================================
+    st.subheader("🌙 AI Overnight Research & 9:15 AM Morning Battleplan")
+    st.caption("భారత మార్కెట్ ముగిసిన తర్వాత (రాత్రంతా), ఈ AI బ్రెయిన్ గ్లోబల్ మార్కెట్స్, నాస్‌డాక్, క్రూడ్ ఆయిల్ & 25 NSE స్టాక్స్ లోతుగా రీసెర్చ్ చేసి ఉదయం 9:15 AM కు స్నిపర్ ట్రేడ్స్ సిద్ధం చేస్తుంది:")
+
+    # Load overnight research from DB or file
+    on_res = db_helper.get_state('overnight_research', {})
+    if not on_res and os.path.exists('overnight_research.json'):
+        try:
+            with open('overnight_research.json', 'r') as f_on:
+                on_res = json.load(f_on)
+        except Exception:
+            pass
+
+    col_btn1, col_btn2 = st.columns([3, 1])
+    with col_btn2:
+        if st.button("🔄 Re-run Overnight Audit", key="btn_rerun_overnight", use_container_width=True):
+            with st.spinner("AI రాత్రి రీసెర్చ్ రన్ చేస్తోంది... గ్లోబల్ క్యూస్ & 25 స్టాక్స్ ఆడిట్ చేస్తోంది..."):
+                try:
+                    import overnight_brain
+                    on_res = overnight_brain.run_overnight_audit()
+                    st.success("✅ రాత్రి రీసెర్చ్ పూర్తయింది!")
+                    st.rerun()
+                except Exception as e_aud:
+                    st.error(f"Error running audit: {e_aud}")
+
+    if on_res:
+        g_cues = on_res.get('global_cues', {})
+        bias = g_cues.get('bias', 'NEUTRAL ⚖️')
+        open_pred = g_cues.get('open_prediction', 'FLAT / CAUTION')
+        ts = on_res.get('timestamp', 'N/A')
+        v_summary = on_res.get('voice_summary', '')
+        top_picks = on_res.get('top_3_picks', [])
+
+        # Display Global Sentiment Banner
+        if 'BULLISH' in bias:
+            banner_style = "background: linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(16, 185, 129, 0.05)); border: 1px solid rgba(34, 197, 94, 0.4);"
+            badge_color = "#22c55e"
+        elif 'BEARISH' in bias:
+            banner_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(220, 38, 38, 0.05)); border: 1px solid rgba(239, 68, 68, 0.4);"
+            badge_color = "#ef4444"
+        else:
+            banner_style = "background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(37, 99, 235, 0.05)); border: 1px solid rgba(59, 130, 246, 0.4);"
+            badge_color = "#3b82f6"
+
+        banner_html = f"""
+        <div style="{banner_style} border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <div>
+                    <span style="font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; font-weight: 600;">Global Macro Sentiment & Opening Gap Forecast</span>
+                    <h3 style="margin: 4px 0 0 0; font-size: 20px; color: {badge_color};">
+                        {bias} &nbsp;|&nbsp; 9:15 AM: {open_pred}
+                    </h3>
+                </div>
+                <div style="text-align: right;">
+                    <span style="font-size: 11px; color: #94a3b8;">Last Research Audit</span><br/>
+                    <strong style="font-size: 13px; color: #cbd5e1;">{ts}</strong>
+                </div>
+            </div>
+            <div style="margin-top: 10px; font-size: 13px; color: #e2e8f0; line-height: 1.5; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 8px;">
+                🗣️ <strong>AI బ్రెయిన్ విశ్లేషణ:</strong> {v_summary}
+            </div>
+        </div>
+        """
+        st.markdown(banner_html, unsafe_allow_html=True)
+
+        # Global Telemetry Row
+        telemetry = g_cues.get('telemetry', {})
+        if telemetry:
+            tel_cols = st.columns(len(telemetry))
+            for t_idx, (t_name, t_val) in enumerate(telemetry.items()):
+                with tel_cols[t_idx]:
+                    chg = t_val.get('change_pct', 0.0)
+                    chg_str = f"{chg:+.2f}%"
+                    pr = t_val.get('price', 0.0)
+                    pr_str = f"₹{pr:,.2f}" if 'INR' in t_name or 'Nifty' in t_name else f"${pr:,.2f}"
+                    st.metric(label=f"🌐 {t_name}", value=pr_str, delta=chg_str)
+
+        # Top 3 Golden Sniper Stocks
+        st.markdown("#### 🎯 9:15 AM మార్నింగ్ స్నిపర్ స్టాక్స్ (Top 3 Golden Picks)")
+        st.caption("25 NSE మొమెంటం స్టాక్స్ లో టెక్నికల్ స్కోర్, CPR కంప్రెషన్, 200 EMA మరియు రిస్క్-రివార్డ్ ఆధారంగా ఎంపిక చేయబడిన ఉత్తమ స్టాక్స్:")
+
+        if top_picks:
+            pick_cols = st.columns(len(top_picks))
+            for p_idx, pick in enumerate(top_picks):
+                with pick_cols[p_idx]:
+                    sym_c = pick.get('clean_name', pick.get('symbol', ''))
+                    score = pick.get('score', 0)
+                    close_pr = pick.get('close', 0.0)
+                    target_pr = pick.get('target_2_5_pct', 0.0)
+                    sl_pr = pick.get('stop_loss', 0.0)
+                    est_net = pick.get('est_net_profit', 0.0)
+                    rsi_p = pick.get('rsi', 0.0)
+                    rvol_p = pick.get('rvol', 1.0)
+                    cpr_desc = pick.get('cpr_desc', 'నార్మల్ CPR')
+                    thesis_p = pick.get('thesis', '')
+                    is_narrow = pick.get('is_narrow_cpr', False)
+                    cpr_badge = "🚀 నారో CPR (వన్-వే ట్రెండ్)" if is_narrow else "⚖️ మీడియం CPR"
+
+                    card_html = f"""
+                    <div style="background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 14px; margin-bottom: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 16px; font-weight: 700; color: #38bdf8;">#{p_idx+1} {sym_c}</span>
+                            <span style="background: rgba(34, 197, 94, 0.2); color: #4ade80; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 700;">Score: {score}/100</span>
+                        </div>
+                        <div style="margin: 8px 0; font-size: 20px; font-weight: 700; color: #f8fafc;">
+                            ₹{close_pr:,.2f}
+                        </div>
+                        <div style="font-size: 12px; color: #94a3b8; margin-bottom: 8px;">
+                            🎯 <strong>Target (+2.50%):</strong> <span style="color: #4ade80; font-weight: 600;">₹{target_pr:,.2f}</span><br/>
+                            🛑 <strong>Stop Loss (-1.2%):</strong> <span style="color: #f87171; font-weight: 600;">₹{sl_pr:,.2f}</span><br/>
+                            💰 <strong>Est. Net Profit:</strong> <span style="color: #fbbf24; font-weight: 600;">+₹{est_net:,.2f}</span>
+                        </div>
+                        <div style="font-size: 11px; background: rgba(15, 23, 42, 0.6); padding: 6px; border-radius: 6px; color: #cbd5e1; margin-bottom: 6px;">
+                            📊 <strong>RSI:</strong> {rsi_p:.1f} | <strong>RVOL:</strong> {rvol_p:.2f}x<br/>
+                            🧭 <strong>CPR:</strong> {cpr_badge}
+                        </div>
+                    </div>
+                    """
+                    st.markdown(card_html, unsafe_allow_html=True)
+                    with st.expander(f"🔍 {sym_c} AI థీసిస్ & కారణాలు", expanded=False):
+                        st.write(thesis_p)
+
+        # Ranked Table for all 25 stocks
+        ranked_all = on_res.get('ranked_stocks', [])
+        if ranked_all:
+            with st.expander(f"📋 మొత్తం {len(ranked_all)} NSE స్టాక్స్ పూర్తి ఆడిట్ ర్యాంకింగ్ టేబుల్ (Click to inspect all)", expanded=False):
+                r_rows = []
+                for r_idx, r_item in enumerate(ranked_all):
+                    r_rows.append({
+                        "Rank": f"#{r_idx+1}",
+                        "Stock": r_item.get('clean_name', ''),
+                        "AI Score": f"{r_item.get('score', 0)}/100",
+                        "Price": f"₹{r_item.get('close', 0.0):,.2f}",
+                        "RSI (14)": f"{r_item.get('rsi', 0.0):.1f}",
+                        "RVOL": f"{r_item.get('rvol', 1.0):.2f}x",
+                        "CPR Type": "🚀 Narrow (Trend)" if r_item.get('is_narrow_cpr', False) else "⚖️ Medium/Wide",
+                        "Target (+2.5%)": f"₹{r_item.get('target_2_5_pct', 0.0):,.2f}",
+                        "Thesis": r_item.get('thesis', '')
+                    })
+                safe_dataframe(pd.DataFrame(r_rows), hide_index=True)
+    else:
+        st.info("🌙 రాత్రి రీసెర్చ్ రిపోర్ట్ ఇంకా రన్ కాలేదు. పైన ఉన్న **'🔄 Re-run Overnight Audit'** బటన్ క్లిక్ చేసి వెంటనే రీసెర్చ్ ప్రారంభించండి.")
+
+    st.markdown("---")
+
     # 1. ACTIVE TRADES RATIONALE
     st.subheader("🟢 1. Active Trade Rationale & Thesis")
     if dca_positions:
