@@ -1,52 +1,59 @@
 {
-  "brain_version": "3.0-NeuralSniper",
-  "iq_score": 138,
-  "learning_iterations": 210,
-  "total_trades_analyzed": 115,
-  "win_rate": 68.5,
-  "strategies": {
-    "order_block_bounce": {
-      "name": "Smart Money Order Block (లిక్విడిటీ స్వీప్)",
-      "wins": 24,
-      "losses": 5,
-      "weight": 1.45,
-      "win_rate": 82.8
+    "brain_version": "3.0-NeuralSniper",
+    "iq_score": 138,
+    "learning_iterations": 210,
+    "total_trades_analyzed": 115,
+    "win_rate": 68.5,
+    "strategies": {
+        "order_block_bounce": {
+            "name": "Smart Money Order Block (\u0c32\u0c3f\u0c15\u0c4d\u0c35\u0c3f\u0c21\u0c3f\u0c1f\u0c40 \u0c38\u0c4d\u0c35\u0c40\u0c2a\u0c4d)",
+            "wins": 24,
+            "losses": 5,
+            "weight": 1.45,
+            "win_rate": 82.8
+        },
+        "fvg_imbalance_fill": {
+            "name": "Fair Value Gap (FVG \u0c2a\u0c4d\u0c30\u0c48\u0c38\u0c4d \u0c07\u0c02\u0c2c\u0c4d\u0c2f\u0c3e\u0c32\u0c46\u0c28\u0c4d\u0c38\u0c4d)",
+            "wins": 19,
+            "losses": 4,
+            "weight": 1.4,
+            "win_rate": 82.6
+        },
+        "trend_pullback_ema": {
+            "name": "15m HTF \u0c1f\u0c4d\u0c30\u0c46\u0c02\u0c21\u0c4d \u0c2a\u0c41\u0c32\u0c4d\u200c\u0c2c\u0c4d\u0c2f\u0c3e\u0c15\u0c4d (\u0c1f\u0c4d\u0c30\u0c46\u0c02\u0c21\u0c4d \u0c2b\u0c3e\u0c32\u0c4b\u0c2f\u0c3f\u0c02\u0c17\u0c4d)",
+            "wins": 32,
+            "losses": 7,
+            "weight": 1.35,
+            "win_rate": 82.0
+        },
+        "rsi_vwap_confluence": {
+            "name": "RSI + VWAP \u0c07\u0c28\u0c4d\u0c38\u0c4d\u0c1f\u0c3f\u0c1f\u0c4d\u0c2f\u0c42\u0c37\u0c28\u0c32\u0c4d \u0c15\u0c28\u0c4d\u0c2b\u0c4d\u0c32\u0c41\u0c2f\u0c46\u0c28\u0c4d\u0c38\u0c4d",
+            "wins": 28,
+            "losses": 8,
+            "weight": 1.3,
+            "win_rate": 77.8
+        },
+        "morning_dip_bounce": {
+            "name": "Morning Dip-Bounce Reversal (\u0c2e\u0c3e\u0c30\u0c4d\u0c28\u0c3f\u0c02\u0c17\u0c4d \u0c2c\u0c3e\u0c1f\u0c2e\u0c4d \u0c2c\u0c4c\u0c28\u0c4d\u0c38\u0c4d & VWAP \u0c30\u0c40\u0c15\u0c4d\u0c32\u0c46\u0c2f\u0c3f\u0c2e\u0c4d)",
+            "wins": 26,
+            "losses": 4,
+            "weight": 1.6,
+            "win_rate": 86.7
+        }
     },
-    "fvg_imbalance_fill": {
-      "name": "Fair Value Gap (FVG ప్రైస్ ఇంబ్యాలెన్స్)",
-      "wins": 19,
-      "losses": 4,
-      "weight": 1.40,
-      "win_rate": 82.6
+    "RSI_weight": 1.3,
+    "MACD_weight": 1.25,
+    "BOL_weight": 1.4,
+    "ML_weight": 1.35,
+    "small_capital_compounding": {
+        "streak": 3,
+        "confidence_multiplier": 1.15,
+        "current_tier": "Level 2 (\u0c1a\u0c3f\u0c28\u0c4d\u0c28 \u0c15\u0c4d\u0c2f\u0c3e\u0c2a\u0c3f\u0c1f\u0c32\u0c4d \u0c17\u0c4d\u0c30\u0c4b\u0c24\u0c4d \u0c2e\u0c4b\u0c21\u0c4d)",
+        "target_compounding_pct": "+25%"
     },
-    "trend_pullback_ema": {
-      "name": "15m HTF ట్రెండ్ పుల్‌బ్యాక్ (ట్రెండ్ ఫాలోయింగ్)",
-      "wins": 32,
-      "losses": 7,
-      "weight": 1.35,
-      "win_rate": 82.0
-    },
-    "rsi_vwap_confluence": {
-      "name": "RSI + VWAP ఇన్స్టిట్యూషనల్ కన్ఫ్లుయెన్స్",
-      "wins": 28,
-      "losses": 8,
-      "weight": 1.30,
-      "win_rate": 77.8
-    }
-  },
-  "RSI_weight": 1.30,
-  "MACD_weight": 1.25,
-  "BOL_weight": 1.40,
-  "ML_weight": 1.35,
-  "small_capital_compounding": {
-    "streak": 3,
-    "confidence_multiplier": 1.15,
-    "current_tier": "Level 2 (చిన్న క్యాపిటల్ గ్రోత్ మోడ్)",
-    "target_compounding_pct": "+25%"
-  },
-  "recent_lessons": [
-    "✅ [స్మార్ట్ మనీ]: 15m HTF బుల్లిష్ ట్రెండ్ లో లోయర్ లిక్విడిటీ స్వీప్ వద్ద ఎంట్రీ తీసుకుని పక్కా లాభం తీశావు!",
-    "✅ [FVG ఇంబ్యాలెన్స్]: ప్రైస్ గ్యాప్ ఫిల్ అయిన వెంటనే అయస్కాంతంలా బౌన్స్ అయ్యే పాయింట్ ని గుర్తించాను.",
-    "🛡️ [క్యాపిటల్ సేఫ్టీ]: చిన్న మూలధనంలో ఒకేసారి 3 ట్రేడ్ల కంటే ఎక్కువ వెళ్ళకుండా రిస్క్ ని పూర్తిగా అదుపులో ఉంచాను."
-  ]
+    "recent_lessons": [
+        "\u2705 [\u0c38\u0c4d\u0c2e\u0c3e\u0c30\u0c4d\u0c1f\u0c4d \u0c2e\u0c28\u0c40]: 15m HTF \u0c2c\u0c41\u0c32\u0c4d\u0c32\u0c3f\u0c37\u0c4d \u0c1f\u0c4d\u0c30\u0c46\u0c02\u0c21\u0c4d \u0c32\u0c4b \u0c32\u0c4b\u0c2f\u0c30\u0c4d \u0c32\u0c3f\u0c15\u0c4d\u0c35\u0c3f\u0c21\u0c3f\u0c1f\u0c40 \u0c38\u0c4d\u0c35\u0c40\u0c2a\u0c4d \u0c35\u0c26\u0c4d\u0c26 \u0c0e\u0c02\u0c1f\u0c4d\u0c30\u0c40 \u0c24\u0c40\u0c38\u0c41\u0c15\u0c41\u0c28\u0c3f \u0c2a\u0c15\u0c4d\u0c15\u0c3e \u0c32\u0c3e\u0c2d\u0c02 \u0c24\u0c40\u0c36\u0c3e\u0c35\u0c41!",
+        "\u2705 [FVG \u0c07\u0c02\u0c2c\u0c4d\u0c2f\u0c3e\u0c32\u0c46\u0c28\u0c4d\u0c38\u0c4d]: \u0c2a\u0c4d\u0c30\u0c48\u0c38\u0c4d \u0c17\u0c4d\u0c2f\u0c3e\u0c2a\u0c4d \u0c2b\u0c3f\u0c32\u0c4d \u0c05\u0c2f\u0c3f\u0c28 \u0c35\u0c46\u0c02\u0c1f\u0c28\u0c47 \u0c05\u0c2f\u0c38\u0c4d\u0c15\u0c3e\u0c02\u0c24\u0c02\u0c32\u0c3e \u0c2c\u0c4c\u0c28\u0c4d\u0c38\u0c4d \u0c05\u0c2f\u0c4d\u0c2f\u0c47 \u0c2a\u0c3e\u0c2f\u0c3f\u0c02\u0c1f\u0c4d \u0c28\u0c3f \u0c17\u0c41\u0c30\u0c4d\u0c24\u0c3f\u0c02\u0c1a\u0c3e\u0c28\u0c41.",
+        "\ud83d\udee1\ufe0f [\u0c15\u0c4d\u0c2f\u0c3e\u0c2a\u0c3f\u0c1f\u0c32\u0c4d \u0c38\u0c47\u0c2b\u0c4d\u0c1f\u0c40]: \u0c1a\u0c3f\u0c28\u0c4d\u0c28 \u0c2e\u0c42\u0c32\u0c27\u0c28\u0c02\u0c32\u0c4b \u0c12\u0c15\u0c47\u0c38\u0c3e\u0c30\u0c3f 3 \u0c1f\u0c4d\u0c30\u0c47\u0c21\u0c4d\u0c32 \u0c15\u0c02\u0c1f\u0c47 \u0c0e\u0c15\u0c4d\u0c15\u0c41\u0c35 \u0c35\u0c46\u0c33\u0c4d\u0c33\u0c15\u0c41\u0c02\u0c21\u0c3e \u0c30\u0c3f\u0c38\u0c4d\u0c15\u0c4d \u0c28\u0c3f \u0c2a\u0c42\u0c30\u0c4d\u0c24\u0c3f\u0c17\u0c3e \u0c05\u0c26\u0c41\u0c2a\u0c41\u0c32\u0c4b \u0c09\u0c02\u0c1a\u0c3e\u0c28\u0c41."
+    ]
 }

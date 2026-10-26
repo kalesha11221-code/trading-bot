@@ -880,9 +880,69 @@ def generate_signal(df, sym):
         pred_pts += 2.0 * fvg_w
         thoughts.append("⚡ [FVG Imbalance]: ఫెయిర్ వ్యాల్యూ గ్యాప్ ఫిల్ అయ్యింది! అయస్కాంతంలా బౌన్స్ మొదలైంది.")
 
+    # 🚀 PRO TECHNIQUE 3: Morning Dip-Bounce Reversal & VWAP Reclaim Sniper (మార్నింగ్ బాటమ్ బౌన్స్)
+    dip_w = strat_dict.get('morning_dip_bounce', {}).get('weight', 1.60)
+    is_dip_bounce = False
+    is_overnight_top_pick = False
+
+    # Check if this asset is ranked in Overnight Research Top Picks
+    try:
+        on_state = db_helper.get_state('overnight_research', {})
+        top_picks_list = on_state.get('top_3_picks', [])
+        clean_s = sym.replace('.NS', '').replace('.BO', '').replace('-USD', '')
+        for p_item in top_picks_list:
+            if sym == p_item.get('symbol') or clean_s == p_item.get('clean_name'):
+                is_overnight_top_pick = True
+                break
+    except Exception:
+        pass
+
+    if len(df) >= 12:
+        recent_win = df.tail(min(30, len(df)))
+        session_low = recent_win['low'].min()
+        session_min_rsi = recent_win['RSI'].min() if 'RSI' in recent_win else 50.0
+
+        # Did it have a clear dip/capitulation earlier?
+        had_prior_dip = (session_min_rsi <= 48.0) or (recent_win['low'].iloc[0] > session_low * 1.006)
+        
+        # Bullish Reversal Confirmation:
+        # 1. Price is reclaiming back above EMA 9 or EMA 21 or VWAP
+        reclaiming_fast_ema = (last['close'] >= last['EMA_9'] * 0.998) or (last['close'] >= last['VWAP'] * 0.998)
+        # 2. Candle is green and closing above previous close (Momentum upward)
+        bullish_reversal_candle = (last['close'] > last['open']) and (last['close'] > prev['close'])
+        # 3. Higher low formed: current price has stepped up from bottom
+        higher_low_stepped = (last['low'] >= session_low * 1.001) and (last['close'] > session_low * 1.004)
+        # 4. Volume confirms buying absorption
+        avg_vol_val = float(avg_volume.iloc[-1]) if (not pd.isna(avg_volume.iloc[-1]) and avg_volume.iloc[-1] > 0) else 1.0
+        volume_ok = (last['volume'] >= avg_vol_val * 0.75) or is_fii_volume_surge
+
+        # Time Window for Intraday Equities: 10:00 AM to 01:30 PM (optimal dip-reversal hours)
+        time_ok = True
+        if is_indian:
+            curr_t = now.time()
+            t_start = datetime.strptime("10:00", "%H:%M").time()
+            t_end = datetime.strptime("13:30", "%H:%M").time()
+            time_ok = (t_start <= curr_t <= t_end)
+
+        if had_prior_dip and reclaiming_fast_ema and bullish_reversal_candle and higher_low_stepped and volume_ok and time_ok:
+            is_dip_bounce = True
+
+    if is_dip_bounce:
+        pred_pts += 3.2 * dip_w
+        pillar_trend = True
+        pillar_momentum = True
+        # Crucial: Neutralize old morning gap-down sell score so it doesn't block the bounce entry!
+        sell_score = min(2.5, sell_score * 0.35)
+        thoughts.append("🚀 [Morning Dip-Bounce]: మార్నింగ్ డిప్ పతనం ముగిసింది! బయర్స్ బాటమ్ దగ్గర EMA 9 & VWAP ని రీక్లెయిమ్ చేశారు. పవర్ ఫుల్ బాటమ్ రివర్సల్ బౌన్స్!")
+        if is_overnight_top_pick:
+            pred_pts += 2.0
+            thoughts.append(f"🌙 [Overnight Golden Pick]: రాత్రి AI రీసెర్చ్ టాప్ పిక్ ({clean_s})! డిప్ తర్వాత +2.50% టార్గెట్ రాలీకి హై-కన్విక్షన్ ఎంట్రీ!")
+
     # Determine Dominant Pro Strategy for Self-Learning Tracker
     chosen_strategy = "rsi_vwap_confluence"
-    if is_fii_volume_surge:
+    if is_dip_bounce:
+        chosen_strategy = "morning_dip_bounce"
+    elif is_fii_volume_surge:
         chosen_strategy = "institutional_volume_surge"
     elif is_orb_breakout:
         chosen_strategy = "opening_range_breakout"
@@ -971,6 +1031,7 @@ def generate_signal(df, sym):
     buy_triggered = (
         (confluence_pillars >= min_pillars and buy_score >= req_buy_score and sell_score <= max_sell_score and htf_ok) or
         (is_whale_pump and buy_score >= (3.5 if is_scalper else 6.0) and htf_ok) or
+        (is_dip_bounce and buy_score >= (3.5 if is_scalper else 5.0) and sell_score <= 3.8) or
         (is_scalper and last['RSI'] <= 34 and last['close'] <= (last['Lower_Band'] * 1.005) and sell_score <= max_sell_score)
     )
 
