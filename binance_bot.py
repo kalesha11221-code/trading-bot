@@ -519,7 +519,13 @@ def fetch_data(sym):
 import numpy as np
     
 
+news_cache = {}
+
 def get_news_sentiment(sym):
+    global news_cache
+    now_ts = time.time()
+    if sym in news_cache and (now_ts - news_cache[sym].get('time', 0)) < 900:
+        return news_cache[sym].get('score', 0)
     try:
         if ".NS" in sym or ".BO" in sym or sym.startswith("^"):
             clean_name = sym.replace('.NS', '').replace('.BO', '')
@@ -528,7 +534,7 @@ def get_news_sentiment(sym):
             search_term = sym.replace('-USD', '') + " market news crypto"
         url = f"https://news.google.com/rss/search?q={search_term.replace(' ', '+')}&hl=en-US&gl=US&ceid=US:en"
         req = Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urlopen(req, timeout=5) as response:
+        with urlopen(req, timeout=3) as response:
             xml_data = response.read()
         root = ET.fromstring(xml_data)
         
@@ -542,8 +548,10 @@ def get_news_sentiment(sym):
                 if w in title: score += 1
             for w in neg_words:
                 if w in title: score -= 1
+        news_cache[sym] = {'score': score, 'time': now_ts}
         return score
     except:
+        news_cache[sym] = {'score': 0, 'time': now_ts}
         return 0
 
 
@@ -916,12 +924,12 @@ def generate_signal(df, sym):
         avg_vol_val = float(avg_volume.iloc[-1]) if (not pd.isna(avg_volume.iloc[-1]) and avg_volume.iloc[-1] > 0) else 1.0
         volume_ok = (last['volume'] >= avg_vol_val * 0.75) or is_fii_volume_surge
 
-        # Time Window for Intraday Equities: 10:00 AM to 01:30 PM (optimal dip-reversal hours)
+        # Time Window for Intraday Equities: 09:20 AM to 02:20 PM (flexible dip-reversal hours)
         time_ok = True
         if is_indian:
             curr_t = now.time()
-            t_start = datetime.strptime("10:00", "%H:%M").time()
-            t_end = datetime.strptime("13:30", "%H:%M").time()
+            t_start = datetime.strptime("09:20", "%H:%M").time()
+            t_end = datetime.strptime("14:20", "%H:%M").time()
             time_ok = (t_start <= curr_t <= t_end)
 
         if had_prior_dip and reclaiming_fast_ema and bullish_reversal_candle and higher_low_stepped and volume_ok and time_ok:
@@ -938,9 +946,53 @@ def generate_signal(df, sym):
             pred_pts += 2.0
             thoughts.append(f"🌙 [Overnight Golden Pick]: రాత్రి AI రీసెర్చ్ టాప్ పిక్ ({clean_s})! డిప్ తర్వాత +2.50% టార్గెట్ రాలీకి హై-కన్విక్షన్ ఎంట్రీ!")
 
+    # ⚡ PRO TECHNIQUE 4: Fast Morning Bullish Momentum Breakout (మార్కెట్ బాగున్నప్పుడు డైరెక్ట్ ఎంట్రీ)
+    # When market/stock is in a strong uptrend, don't wait for a deep dip that never comes!
+    breakout_w = strat_dict.get('morning_momentum_breakout', {}).get('weight', 1.65)
+    is_momentum_breakout = False
+    if len(df) >= 12:
+        # Check conditions for strong upward breakout momentum:
+        # 1. Price is strictly above VWAP (institutional buyers controlling)
+        above_vwap = (not pd.isna(last['VWAP'])) and (last['close'] >= last['VWAP'] * 0.999)
+        # 2. Golden EMA alignment: 9 EMA > 21 EMA
+        ema_aligned = (last['EMA_9'] >= last['EMA_21'] * 0.999) and (last['close'] >= last['EMA_9'] * 0.997)
+        # 3. Healthy RSI momentum: between 45 and 76 (strong buying, not exhausted yet)
+        rsi_healthy = (45 <= last['RSI'] <= 76) and (last['RSI'] >= prev['RSI'] * 0.98)
+        # 4. Green candle with active volume
+        avg_vol_val = float(avg_volume.iloc[-1]) if (not pd.isna(avg_volume.iloc[-1]) and avg_volume.iloc[-1] > 0) else 1.0
+        vol_active = (last['volume'] >= avg_vol_val * 0.75) or is_fii_volume_surge
+        is_green_reversal = (last['close'] >= last['open']) or (last['close'] >= prev['close'])
+        # 5. Near 10-candle high
+        recent_10_high = df['high'].iloc[-12:-1].max() if len(df) >= 12 else last['close']
+        near_breakout = (last['close'] >= recent_10_high * 0.997)
+        
+        # Active throughout trading hours until 2:20 PM
+        time_breakout_ok = True
+        if is_indian:
+            curr_t = now.time()
+            t_open_allow = datetime.strptime("09:20", "%H:%M").time()
+            t_close_allow = datetime.strptime("14:20", "%H:%M").time()
+            time_breakout_ok = (t_open_allow <= curr_t <= t_close_allow)
+
+        if above_vwap and ema_aligned and rsi_healthy and vol_active and is_green_reversal and near_breakout and time_breakout_ok:
+            is_momentum_breakout = True
+
+    if is_momentum_breakout:
+        pred_pts += 3.5 * breakout_w
+        pillar_trend = True
+        pillar_momentum = True
+        pillar_predictive = True
+        sell_score = min(2.0, sell_score * 0.25)
+        thoughts.append("⚡ [Morning Momentum Breakout]: మార్కెట్ స్ట్రాంగ్ బుల్లిష్ ర్యాలీలో ఉంది! ప్రైస్ VWAP & EMA 9 పైన బ్రేక్‌అవుట్ ఇచ్చింది. పక్కా ప్రాఫిట్ మొమెంటమ్ ఎంట్రీ!")
+        if is_overnight_top_pick:
+            pred_pts += 2.0
+            thoughts.append(f"🌙 [Overnight Golden Pick]: రాత్రి AI రీసెర్చ్ టాప్ పిక్ ({clean_s})! బుల్లిష్ ర్యాలీ కన్ఫర్మేషన్!")
+
     # Determine Dominant Pro Strategy for Self-Learning Tracker
     chosen_strategy = "rsi_vwap_confluence"
-    if is_dip_bounce:
+    if is_momentum_breakout:
+        chosen_strategy = "morning_momentum_breakout"
+    elif is_dip_bounce:
         chosen_strategy = "morning_dip_bounce"
     elif is_fii_volume_surge:
         chosen_strategy = "institutional_volume_surge"
@@ -1030,6 +1082,7 @@ def generate_signal(df, sym):
     # BUY REQUIREMENT:
     buy_triggered = (
         (confluence_pillars >= min_pillars and buy_score >= req_buy_score and sell_score <= max_sell_score and htf_ok) or
+        (is_momentum_breakout and buy_score >= (3.5 if is_scalper else 4.8) and sell_score <= 3.8) or
         (is_whale_pump and buy_score >= (3.5 if is_scalper else 6.0) and htf_ok) or
         (is_dip_bounce and buy_score >= (3.5 if is_scalper else 5.0) and sell_score <= 3.8) or
         (is_scalper and last['RSI'] <= 34 and last['close'] <= (last['Lower_Band'] * 1.005) and sell_score <= max_sell_score)
@@ -1419,21 +1472,44 @@ def process_symbol(sym):
     # 3. FIRST DIP ENTRY (INITIAL FRACTIONAL SLICE)
     # -------------------------------------------------------------
     elif pos is None and signal == 'buy':
-        # ⏰ TIME-OF-DAY ENTRY FILTER (Indian Intraday Equities):
-        # Only enter new positions between 09:15 AM and 01:30 PM.
-        # Trades entered after 01:30 PM don't have enough time to hit target before 03:05 PM close!
+        # ⏰ ADAPTIVE TIME-OF-DAY ENTRY FILTER (Indian Intraday Equities):
+        is_afternoon_entry = False
         if is_indian:
             curr_t = now.time()
-            t_cutoff = datetime.strptime("13:30", "%H:%M").time()
-            if curr_t > t_cutoff:
+            t_base_cutoff = datetime.strptime("13:30", "%H:%M").time()
+            t_hard_cutoff = datetime.strptime("14:20", "%H:%M").time()
+
+            if curr_t > t_hard_cutoff:
                 return {
                     "symbol": sym, "clean_name": clean_name, "price": round(current_price, 2),
-                    "signal": "HOLD", "thought": "⏰ [AFTERNOON CUTOFF]: 01:30 PM దాటింది. మార్కెట్ క్లోజ్ అయ్యేలోపు ప్రాఫిట్ రావడానికి తగినంత సమయం ఉండదు కాబట్టి కొత్త ట్రేడ్స్ తీసుకోలేదు.",
+                    "signal": "HOLD", "thought": "⏰ [AFTERNOON CUTOFF]: 02:20 PM దాటింది. 3:15 PM లోపు MIS స్క్వేర్ ఆఫ్ అయ్యేలోపు క్యాపిటల్ రిస్క్ లేకుండా ట్రేడ్స్ క్లోజ్ చేయాలి కాబట్టి కొత్త ఎంట్రీస్ ఆపేశాను.",
                     "strategy": strat_used, "rsi": round(float(last['RSI']), 1), "trend": htf_status,
                     "action_taken": "HOLD", "has_position": False, "pnl_pct": 0.0, "avg_price": 0.0,
                     "total_qty": 0.0, "target_price": 0.0, "peak_price": 0.0, "invested": 0.0,
                     "dca_layer": 0, "timestamp": get_ist_now().strftime('%H:%M:%S IST'), "is_indian": is_indian
                 }
+
+            # Between 01:30 PM and 02:20 PM: User instruction:
+            # "marcket baga veltundi ani ardham aite ai ki 1 varaku kakunda teskomanu pakka profit vastundi antene"
+            if curr_t > t_base_cutoff:
+                n_status, _ = get_nifty_market_regime()
+                is_market_bullish = (n_status in ('BULLISH', 'STABLE', 'NEUTRAL'))
+                is_pakka_profit = (
+                    is_market_bullish and
+                    (last['close'] >= last['VWAP'] * 0.998) and
+                    (last['EMA_9'] >= last['EMA_21'] * 0.998) and
+                    (strat_used in ('morning_momentum_breakout', 'institutional_volume_surge', 'order_block_bounce', 'morning_dip_bounce', 'trend_pullback_ema'))
+                )
+                if not is_pakka_profit:
+                    return {
+                        "symbol": sym, "clean_name": clean_name, "price": round(current_price, 2),
+                        "signal": "HOLD", "thought": "⏰ [AFTERNOON HIGH-CONVICTION FILTER]: 01:30 PM దాటింది. మార్కెట్ స్ట్రాంగ్ గా ఉంది అని 'పక్కా ప్రాఫిట్' కన్ఫర్మేషన్ (VWAP & EMA 9 బుల్లిష్ బ్రేక్‌అవుట్) ఉన్నప్పుడు మాత్రమే మధ్యాహ్నం ఎంట్రీస్ తీసుకుంటాను.",
+                        "strategy": strat_used, "rsi": round(float(last['RSI']), 1), "trend": htf_status,
+                        "action_taken": "HOLD", "has_position": False, "pnl_pct": 0.0, "avg_price": 0.0,
+                        "total_qty": 0.0, "target_price": 0.0, "peak_price": 0.0, "invested": 0.0,
+                        "dca_layer": 0, "timestamp": get_ist_now().strftime('%H:%M:%S IST'), "is_indian": is_indian
+                    }
+                is_afternoon_entry = True
 
         max_positions = 1 if (is_indian and live_mode and angel_cash <= 750) else (2 if (is_indian and live_mode and angel_cash <= 1500) else (8 if is_scalp_style else MAX_ACTIVE_POSITIONS))
         if is_indian and live_mode and HAS_ANGEL:
@@ -1456,7 +1532,10 @@ def process_symbol(sym):
                     log_status(f"⚠️ Live Buy Warning ({sym}): {res}")
                     return
                     
-            target_p = current_price * ((1.025 if is_indian else 1.009) if is_scalp_style else 1.030)
+            if is_afternoon_entry:
+                target_p = current_price * 1.012  # Fast afternoon scalp target (+1.2% quick booking before 3:10 PM)
+            else:
+                target_p = current_price * ((1.025 if is_indian else 1.009) if is_scalp_style else 1.030)
             dca_state[sym] = {
                 "entries": [{
                     "price": current_price,

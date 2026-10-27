@@ -39,6 +39,13 @@
             "losses": 4,
             "weight": 1.6,
             "win_rate": 86.7
+        },
+        "morning_momentum_breakout": {
+            "name": "Morning Bullish Momentum Breakout (\u0c2e\u0c3e\u0c30\u0c4d\u0c28\u0c3f\u0c02\u0c17\u0c4d \u0c2c\u0c41\u0c32\u0c4d\u0c32\u0c3f\u0c37\u0c4d \u0c2e\u0c4a\u0c2e\u0c46\u0c02\u0c1f\u0c2e\u0c4d \u0c2c\u0c4d\u0c30\u0c47\u0c15\u0c4d\u200c\u0c05\u0c35\u0c41\u0c1f\u0c4d & VWAP \u0c30\u0c4d\u0c2f\u0c3e\u0c32\u0c40)",
+            "wins": 30,
+            "losses": 4,
+            "weight": 1.65,
+            "win_rate": 88.2
         }
     },
     "RSI_weight": 1.3,
