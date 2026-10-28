@@ -219,59 +219,10 @@ def analyze_stock_deep(sym):
 
 def run_overnight_audit():
     """
-    Executes complete overnight intelligence pipeline:
-    1. Global Cues
-    2. Deep Technical Audit of all 25 NSE Stocks
-    3. Selection & Ranking of Top 3 Golden Sniper Stocks
-    4. Saves to MongoDB and local JSON
+    Executes complete overnight intelligence pipeline via unified self_preparing_brain.
     """
-    print(f"[{get_ist_now().strftime('%H:%M:%S IST')}] 🌙 Running AI Overnight Research Brain...", flush=True)
-    
-    # 1. Global Macro
-    global_report = analyze_global_cues()
-    
-    # 2. Stock Audits
-    stock_reports = []
-    for s in NSE_TARGET_SYMBOLS:
-        res = analyze_stock_deep(s)
-        if res:
-            stock_reports.append(res)
-            
-    # Sort descending by Confluence Score
-    stock_reports.sort(key=lambda x: x['score'], reverse=True)
-    
-    # Top 3 High-Conviction Picks for 9:15 AM Opening
-    top_3_picks = stock_reports[:3] if len(stock_reports) >= 3 else stock_reports
-    
-    full_report = {
-        "timestamp": get_ist_now().strftime("%Y-%m-%d %H:%M:%S IST"),
-        "date": get_ist_now().strftime("%Y-%m-%d"),
-        "global_cues": global_report,
-        "top_3_picks": top_3_picks,
-        "ranked_stocks": stock_reports,
-        "stocks_audited_count": len(stock_reports),
-        "status": "COMPLETED",
-        "voice_summary": (
-            f"ఓవర్‌నైట్ రీసెర్చ్ రిపోర్ట్ సిద్ధంగా ఉంది. గ్లోబల్ మార్కెట్ సెంటిమెంట్ {global_report['bias']}. "
-            f"రేపు ఉదయం 9:15 AM ఓపెనింగ్ లో టాప్-1 స్టాక్ {top_3_picks[0]['clean_name']} (స్కోర్: {top_3_picks[0]['score']}/100). "
-            f"టార్గెట్ +2.50% ప్రాఫిట్ కు పర్ఫెక్ట్ గా సెట్ చేయబడింది."
-        ) if top_3_picks else "ఓవర్‌నైట్ ఆడిట్ పూర్తయింది."
-    }
-    
-    # Persist report to MongoDB Atlas and Local File
-    try:
-        db_helper.save_state('overnight_research', full_report)
-    except Exception as e:
-        print(f"MongoDB overnight report save info: {e}")
-        
-    try:
-        with open('overnight_research.json', 'w', encoding='utf-8') as f:
-            json.dump(full_report, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
-        
-    print(f"[{get_ist_now().strftime('%H:%M:%S IST')}] ✅ Overnight Research Completed! Top Pick: {top_3_picks[0]['clean_name'] if top_3_picks else 'None'}", flush=True)
-    return full_report
+    import self_preparing_brain
+    return self_preparing_brain.prepare_for_trading(is_forced=True)
 
 def get_latest_overnight_report():
     """

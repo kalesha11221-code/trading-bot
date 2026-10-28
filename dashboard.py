@@ -2142,25 +2142,27 @@ with tab_mind:
         except Exception:
             pass
 
-    col_btn1, col_btn2 = st.columns([3, 1])
+    col_btn1, col_btn2 = st.columns([2, 2])
     with col_btn2:
-        if st.button("🔄 Re-run Overnight Audit", key="btn_rerun_overnight", use_container_width=True):
-            with st.spinner("AI రాత్రి రీసెర్చ్ రన్ చేస్తోంది... గ్లోబల్ క్యూస్ & 25 స్టాక్స్ ఆడిట్ చేస్తోంది..."):
+        if st.button("🧠⚡ Run AI Self-Prep Now (స్వయంసిద్ధ లాభాల మెదడు)", key="btn_rerun_overnight", use_container_width=True):
+            with st.spinner("🧠 AI తనను తాను సిద్ధం చేసుకుంటోంది... గ్లోబల్ క్యూస్, విన్-రేట్ మెమరీ & టాప్ స్టాక్స్ విశ్లేషిస్తోంది..."):
                 try:
-                    import overnight_brain
-                    on_res = overnight_brain.run_overnight_audit()
-                    st.success("✅ రాత్రి రీసెర్చ్ పూర్తయింది!")
+                    import self_preparing_brain
+                    on_res = self_preparing_brain.prepare_for_trading(is_forced=True)
+                    st.success("✅ AI Self-Preparing Profit Brain సిద్ధమైంది!")
                     st.rerun()
                 except Exception as e_aud:
-                    st.error(f"Error running audit: {e_aud}")
+                    st.error(f"Error running self-prep: {e_aud}")
 
     if on_res:
         g_cues = on_res.get('global_cues', {})
-        bias = g_cues.get('bias', 'NEUTRAL ⚖️')
-        open_pred = g_cues.get('open_prediction', 'FLAT / CAUTION')
+        bias = on_res.get('regime', g_cues.get('bias', 'NEUTRAL 🟡'))
+        dynamic_tgt = on_res.get('dynamic_target_pct', 2.50)
+        open_pred = f"🎯 డైనమిక్ టార్గెట్: +{dynamic_tgt:.2f}%"
         ts = on_res.get('timestamp', 'N/A')
         v_summary = on_res.get('voice_summary', '')
         top_picks = on_res.get('top_3_picks', [])
+        wr_mem = on_res.get('win_rate_memory', {})
 
         # Display Global Sentiment Banner
         if 'BULLISH' in bias:
@@ -2195,7 +2197,7 @@ with tab_mind:
         st.markdown(banner_html, unsafe_allow_html=True)
 
         # Global Telemetry Row
-        telemetry = g_cues.get('telemetry', {})
+        telemetry = on_res.get('macro_telemetry', g_cues.get('telemetry', {}))
         if telemetry:
             tel_cols = st.columns(len(telemetry))
             for t_idx, (t_name, t_val) in enumerate(telemetry.items()):
@@ -2217,7 +2219,8 @@ with tab_mind:
                     sym_c = pick.get('clean_name', pick.get('symbol', ''))
                     score = pick.get('score', 0)
                     close_pr = pick.get('close', 0.0)
-                    target_pr = pick.get('target_2_5_pct', 0.0)
+                    target_pr = pick.get('target_price', pick.get('target_2_5_pct', 0.0))
+                    target_pct_label = pick.get('target_pct', 2.5)
                     sl_pr = pick.get('stop_loss', 0.0)
                     est_net = pick.get('est_net_profit', 0.0)
                     rsi_p = pick.get('rsi', 0.0)
@@ -2237,7 +2240,7 @@ with tab_mind:
                             ₹{close_pr:,.2f}
                         </div>
                         <div style="font-size: 12px; color: #94a3b8; margin-bottom: 8px;">
-                            🎯 <strong>Target (+2.50%):</strong> <span style="color: #4ade80; font-weight: 600;">₹{target_pr:,.2f}</span><br/>
+                            🎯 <strong>Target (+{target_pct_label:.2f}%):</strong> <span style="color: #4ade80; font-weight: 600;">₹{target_pr:,.2f}</span><br/>
                             🛑 <strong>Stop Loss (-1.2%):</strong> <span style="color: #f87171; font-weight: 600;">₹{sl_pr:,.2f}</span><br/>
                             💰 <strong>Est. Net Profit:</strong> <span style="color: #fbbf24; font-weight: 600;">+₹{est_net:,.2f}</span>
                         </div>

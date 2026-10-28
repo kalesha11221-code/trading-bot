@@ -1554,7 +1554,15 @@ def process_symbol(sym):
             if is_afternoon_entry:
                 target_p = current_price * 1.012  # Fast afternoon scalp target (+1.2% quick booking before 3:10 PM)
             else:
-                target_p = current_price * ((1.025 if is_indian else 1.009) if is_scalp_style else 1.030)
+                # 🧠 AI Self-Preparing Dynamic Target Engine (+1.5% to +3.5% market-adaptive)
+                dynamic_mult = 1.025
+                try:
+                    bp = db_helper.get_state('morning_battle_plan', {})
+                    if bp and 'dynamic_target_multiplier' in bp:
+                        dynamic_mult = float(bp['dynamic_target_multiplier'])
+                except Exception:
+                    pass
+                target_p = current_price * (dynamic_mult if is_indian else (1.009 if is_scalp_style else 1.030))
             dca_state[sym] = {
                 "entries": [{
                     "price": current_price,
@@ -1630,6 +1638,22 @@ def run_bot_loop():
     while True:
         loop_count += 1
         try:
+            # 🧠 AI Self-Preparing Profit Brain: Check pre-market homework & battle plan
+            now_dt = get_ist_now()
+            if loop_count == 1 or (loop_count % 30 == 0):
+                try:
+                    import self_preparing_brain
+                    bp = db_helper.get_state('morning_battle_plan', {})
+                    today_str = now_dt.strftime("%Y-%m-%d")
+                    curr_t = now_dt.time()
+                    m_open = datetime.strptime("09:15", "%H:%M").time()
+                    needs_prep = (not bp) or (bp.get('date') != today_str)
+                    is_pre_market = (datetime.strptime("08:30", "%H:%M").time() <= curr_t < m_open)
+                    if needs_prep or (is_pre_market and (loop_count % 60 == 0)):
+                        log_status(f"[{now_dt.strftime('%H:%M:%S IST')}] 🧠 AI Self-Preparing Profit Brain: Running Pre-Market Warmup & Win-Rate Calibration...")
+                        self_preparing_brain.prepare_for_trading()
+                except Exception:
+                    pass
             mode = get_current_trading_mode()
             custom_wl = load_custom_watchlist()
             custom_crypto = [s for s, d in custom_wl.items() if d.get('type') == 'CRYPTO' or s.endswith('-USD')]
