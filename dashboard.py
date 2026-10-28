@@ -679,7 +679,7 @@ mode_options = [
     "💰 Live Trading (Binance Real Money)"
 ]
 
-saved_mode = "📝 Binance Paper Trading (Crypto 24/7 Practice)"
+saved_mode = "🇮🇳💰 Angel One Live Trading (Real Indian Stocks)"
 # 1. Check MongoDB Cloud state first (highest priority across Streamlit Cloud & Render)
 try:
     c_doc = db_helper.get_state('trading_mode')
@@ -715,7 +715,7 @@ if os.path.exists('trading_mode.txt'):
                 saved_mode = "💰 Live Trading (Binance Real Money)"
     except: pass
 
-mode_idx = mode_options.index(saved_mode) if saved_mode in mode_options else 1
+mode_idx = mode_options.index(saved_mode) if saved_mode in mode_options else 0
 trading_mode = st.sidebar.radio("⚡ 1-Click Trading Mode Switch", mode_options, index=mode_idx)
 st.sidebar.markdown("---")
 

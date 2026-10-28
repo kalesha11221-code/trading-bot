@@ -1104,6 +1104,17 @@ def log_status(msg, voice_alert=None, color_code='\033[0m'):
     with file_lock:
         with open('bot_logs.txt', 'a') as f:
             f.write(msg + '\n')
+    try:
+        # Also persist to MongoDB so Streamlit Cloud displays live logs in real time
+        logs = db_helper.get_state('bot_logs', [])
+        if not isinstance(logs, list):
+            logs = []
+        logs.append(msg)
+        if len(logs) > 100:
+            logs = logs[-100:]
+        db_helper.save_state('bot_logs', logs)
+    except Exception:
+        pass
     if voice_alert:
         # Mac OS Voice Command is muted as per user request
         pass # os.system(f'say "{voice_alert}" &')
