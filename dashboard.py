@@ -984,16 +984,19 @@ if os.path.exists('selected_symbol.txt'):
         pass
 
 is_dual_mode = "Dual" in trading_mode
+is_angel_live = "Angel" in trading_mode
 is_zerodha_mode = ("Zerodha" in trading_mode and not is_dual_mode)
+is_indian_mode = is_angel_live or is_zerodha_mode
 
 if is_dual_mode:
     focus_options = [
         "🌐🇮🇳 Dual Multi-Asset (All Crypto + NSE Stocks)",
         "🎯 Single Asset Focus"
     ]
-elif is_zerodha_mode:
+elif is_indian_mode:
+    broker_title = "Angel One" if is_angel_live else "Zerodha"
     focus_options = [
-        "🇮🇳 Multi-Stock NSE (Top 8 Indian Stocks)",
+        f"🇮🇳 Multi-Stock NSE ({broker_title} Top Stocks)",
         "🎯 Single Stock Focus"
     ]
 else:
@@ -1016,7 +1019,7 @@ trade_scope = st.sidebar.radio(
 # Filter sym_keys for selectbox based on mode
 if is_dual_mode:
     sym_keys = list(symbol_options.keys())
-elif is_zerodha_mode:
+elif is_indian_mode:
     sym_keys = [k for k in symbol_options.keys() if ".NS" in symbol_options[k] or "^NSE" in symbol_options[k] or ".BO" in symbol_options[k]]
 else:
     sym_keys = [k for k in symbol_options.keys() if "-USD" in symbol_options[k]]
@@ -1030,7 +1033,7 @@ if "Single" in trade_scope:
         if symbol_options[k] == saved_scope:
             default_sym_idx = idx_k
             break
-    label_text = "Select Asset (Stock/Coin):" if is_dual_mode else ("Select Stock:" if is_zerodha_mode else "Select Coin:")
+    label_text = "Select Asset (Stock/Coin):" if is_dual_mode else ("Select Stock:" if is_indian_mode else "Select Coin:")
     selected_name = st.sidebar.selectbox(label_text, sym_keys, index=default_sym_idx, key="app_single_pair")
     symbol = symbol_options[selected_name]
     active_bot_symbol = symbol
@@ -1039,14 +1042,15 @@ else:
     if is_dual_mode:
         active_bot_symbol = "ALL_DUAL"
         st.sidebar.success("🚀 **Dual Multi-Asset Active!** Bot is simultaneously scanning all 24/7 Cryptos and Indian NSE Stocks.")
-    elif is_zerodha_mode:
+    elif is_indian_mode:
         active_bot_symbol = "ALL_NSE"
-        st.sidebar.success("🚀 **Zerodha Multi-Stock Active!** Bot is scanning Reliance, Tata Motors, HDFC Bank, Infosys, SBI, TCS simultaneously.")
+        broker_name_str = "Angel One Live" if is_angel_live else "Zerodha"
+        st.sidebar.success(f"🚀 **{broker_name_str} Multi-Stock Active!** Bot is scanning PNB, Motherson, Federal Bank, Reliance, Tata Motors, HDFC Bank simultaneously.")
     else:
         active_bot_symbol = "ALL_CRYPTO"
         st.sidebar.success("🚀 **Multi-Coin Trading Active!** Bot is scanning BTC, ETH, SOL, BNB, DOGE, XRP simultaneously.")
     default_chart_idx = 0
-    chart_label = "📊 Select Asset for Live Chart:" if is_dual_mode else ("📊 Select Stock for Live Chart:" if is_zerodha_mode else "📊 Select Coin for Live Chart:")
+    chart_label = "📊 Select Asset for Live Chart:" if is_dual_mode else ("📊 Select Stock for Live Chart:" if is_indian_mode else "📊 Select Coin for Live Chart:")
     selected_name = st.sidebar.selectbox(chart_label, sym_keys, index=default_chart_idx, key="app_chart_pair")
     symbol = symbol_options[selected_name]
 

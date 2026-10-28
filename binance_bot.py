@@ -1666,6 +1666,18 @@ def run_bot_loop():
                         active_symbols = default_symbols
                 except: pass
 
+            # 🛡️ Strict Mode Guard: If in ANGEL_LIVE, strictly scan Indian NSE Stocks only
+            if mode == "ANGEL_LIVE":
+                filtered_nse = [s for s in active_symbols if s.endswith('.NS') or s.endswith('.BO')]
+                if not filtered_nse:
+                    active_symbols = list(dict.fromkeys(NSE_SYMBOLS + custom_nse))
+                    try:
+                        with open('selected_symbol.txt', 'w') as f:
+                            f.write("ALL_NSE")
+                    except: pass
+                else:
+                    active_symbols = filtered_nse
+
             actions_taken = []
             # Multi-Threading for active symbols
             with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(active_symbols))) as executor:
@@ -1704,8 +1716,9 @@ def run_bot_loop():
                     hold_label = f"Dual Hybrid ({crypto_count} క్రిప్టో + {stock_count} స్టాక్స్) సేఫ్ గా HOLD లో ఉన్నాయి"
                 elif has_nse:
                     short_names = [s.replace('.NS', '').replace('.BO', '') for s in active_symbols]
-                    sym_label = f"Zerodha NSE ({len(active_symbols)})"
-                    hold_label = f"Zerodha స్టాక్స్ ({', '.join(short_names[:4])}...) సేఫ్ గా HOLD లో ఉన్నాయి"
+                    broker_title = "Angel One" if mode == "ANGEL_LIVE" else "Zerodha"
+                    sym_label = f"{broker_title} NSE ({len(active_symbols)})"
+                    hold_label = f"{broker_title} స్టాక్స్ ({', '.join(short_names[:4])}...) సేఫ్ గా HOLD లో ఉన్నాయి"
                 else:
                     short_names = [s.replace('-USD', '') for s in active_symbols if '-USD' in s]
                     sym_label = f"మల్టీ-కాయిన్స్ ({len(active_symbols)})"
