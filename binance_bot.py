@@ -468,7 +468,7 @@ def fetch_data(sym):
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         'Accept': 'application/json'
     }
-    for interval, rng in [('1m', '1d'), ('5m', '5d'), ('1d', '1mo')]:
+    for interval, rng in [('1m', '5d'), ('5m', '5d'), ('15m', '5d'), ('1d', '1mo')]:
         try:
             url = f'https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval={interval}&range={rng}'
             req = urllib.request.Request(url, headers=headers)
@@ -612,12 +612,12 @@ def generate_signal(df, sym):
     df['EMA_200'] = df['close'].ewm(span=200, adjust=False).mean()
     
     # సపోర్ట్ అండ్ రెసిస్టెన్స్
-    df['Support'] = df['low'].rolling(window=100).min()
-    df['Resistance'] = df['high'].rolling(window=100).max()
+    df['Support'] = df['low'].rolling(window=100, min_periods=5).min()
+    df['Resistance'] = df['high'].rolling(window=100, min_periods=5).max()
     
     # బోలింజర్ బ్యాండ్స్ & Bandwidth
-    df['SMA_20'] = df['close'].rolling(window=20).mean()
-    df['STD_20'] = df['close'].rolling(window=20).std()
+    df['SMA_20'] = df['close'].rolling(window=20, min_periods=5).mean()
+    df['STD_20'] = df['close'].rolling(window=20, min_periods=5).std().fillna(0.0)
     df['Upper_Band'] = df['SMA_20'] + (df['STD_20'] * 2)
     df['Lower_Band'] = df['SMA_20'] - (df['STD_20'] * 2)
     df['Bandwidth'] = (df['Upper_Band'] - df['Lower_Band']) / (df['SMA_20'] + 1e-9)
@@ -627,14 +627,14 @@ def generate_signal(df, sym):
     high_close = (df['high'] - df['close'].shift()).abs()
     low_close = (df['low'] - df['close'].shift()).abs()
     true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-    df['ATR'] = true_range.rolling(14).mean()
+    df['ATR'] = true_range.rolling(14, min_periods=3).mean()
     
     # VWAP (Volume Weighted Average Price)
     df['Typical_Price'] = (df['high'] + df['low'] + df['close']) / 3
-    df['VWAP'] = (df['Typical_Price'] * df['volume']).rolling(window=50).sum() / (df['volume'].rolling(window=50).sum() + 1e-9)
+    df['VWAP'] = (df['Typical_Price'] * df['volume']).rolling(window=50, min_periods=5).sum() / (df['volume'].rolling(window=50, min_periods=5).sum() + 1e-9)
     
     # Volume Analysis
-    avg_volume = df['volume'].rolling(window=20).mean()
+    avg_volume = df['volume'].rolling(window=20, min_periods=3).mean()
     
     # RSI (14)
     delta = df['close'].diff()
@@ -859,8 +859,13 @@ def generate_signal(df, sym):
         curr_t = now.time()
         t_915 = datetime.strptime("09:15", "%H:%M").time()
         t_930 = datetime.strptime("09:30", "%H:%M").time()
-        if t_915 <= curr_t <= t_930 and len(df) >= 5:
-            open_high = df['high'].head(15).max()
+        if t_915 <= curr_t <= t_930 and len(df) >= 3:
+            try:
+                today_mask = (df['timestamp'].dt.date == now.date()) if ('timestamp' in df.columns and hasattr(df['timestamp'].iloc[0], 'date')) else None
+                today_c = df[today_mask] if today_mask is not None and today_mask.any() else df.tail(15)
+                open_high = today_c['high'].max()
+            except Exception:
+                open_high = df['high'].tail(15).max()
             if (last['close'] >= open_high * 0.999) and is_bullish_candle and (volume_strong or is_fii_volume_surge):
                 is_orb_breakout = True
                 pred_pts += 2.5
@@ -1006,16 +1011,18 @@ def generate_signal(df, sym):
         chosen_strategy = "trend_pullback_ema"
 
     try:
-        x = np.arange(20)
-        y = df['close'].tail(20).values
-        slope, intercept = np.polyfit(x, y, 1)
-        predicted_next = slope * 20 + intercept
-        
-        if slope > 0 and predicted_next > current_price * 1.0015:
-            pred_pts += 1.5 * ai_brain.get('ML_weight', 1.0)
-            thoughts.append(f"[AI ML]: అప్ ట్రెండ్ ప్రిడిక్షన్ (టార్గెట్: ₹{predicted_next:.2f}).")
-        elif slope < 0 and predicted_next < current_price * 0.9985:
-            sell_score += 1.5
+        poly_n = min(20, len(df))
+        if poly_n >= 5:
+            x = np.arange(poly_n)
+            y = df['close'].tail(poly_n).values
+            slope, intercept = np.polyfit(x, y, 1)
+            predicted_next = slope * poly_n + intercept
+            
+            if slope > 0 and predicted_next > current_price * 1.0015:
+                pred_pts += 1.5 * ai_brain.get('ML_weight', 1.0)
+                thoughts.append(f"[AI ML]: అప్ ట్రెండ్ ప్రిడిక్షన్ (టార్గెట్: ₹{predicted_next:.2f}).")
+            elif slope < 0 and predicted_next < current_price * 0.9985:
+                sell_score += 1.5
     except Exception:
         pass
 
@@ -1083,8 +1090,9 @@ def generate_signal(df, sym):
     buy_triggered = (
         (confluence_pillars >= min_pillars and buy_score >= req_buy_score and sell_score <= max_sell_score and htf_ok) or
         (is_momentum_breakout and buy_score >= (3.5 if is_scalper else 4.8) and sell_score <= 3.8) or
+        (is_overnight_top_pick and buy_score >= 3.0 and sell_score <= 3.8) or
         (is_whale_pump and buy_score >= (3.5 if is_scalper else 6.0) and htf_ok) or
-        (is_dip_bounce and buy_score >= (3.5 if is_scalper else 5.0) and sell_score <= 3.8) or
+        (is_dip_bounce and buy_score >= (3.2 if is_scalper else 4.8) and sell_score <= 3.8) or
         (is_scalper and last['RSI'] <= 34 and last['close'] <= (last['Lower_Band'] * 1.005) and sell_score <= max_sell_score)
     )
 

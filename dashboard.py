@@ -84,23 +84,36 @@ def _run_futures_bot_bg():
 _bg_bot_thread = None
 _bg_futures_thread = None
 
+def _is_standalone_bot_running():
+    try:
+        import subprocess
+        out = subprocess.check_output(["pgrep", "-f", "python.*binance_bot.py"]).decode().strip()
+        lines = [l for l in out.splitlines() if l.strip()]
+        return len(lines) > 0
+    except:
+        return False
+
 def start_bot_thread(force=False):
     global _bg_bot_thread, _bg_futures_thread
     started = False
     
-    if force or _bg_bot_thread is None or not _bg_bot_thread.is_alive():
-        _bg_bot_thread = threading.Thread(target=_run_background_bot, daemon=True)
-        _bg_bot_thread.start()
-        started = True
+    # 1. If running locally with standalone binance_bot.py, avoid duplicate
+    if not force and _is_standalone_bot_running():
+        return False
+
+    # 2. Check if thread is already running in this Python process
+    for t in threading.enumerate():
+        if t.name == "AntigravityBotThread" and t.is_alive():
+            return False
         
-    if force or _bg_futures_thread is None or not _bg_futures_thread.is_alive():
-        _bg_futures_thread = threading.Thread(target=_run_futures_bot_bg, daemon=True)
-        _bg_futures_thread.start()
-        started = True
+    _bg_bot_thread = threading.Thread(target=_run_background_bot, name="AntigravityBotThread", daemon=True)
+    _bg_bot_thread.start()
+    started = True
         
     return started
 
-# start_bot_thread()  # Disabled: Bot runs on Render now
+# Auto-start bot thread in Cloud (runs 24/7 on Streamlit Cloud even with laptop OFF)
+start_bot_thread()
 
 def get_bot_heartbeat():
     try:
