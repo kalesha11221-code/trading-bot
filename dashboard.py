@@ -1647,8 +1647,8 @@ all_dca_positions = get_state_smart('dca_state')
 if not isinstance(all_dca_positions, dict):
     all_dca_positions = {}
 
-if is_angel_live:
-    # 🇮🇳 Angel One Live Mode: Strictly Real Indian Stocks on NSE
+if is_angel_mode:
+    # 🇮🇳 Angel One Mode (Live Real or Virtual Practice): Strictly Indian Stocks on NSE
     dca_positions = {k: v for k, v in all_dca_positions.items() if ('.NS' in k or '.BO' in k)}
     futures_positions = {}
 
@@ -1672,8 +1672,14 @@ if is_angel_live:
     futures_profit = 0.0
     total_profit = spot_profit
 
-    # Real Angel One live cash from RMS
-    live_cash = angel_live_cash if angel_live_cash > 0 else 282.42
+    # Live Cash calculation
+    if is_angel_virtual:
+        live_cash = 50000.0
+        initial_capital = 50000.0
+    else:
+        live_cash = angel_live_cash if angel_live_cash > 0 else 282.42
+        initial_capital = 300.0
+
     spot_invested = sum(float(d_info.get('total_cost', 0.0)) for d_info in dca_positions.values())
     futures_invested = 0.0
     total_invested = spot_invested
@@ -1681,7 +1687,6 @@ if is_angel_live:
     # 5x Intraday MIS Leverage:
     # Margin blocked from user capital is 20% (1/5th) of spot_invested
     blocked_margin = round(spot_invested / 5.0, 2)
-    initial_capital = 300.0
     available_cash = max(0.0, round(live_cash - blocked_margin, 2))
     portfolio_value = round(live_cash, 2)
     invested_amount = spot_invested
@@ -1744,6 +1749,7 @@ else:
     invested_amount = min(portfolio_value, max(0.0, total_invested))
     available_cash = max(0.0, portfolio_value - invested_amount)
     roi = (total_profit / initial_capital) * 100 if initial_capital > 0 else 0.0
+    blocked_margin = 0.0
 
 # 4. Spot Floating P&L
 spot_floating_pnl = 0.0
