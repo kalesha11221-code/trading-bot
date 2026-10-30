@@ -3,6 +3,17 @@ import json
 import pyotp
 import time
 import threading
+import socket
+
+# 🛡️ Patch gethostbyname to prevent SmartConnect line 78 hostname resolution warning on Mac/Linux
+_orig_gethostbyname = socket.gethostbyname
+def _safe_gethostbyname(name):
+    try:
+        return _orig_gethostbyname(name)
+    except Exception:
+        return '127.0.0.1'
+socket.gethostbyname = _safe_gethostbyname
+
 from SmartApi import SmartConnect
 import db_helper
 

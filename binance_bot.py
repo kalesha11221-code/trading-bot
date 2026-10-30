@@ -1,3 +1,6 @@
+import warnings
+warnings.filterwarnings("ignore")
+
 import time
 import ml_brain
 import pandas as pd
@@ -43,7 +46,11 @@ def analyze_pattern_future(df):
 
 import os
 import db_helper
-import angel_one
+try:
+    import angel_helper
+    HAS_ANGEL = True
+except Exception:
+    HAS_ANGEL = False
 
 import concurrent.futures
 import threading
@@ -57,56 +64,19 @@ file_lock = threading.Lock()
 import requests
 import yfinance as yf
 
-CORE_CRYPTO_SYMBOLS = [
+CRYPTO_SYMBOLS = [
     # 🪙 High-Liquidity 24/7 Crypto (Tier-1 Binance Spot)
-    "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "DOGE-USD",
-    "ADA-USD", "AVAX-USD", "SUI-USD", "LINK-USD", "NEAR-USD", "PEPE-USD",
-    "APT-USD", "DOT-USD", "LTC-USD", "SHIB-USD", "FET-USD", "RENDER-USD"
+    "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "DOGE-USD", "XRP-USD"
 ]
 
 NSE_SYMBOLS = [
-    # 🇮🇳 Top High-Volume Bluechip Leaders (NSE Zerodha)
-    "RELIANCE.NS", "HDFCBANK.NS", "ICICIBANK.NS", "INFY.NS", "TCS.NS",
-    "SBIN.NS", "BHARTIARTL.NS", "ITC.NS", "TMCV.NS", "LT.NS",
-    "BAJFINANCE.NS", "TATASTEEL.NS", "AXISBANK.NS", "MARUTI.NS", "SUNPHARMA.NS",
-    "KOTAKBANK.NS", "TITAN.NS", "POWERGRID.NS", "NTPC.NS", "ETERNAL.NS"
+    # 🇮🇳 Top High-Volume & High-Momentum Indian Stocks (NSE Angel One / 5x MIS Scalper)
+    "BEL.NS", "GAIL.NS", "PNB.NS", "IRFC.NS", "MOTHERSON.NS", "NHPC.NS",
+    "TATAPOWER.NS", "BHEL.NS", "COALINDIA.NS", "NTPC.NS", "CANBK.NS",
+    "FEDERALBNK.NS", "IDFCFIRSTB.NS", "ASHOKLEY.NS",
+    "ITC.NS", "TATASTEEL.NS", "ONGC.NS", "IOC.NS", "SUZLON.NS",
+    "SBIN.NS", "HDFCBANK.NS", "ICICIBANK.NS", "RELIANCE.NS", "INFY.NS", "TCS.NS"
 ]
-
-_cached_dynamic_crypto = []
-_last_dynamic_crypto_scan = 0
-
-def get_dynamic_crypto_universe():
-    """
-    🌐 AI MARKET-WIDE OPPORTUNITY SCANNER:
-    Scans Binance's live 24h ticker for top breakout movers with volume > $30M,
-    dynamically discovering and ranking the best opportunities in real-time!
-    """
-    global _cached_dynamic_crypto, _last_dynamic_crypto_scan
-    now = time.time()
-    if _cached_dynamic_crypto and (now - _last_dynamic_crypto_scan < 600):  # 10 min cache
-        return _cached_dynamic_crypto
-        
-    discovered = []
-    try:
-        url = 'https://api.binance.com/api/v3/ticker/24hr'
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=4) as resp:
-            data = json.loads(resp.read().decode())
-            liquid = [d for d in data if d['symbol'].endswith('USDT') and float(d.get('quoteVolume', 0)) > 30000000]
-            liquid.sort(key=lambda x: abs(float(x.get('priceChangePercent', 0))), reverse=True)
-            for item in liquid[:15]:
-                sym_str = item['symbol'].replace('USDT', '-USD')
-                if not any(ex in sym_str for ex in ['UP', 'DOWN', 'BEAR', 'BULL', 'USDC', 'FDUSD', 'EUR', 'TUSD', 'BUSD', 'DAI']):
-                    discovered.append(sym_str)
-    except Exception:
-        pass
-        
-    combined = list(dict.fromkeys(CORE_CRYPTO_SYMBOLS + discovered))
-    _cached_dynamic_crypto = combined
-    _last_dynamic_crypto_scan = now
-    return combined
-
-CRYPTO_SYMBOLS = CORE_CRYPTO_SYMBOLS
 
 SYMBOL_ALIASES = {
     'TATAMOTORS.NS': 'TMCV.NS',
@@ -117,12 +87,12 @@ SYMBOL_ALIASES = {
     'ZOMATO': 'ETERNAL.NS'
 }
 
-symbols_to_trade = CORE_CRYPTO_SYMBOLS
+symbols_to_trade = CRYPTO_SYMBOLS
 
 # 🎯 స్కామర్ బ్రెయిన్ 🥷 (Assassin Sniper) Portfolio & Risk Guards
-MAX_ACTIVE_POSITIONS = 4
-MAX_PORTFOLIO_CAPITAL = 60000.0
-COOLDOWN_SECONDS = 180  # 3-minute cooldown after closing trade on a symbol
+MAX_ACTIVE_POSITIONS = 3
+MAX_PORTFOLIO_CAPITAL = 10000.0
+COOLDOWN_SECONDS = 300  # 5-minute cooldown after closing trade on a symbol
 
 timeframe = '1m'
 trade_size = 1
@@ -150,11 +120,10 @@ def update_ai_brain_after_trade(sym, profit, strategy_key=None):
         import json
 
         import math
-        brain_file = 'ai_brain.json'
-        brain = {}
-        if os.path.exists(brain_file):
+        brain = db_helper.get_state('ai_brain', {})
+        if not brain and os.path.exists('ai_brain.json'):
             try:
-                with open(brain_file, 'r') as f:
+                with open('ai_brain.json', 'r') as f:
                     brain = json.load(f)
             except Exception:
                 pass
@@ -216,9 +185,7 @@ def update_ai_brain_after_trade(sym, profit, strategy_key=None):
         brain['ML_weight'] = min(2.0, round(brain.get('ML_weight', 1.0) + (0.03 if is_win else -0.03), 2))
 
         brain['recent_lessons'] = [lesson] + brain.get('recent_lessons', [])[:4]
-
-        with open(brain_file, 'w') as f:
-            json.dump(brain, f, indent=2, ensure_ascii=False)
+        db_helper.save_state('ai_brain', brain)
             
     except Exception as e:
         pass
@@ -291,174 +258,6 @@ def get_current_position(sym):
             pass
     return "NONE"
 
-# -------------------------------------------------------------
-# 🎯 OPTION 1: DAILY TARGET (+₹1,800) & MAX LOSS (-₹1,000) GUARD
-# -------------------------------------------------------------
-DAILY_PROFIT_TARGET_INR = 1800.0   # Lock day's profits when +₹1,800 is hit
-DAILY_MAX_LOSS_INR = -1000.0       # Halt new entries for the day if -₹1,000 is hit
-
-def get_today_realized_pnl():
-    """Calculates today's total realized PnL across Spot & Futures in INR (IST day)."""
-    today_str = get_ist_now().strftime('%Y-%m-%d')
-    total_pnl_inr = 0.0
-    
-    # 1. Spot / Stock trades (trades_log.csv)
-    if os.path.exists('trades_log.csv'):
-        try:
-            df_spot = pd.read_csv('trades_log.csv')
-            if not df_spot.empty and 'Time' in df_spot.columns and 'Action' in df_spot.columns and 'Profit' in df_spot.columns:
-                sells = df_spot[df_spot['Action'].str.upper() == 'SELL']
-                for _, r in sells.iterrows():
-                    t_val = str(r['Time'])
-                    if t_val.startswith(today_str):
-                        p_val = str(r['Profit']).replace('₹', '').replace(',', '').strip()
-                        if p_val and p_val != '-':
-                            p_float = float(p_val)
-                            sym = str(r.get('Symbol', ''))
-                            if sym.endswith('-USD'):
-                                total_pnl_inr += p_float * 84.5
-                            else:
-                                total_pnl_inr += p_float
-        except Exception:
-            pass
-
-    # 2. Futures trades (fo_trades_log.csv)
-    if os.path.exists('fo_trades_log.csv'):
-        try:
-            df_fo = pd.read_csv('fo_trades_log.csv')
-            if not df_fo.empty and 'Timestamp' in df_fo.columns and 'Action' in df_fo.columns and 'Profit_INR' in df_fo.columns:
-                closes = df_fo[df_fo['Action'].str.upper() == 'CLOSE']
-                for _, r in closes.iterrows():
-                    t_val = str(r['Timestamp'])
-                    if t_val.startswith(today_str):
-                        p_val = str(r['Profit_INR']).replace('₹', '').replace(',', '').strip()
-                        if p_val and p_val != '-':
-                            total_pnl_inr += float(p_val)
-        except Exception:
-            pass
-
-    return round(total_pnl_inr, 2)
-
-def check_daily_guard():
-    """
-    Returns (is_locked: bool, status_reason: str, today_pnl: float)
-    - If today_pnl >= DAILY_PROFIT_TARGET_INR: Locks profits, pauses new entries.
-    - If today_pnl <= DAILY_MAX_LOSS_INR: Guard triggered, halts new entries.
-    - Otherwise: Active trading permitted.
-    """
-    today_pnl = get_today_realized_pnl()
-    if today_pnl >= DAILY_PROFIT_TARGET_INR:
-        return True, f"🎯 DAILY PROFIT TARGET LOCKED (+₹{today_pnl:,.2f} >= ₹{DAILY_PROFIT_TARGET_INR:,.2f})! Day's profit secured.", today_pnl
-    if today_pnl <= DAILY_MAX_LOSS_INR:
-        return True, f"🛑 DAILY MAX LOSS GUARD TRIGGERED (₹{today_pnl:,.2f} <= ₹{DAILY_MAX_LOSS_INR:,.2f})! Preserving capital.", today_pnl
-    return False, f"ACTIVE (Today PnL: ₹{today_pnl:,.2f})", today_pnl
-
-# -------------------------------------------------------------
-# ⏰ OPTION 2: MARKET PEAK HOURS TIMING MULTIPLIER
-# -------------------------------------------------------------
-def get_market_session_multiplier(is_crypto=True):
-    """
-    Dynamically scales trade size during high-liquidity sessions:
-    - Crypto US Session (18:30 - 23:59 IST): 1.30x
-    - Crypto Asian Session (05:30 - 09:30 IST): 1.15x
-    - Indian Stocks Morning Rush (09:15 - 11:30 IST): 1.25x
-    - Indian Stocks Afternoon Wave (13:30 - 15:15 IST): 1.15x
-    - Off-peak: 1.0x
-    """
-    now = get_ist_now()
-    curr_t = now.time()
-    
-    if is_crypto:
-        t_us_start = datetime.strptime("18:30", "%H:%M").time()
-        t_us_end = datetime.strptime("23:59", "%H:%M").time()
-        t_asia_start = datetime.strptime("05:30", "%H:%M").time()
-        t_asia_end = datetime.strptime("09:30", "%H:%M").time()
-        
-        if t_us_start <= curr_t <= t_us_end:
-            return 1.30, "US Peak Session (1.30x)"
-        elif t_asia_start <= curr_t <= t_asia_end:
-            return 1.15, "Asian Open Session (1.15x)"
-        return 1.0, "Standard Crypto Session (1.0x)"
-    else:
-        t_morn_start = datetime.strptime("09:15", "%H:%M").time()
-        t_morn_end = datetime.strptime("11:30", "%H:%M").time()
-        t_after_start = datetime.strptime("13:30", "%H:%M").time()
-        t_after_end = datetime.strptime("15:15", "%H:%M").time()
-        
-        if t_morn_start <= curr_t <= t_morn_end:
-            return 1.25, "NSE Morning Rush (1.25x)"
-        elif t_after_start <= curr_t <= t_after_end:
-            return 1.15, "NSE Afternoon Wave (1.15x)"
-        return 1.0, "Regular NSE Session (1.0x)"
-
-# -------------------------------------------------------------
-# 🌊 OPTION 3: MARKET REGIME DETECTION (TREND vs CHOPPY RANGE)
-# -------------------------------------------------------------
-def detect_market_regime(df):
-    """
-    Detects whether asset is 'TRENDING' or in a sideways 'RANGE'.
-    Uses Bollinger Bandwidth + EMA 9 vs 21 spread.
-    """
-    if df is None or len(df) < 20:
-        return "TRENDING", 1.0, "Trend Momentum"
-        
-    close = df['close']
-    sma_20 = close.rolling(window=20).mean()
-    std_20 = close.rolling(window=20).std()
-    upper_b = sma_20 + (std_20 * 2)
-    lower_b = sma_20 - (std_20 * 2)
-    
-    last_close = close.iloc[-1]
-    last_sma = sma_20.iloc[-1] if not pd.isna(sma_20.iloc[-1]) else last_close
-    bandwidth = ((upper_b.iloc[-1] - lower_b.iloc[-1]) / last_sma) * 100.0 if last_sma > 0 else 2.0
-    
-    ema_9 = close.ewm(span=9, adjust=False).mean().iloc[-1]
-    ema_21 = close.ewm(span=21, adjust=False).mean().iloc[-1]
-    ema_spread_pct = (abs(ema_9 - ema_21) / last_close) * 100.0 if last_close > 0 else 0.5
-    
-    if bandwidth < 2.2 and ema_spread_pct < 0.25:
-        return "RANGE", bandwidth, "Sideways Range-Bound"
-    else:
-        return "TRENDING", bandwidth, "Trending Momentum"
-
-# -------------------------------------------------------------
-# ⚡ OPTION 4: WINNING STREAK DYNAMIC COMPOUNDING
-# -------------------------------------------------------------
-def get_win_streak_multiplier():
-    """
-    Consecutive wins scale trade size (+10% to +25%).
-    Any loss immediately resets streak multiplier to 1.0x (Risk Shield).
-    """
-    streak = 0
-    mult = 1.0
-    if os.path.exists('trades_log.csv'):
-        try:
-            df = pd.read_csv('trades_log.csv')
-            if not df.empty and 'Action' in df.columns and 'Profit' in df.columns:
-                sells = df[df['Action'].str.upper() == 'SELL']
-                if not sells.empty:
-                    for i in range(len(sells) - 1, -1, -1):
-                        p_val = str(sells.iloc[i]['Profit']).replace('₹', '').replace(',', '').strip()
-                        if p_val and p_val != '-':
-                            p_num = float(p_val)
-                            if p_num > 0:
-                                streak += 1
-                            else:
-                                break
-        except Exception:
-            pass
-
-    if streak >= 4:
-        mult = 1.25
-    elif streak == 3:
-        mult = 1.20
-    elif streak == 2:
-        mult = 1.10
-    else:
-        mult = 1.00
-        
-    return mult, streak
-
 # Create a dedicated lock for Yahoo Finance to prevent thread corruption
 yf_lock = threading.Lock()
 
@@ -498,61 +297,51 @@ def load_custom_watchlist():
     return {}
 
 def get_current_trading_mode():
-    # 1. Try cloud state from MongoDB Atlas so Render and Streamlit stay in perfect sync
+    # 1. Cloud-synced Mode (Immediate real-time switch across Render & Streamlit)
     try:
-        m_doc = db_helper.get_state('trading_mode')
-        if m_doc and isinstance(m_doc, dict) and 'mode' in m_doc:
-            c = str(m_doc['mode'])
-            if "Angel" in c:
-                return "ANGEL_ONE_LIVE"
-            elif "Dual" in c:
+        c_mode = db_helper.get_state('trading_mode')
+        if c_mode:
+            content = str(c_mode.get('mode', c_mode) if isinstance(c_mode, dict) else c_mode).strip()
+            if "Angel" in content or "ANGEL" in content:
+                return "ANGEL_LIVE"
+            elif "Dual" in content or "DUAL" in content:
                 return "DUAL_TRADING"
-            elif "Zerodha" in c or "Indian" in c or "NSE" in c:
+            elif "Zerodha" in content or "Indian" in content or "NSE" in content or "ZERODHA" in content:
                 return "ZERODHA_PAPER"
-            elif "Live" in c and "Binance" in c:
+            elif "Live" in content and "Binance" in content:
                 return "BINANCE_LIVE"
-            elif "Binance" in c or "Virtual" in c or "Crypto" in c:
+            elif "Paper" in content or "PAPER" in content or "Binance" in content or "BINANCE" in content:
                 return "BINANCE_PAPER"
-            else:
-                return "ANGEL_ONE_LIVE"
     except Exception:
         pass
 
-    # 2. Try local file fallback
+    # 2. Local fallback file
     if os.path.exists('trading_mode.txt'):
         try:
-            with open('trading_mode.txt', 'r', encoding='utf-8') as f:
+            with open('trading_mode.txt', 'r') as f:
                 content = f.read().strip()
-            if "Angel" in content:
-                return "ANGEL_ONE_LIVE"
-            elif "Dual" in content:
+            if "Angel" in content or "ANGEL" in content:
+                return "ANGEL_LIVE"
+            elif "Dual" in content or "DUAL" in content:
                 return "DUAL_TRADING"
             elif "Zerodha" in content or "Indian" in content or "NSE" in content:
                 return "ZERODHA_PAPER"
             elif "Live" in content and "Binance" in content:
                 return "BINANCE_LIVE"
-            elif "Binance" in content or "Virtual" in content or "Crypto" in content:
-                return "BINANCE_PAPER"
             else:
-                return "ANGEL_ONE_LIVE"
-        except Exception:
-            pass
-    return "ANGEL_ONE_LIVE"
+                return "BINANCE_PAPER"
+        except: pass
+    return "BINANCE_PAPER"
 
 def is_live_trading():
-    return get_current_trading_mode() in ["BINANCE_LIVE", "ANGEL_ONE_LIVE"]
+    return get_current_trading_mode() in ("BINANCE_LIVE", "ANGEL_LIVE")
 
 def execute_live_order(action, sym, quantity=None, quote_amount=None):
-    mode = get_current_trading_mode()
-    # 🇮🇳 Angel One SmartAPI Real Money Execution
-    if mode == "ANGEL_ONE_LIVE":
-        try:
-            q = int(quantity) if (quantity and quantity >= 1) else 1
-            return angel_one.execute_angel_order(action, sym, quantity=q)
-        except Exception as e:
-            log_status(f"⚠️ Angel One Live Order Error ({sym}): {e}")
-            return False, str(e)
+    # 🇮🇳 Indian Stocks Live Order Routing (Angel One SmartAPI)
+    if (".NS" in sym or ".BO" in sym) and HAS_ANGEL:
+        return angel_helper.angel_engine.execute_order(action, sym, quantity)
 
+    # 🪙 Crypto Live Order Routing (Binance CCXT)
     if not exchange: return False, "No exchange initialized"
     market_sym = sym.replace("-USD", "/USDT")
     try:
@@ -573,7 +362,7 @@ def execute_live_order(action, sym, quantity=None, quote_amount=None):
             order = exchange.create_market_sell_order(market_sym, sell_qty)
             return True, order
     except Exception as e:
-        log_status(f"⚠️ Live Binance Error ({market_sym}): {e}")
+        log_status(f"⚠️ Live Order Error ({market_sym}): {e}")
         return False, str(e)
     return False, "Unknown"
 
@@ -582,6 +371,44 @@ def execute_live_order(action, sym, quantity=None, quote_amount=None):
 # Cache for Macro Trends to avoid downloading 2-year data every minute
 macro_trends = {}
 last_exit_times = {}
+
+# 🌐 NIFTY 50 MOTHER MARKET CONFLUENCE (Indian Market Regime Filter)
+nifty_regime_cache = {'timestamp': 0, 'status': 'NEUTRAL', 'thought': ''}
+
+def get_nifty_market_regime():
+    global nifty_regime_cache
+    now_ts = time.time()
+    # Cache for 180 seconds to protect against rate limits and keep bot ultra-fast
+    if (now_ts - nifty_regime_cache['timestamp']) < 180:
+        return nifty_regime_cache['status'], nifty_regime_cache['thought']
+        
+    try:
+        df_n = fetch_data('^NSEI')
+        if df_n is None or df_n.empty or len(df_n) < 15:
+            return 'NEUTRAL', 'Nifty 50 స్థిరంగా ఉంది.'
+            
+        c_now = float(df_n['close'].iloc[-1])
+        c_prev = float(df_n['close'].iloc[-15])
+        pct_change = ((c_now - c_prev) / c_prev) * 100.0
+        
+        # Severe Market Crash Guard: If Nifty drops > 0.60% in 15 mins, hold back new buys
+        if pct_change <= -0.60:
+            status = 'SEVERE_CRASH'
+            thought = f"🛑 [NIFTY CRASH SHIELD]: నిఫ్టీ 50 లో సడెన్ సెల్లింగ్ ({pct_change:.2f}%) జరుగుతోంది. రిస్క్ అవాయిడ్ చేస్తున్నాను!"
+        elif pct_change >= 0.20:
+            status = 'BULLISH'
+            thought = f"🟢 [NIFTY BULL RUN]: నిఫ్టీ 50 స్ట్రాంగ్ బుల్లిష్ మొమెంటమ్ ({pct_change:+.2f}%) లో ఉంది."
+        elif pct_change <= -0.25:
+            status = 'BEARISH'
+            thought = f"🔴 [NIFTY WEAK]: నిఫ్టీ 50 బలహీనంగా ఉంది ({pct_change:.2f}%)."
+        else:
+            status = 'NEUTRAL'
+            thought = f"⚪ [NIFTY STABLE]: నిఫ్టీ 50 స్థిరంగా కన్సాలిడేషన్ లో ఉంది ({pct_change:+.2f}%)."
+            
+        nifty_regime_cache = {'timestamp': now_ts, 'status': status, 'thought': thought}
+        return status, thought
+    except Exception:
+        return 'NEUTRAL', 'Nifty 50 న్యూట్రల్ గా ఉంది.'
 
 def get_macro_trend(sym):
     global macro_trends
@@ -641,7 +468,7 @@ def fetch_data(sym):
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         'Accept': 'application/json'
     }
-    for interval, rng in [('1m', '1d'), ('5m', '5d'), ('1d', '1mo')]:
+    for interval, rng in [('1m', '5d'), ('5m', '5d'), ('15m', '5d'), ('1d', '1mo')]:
         try:
             url = f'https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval={interval}&range={rng}'
             req = urllib.request.Request(url, headers=headers)
@@ -692,7 +519,13 @@ def fetch_data(sym):
 import numpy as np
     
 
+news_cache = {}
+
 def get_news_sentiment(sym):
+    global news_cache
+    now_ts = time.time()
+    if sym in news_cache and (now_ts - news_cache[sym].get('time', 0)) < 900:
+        return news_cache[sym].get('score', 0)
     try:
         if ".NS" in sym or ".BO" in sym or sym.startswith("^"):
             clean_name = sym.replace('.NS', '').replace('.BO', '')
@@ -701,7 +534,7 @@ def get_news_sentiment(sym):
             search_term = sym.replace('-USD', '') + " market news crypto"
         url = f"https://news.google.com/rss/search?q={search_term.replace(' ', '+')}&hl=en-US&gl=US&ceid=US:en"
         req = Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urlopen(req, timeout=5) as response:
+        with urlopen(req, timeout=3) as response:
             xml_data = response.read()
         root = ET.fromstring(xml_data)
         
@@ -715,8 +548,10 @@ def get_news_sentiment(sym):
                 if w in title: score += 1
             for w in neg_words:
                 if w in title: score -= 1
+        news_cache[sym] = {'score': score, 'time': now_ts}
         return score
     except:
+        news_cache[sym] = {'score': 0, 'time': now_ts}
         return 0
 
 
@@ -761,18 +596,12 @@ def get_htf_trend(df):
 
 
 def generate_signal(df, sym):
-    # Default variables for memory & safety
-    htf_status = 'NEUTRAL'
-    htf_rsi = 50.0
-    htf_desc = 'సాధారణం'
+    now = get_ist_now()
+    is_indian = sym.endswith(".NS") or sym.endswith(".BO") or sym in ["^NSEI", "^NSEBANK"]
     # 🧠 SELF-LEARNING AI BRAIN
     import json
 
-    try:
-        with open('ai_brain.json', 'r') as f:
-            ai_brain = json.load(f)
-    except:
-        ai_brain = {"RSI_weight": 1.0, "MACD_weight": 1.0, "BOL_weight": 1.0, "ML_weight": 1.0, "learning_iterations": 0}
+    ai_brain = db_helper.get_state('ai_brain', {"RSI_weight": 1.0, "MACD_weight": 1.0, "BOL_weight": 1.0, "ML_weight": 1.0, "learning_iterations": 0})
 
     current_price = df.iloc[-1]['close']
     
@@ -783,12 +612,12 @@ def generate_signal(df, sym):
     df['EMA_200'] = df['close'].ewm(span=200, adjust=False).mean()
     
     # సపోర్ట్ అండ్ రెసిస్టెన్స్
-    df['Support'] = df['low'].rolling(window=100).min()
-    df['Resistance'] = df['high'].rolling(window=100).max()
+    df['Support'] = df['low'].rolling(window=100, min_periods=5).min()
+    df['Resistance'] = df['high'].rolling(window=100, min_periods=5).max()
     
     # బోలింజర్ బ్యాండ్స్ & Bandwidth
-    df['SMA_20'] = df['close'].rolling(window=20).mean()
-    df['STD_20'] = df['close'].rolling(window=20).std()
+    df['SMA_20'] = df['close'].rolling(window=20, min_periods=5).mean()
+    df['STD_20'] = df['close'].rolling(window=20, min_periods=5).std().fillna(0.0)
     df['Upper_Band'] = df['SMA_20'] + (df['STD_20'] * 2)
     df['Lower_Band'] = df['SMA_20'] - (df['STD_20'] * 2)
     df['Bandwidth'] = (df['Upper_Band'] - df['Lower_Band']) / (df['SMA_20'] + 1e-9)
@@ -798,14 +627,14 @@ def generate_signal(df, sym):
     high_close = (df['high'] - df['close'].shift()).abs()
     low_close = (df['low'] - df['close'].shift()).abs()
     true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-    df['ATR'] = true_range.rolling(14).mean()
+    df['ATR'] = true_range.rolling(14, min_periods=3).mean()
     
     # VWAP (Volume Weighted Average Price)
     df['Typical_Price'] = (df['high'] + df['low'] + df['close']) / 3
-    df['VWAP'] = (df['Typical_Price'] * df['volume']).rolling(window=50).sum() / (df['volume'].rolling(window=50).sum() + 1e-9)
+    df['VWAP'] = (df['Typical_Price'] * df['volume']).rolling(window=50, min_periods=5).sum() / (df['volume'].rolling(window=50, min_periods=5).sum() + 1e-9)
     
     # Volume Analysis
-    avg_volume = df['volume'].rolling(window=20).mean()
+    avg_volume = df['volume'].rolling(window=20, min_periods=3).mean()
     
     # RSI (14)
     delta = df['close'].diff()
@@ -915,6 +744,17 @@ def generate_signal(df, sym):
     pred_pts = 0.0
     
     # --- PILLAR 1: TREND ALIGNMENT ---
+    # 🌐 NIFTY 50 MOTHER MARKET CONFLUENCE (Protects real money from market-wide crashes)
+    if is_indian:
+        n_status, n_thought = get_nifty_market_regime()
+        if n_status == 'SEVERE_CRASH' and not extreme_capitulation:
+            return 'hold', f" 🧠 AI ఆలోచన: {n_thought}"
+        elif n_status == 'BULLISH':
+            trend_pts += 1.5
+            thoughts.append(n_thought)
+        elif n_status == 'BEARISH':
+            sell_score += 0.5
+
     if htf_status == 'BULLISH':
         trend_pts += 2.0
         thoughts.append("15-నిమిషాల ట్రెండ్ స్ట్రాంగ్ బుల్లిష్ గా ఉంది.")
@@ -975,9 +815,22 @@ def generate_signal(df, sym):
     buy_score += mom_pts
 
     # --- PILLAR 3: VOLUME & WHALE CONFIRMATION ---
+    is_fii_volume_surge = False
+    vol_ratio = 1.0
+    if len(df) >= 20:
+        vol_sma_20 = df['volume'].iloc[-21:-1].mean()
+        if vol_sma_20 > 0:
+            vol_ratio = last['volume'] / vol_sma_20
+            if vol_ratio >= 2.5 and is_bullish_candle:
+                is_fii_volume_surge = True
+                vol_pts += 3.0
+                thoughts.append(f"⚡ [FII/DII వాల్యూమ్ బ్లాస్ట్]: సాధారణం కంటే {vol_ratio:.1f}x భారీ ఇన్స్టిట్యూషనల్ వాల్యూమ్ తో బ్రేక్‌అవుట్ వచ్చింది!")
+
     if is_whale_pump:
         vol_pts += 3.5
         thoughts.append("🐋 [WHALE RADAR]: వేల్స్ భారీ వాల్యూమ్ తో మార్కెట్ లోకి ఎంటర్ అయ్యారు!")
+    elif is_fii_volume_surge:
+        pass # already added vol_pts and thought above
     elif volume_strong and is_bullish_candle:
         vol_pts += 2.0
         thoughts.append("హై వాల్యూమ్ తో బయ్యర్స్ మార్కెట్ ని గ్రీన్ లో క్లోజ్ చేస్తున్నారు.")
@@ -999,6 +852,24 @@ def generate_signal(df, sym):
     if near_resistance:
         sell_score += 2.0
         thoughts.append("రెసిస్టెన్స్ ఏరియా దగ్గరికి చేరింది.")
+
+    # ⏰ PRO TECHNIQUE 0: 9:15-9:30 AM Opening Range Slingshot (ORB)
+    is_orb_breakout = False
+    if is_indian:
+        curr_t = now.time()
+        t_915 = datetime.strptime("09:15", "%H:%M").time()
+        t_930 = datetime.strptime("09:30", "%H:%M").time()
+        if t_915 <= curr_t <= t_930 and len(df) >= 3:
+            try:
+                today_mask = (df['timestamp'].dt.date == now.date()) if ('timestamp' in df.columns and hasattr(df['timestamp'].iloc[0], 'date')) else None
+                today_c = df[today_mask] if today_mask is not None and today_mask.any() else df.tail(15)
+                open_high = today_c['high'].max()
+            except Exception:
+                open_high = df['high'].tail(15).max()
+            if (last['close'] >= open_high * 0.999) and is_bullish_candle and (volume_strong or is_fii_volume_surge):
+                is_orb_breakout = True
+                pred_pts += 2.5
+                thoughts.append("⏰ [ORB స్లింగ్‌షాట్]: 9:15 AM ఓపెనింగ్ రేంజ్ బ్రేక్‌అవుట్ కన్ఫర్మ్ అయ్యింది! మార్నింగ్ ర్యాలీ!")
 
     # 💎 PRO TECHNIQUE 1: Smart Money Order Block & Liquidity Sweep (SMC)
     strat_dict = ai_brain.get('strategies', {})
@@ -1022,9 +893,117 @@ def generate_signal(df, sym):
         pred_pts += 2.0 * fvg_w
         thoughts.append("⚡ [FVG Imbalance]: ఫెయిర్ వ్యాల్యూ గ్యాప్ ఫిల్ అయ్యింది! అయస్కాంతంలా బౌన్స్ మొదలైంది.")
 
+    # 🚀 PRO TECHNIQUE 3: Morning Dip-Bounce Reversal & VWAP Reclaim Sniper (మార్నింగ్ బాటమ్ బౌన్స్)
+    dip_w = strat_dict.get('morning_dip_bounce', {}).get('weight', 1.60)
+    is_dip_bounce = False
+    is_overnight_top_pick = False
+
+    # Check if this asset is ranked in Overnight Research Top Picks
+    try:
+        on_state = db_helper.get_state('overnight_research', {})
+        top_picks_list = on_state.get('top_3_picks', [])
+        clean_s = sym.replace('.NS', '').replace('.BO', '').replace('-USD', '')
+        for p_item in top_picks_list:
+            if sym == p_item.get('symbol') or clean_s == p_item.get('clean_name'):
+                is_overnight_top_pick = True
+                break
+    except Exception:
+        pass
+
+    if len(df) >= 12:
+        recent_win = df.tail(min(30, len(df)))
+        session_low = recent_win['low'].min()
+        session_min_rsi = recent_win['RSI'].min() if 'RSI' in recent_win else 50.0
+
+        # Did it have a clear dip/capitulation earlier?
+        had_prior_dip = (session_min_rsi <= 48.0) or (recent_win['low'].iloc[0] > session_low * 1.006)
+        
+        # Bullish Reversal Confirmation:
+        # 1. Price is reclaiming back above EMA 9 or EMA 21 or VWAP
+        reclaiming_fast_ema = (last['close'] >= last['EMA_9'] * 0.998) or (last['close'] >= last['VWAP'] * 0.998)
+        # 2. Candle is green and closing above previous close (Momentum upward)
+        bullish_reversal_candle = (last['close'] > last['open']) and (last['close'] > prev['close'])
+        # 3. Higher low formed: current price has stepped up from bottom
+        higher_low_stepped = (last['low'] >= session_low * 1.001) and (last['close'] > session_low * 1.004)
+        # 4. Volume confirms buying absorption
+        avg_vol_val = float(avg_volume.iloc[-1]) if (not pd.isna(avg_volume.iloc[-1]) and avg_volume.iloc[-1] > 0) else 1.0
+        volume_ok = (last['volume'] >= avg_vol_val * 0.75) or is_fii_volume_surge
+
+        # Time Window for Intraday Equities: 09:20 AM to 02:20 PM (flexible dip-reversal hours)
+        time_ok = True
+        if is_indian:
+            curr_t = now.time()
+            t_start = datetime.strptime("09:20", "%H:%M").time()
+            t_end = datetime.strptime("14:20", "%H:%M").time()
+            time_ok = (t_start <= curr_t <= t_end)
+
+        if had_prior_dip and reclaiming_fast_ema and bullish_reversal_candle and higher_low_stepped and volume_ok and time_ok:
+            is_dip_bounce = True
+
+    if is_dip_bounce:
+        pred_pts += 3.2 * dip_w
+        pillar_trend = True
+        pillar_momentum = True
+        # Crucial: Neutralize old morning gap-down sell score so it doesn't block the bounce entry!
+        sell_score = min(2.5, sell_score * 0.35)
+        thoughts.append("🚀 [Morning Dip-Bounce]: మార్నింగ్ డిప్ పతనం ముగిసింది! బయర్స్ బాటమ్ దగ్గర EMA 9 & VWAP ని రీక్లెయిమ్ చేశారు. పవర్ ఫుల్ బాటమ్ రివర్సల్ బౌన్స్!")
+        if is_overnight_top_pick:
+            pred_pts += 2.0
+            thoughts.append(f"🌙 [Overnight Golden Pick]: రాత్రి AI రీసెర్చ్ టాప్ పిక్ ({clean_s})! డిప్ తర్వాత +2.50% టార్గెట్ రాలీకి హై-కన్విక్షన్ ఎంట్రీ!")
+
+    # ⚡ PRO TECHNIQUE 4: Fast Morning Bullish Momentum Breakout (మార్కెట్ బాగున్నప్పుడు డైరెక్ట్ ఎంట్రీ)
+    # When market/stock is in a strong uptrend, don't wait for a deep dip that never comes!
+    breakout_w = strat_dict.get('morning_momentum_breakout', {}).get('weight', 1.65)
+    is_momentum_breakout = False
+    if len(df) >= 12:
+        # Check conditions for strong upward breakout momentum:
+        # 1. Price is strictly above VWAP (institutional buyers controlling)
+        above_vwap = (not pd.isna(last['VWAP'])) and (last['close'] >= last['VWAP'] * 0.999)
+        # 2. Golden EMA alignment: 9 EMA > 21 EMA
+        ema_aligned = (last['EMA_9'] >= last['EMA_21'] * 0.999) and (last['close'] >= last['EMA_9'] * 0.997)
+        # 3. Healthy RSI momentum: between 45 and 76 (strong buying, not exhausted yet)
+        rsi_healthy = (45 <= last['RSI'] <= 76) and (last['RSI'] >= prev['RSI'] * 0.98)
+        # 4. Green candle with active volume
+        avg_vol_val = float(avg_volume.iloc[-1]) if (not pd.isna(avg_volume.iloc[-1]) and avg_volume.iloc[-1] > 0) else 1.0
+        vol_active = (last['volume'] >= avg_vol_val * 0.75) or is_fii_volume_surge
+        is_green_reversal = (last['close'] >= last['open']) or (last['close'] >= prev['close'])
+        # 5. Near 10-candle high
+        recent_10_high = df['high'].iloc[-12:-1].max() if len(df) >= 12 else last['close']
+        near_breakout = (last['close'] >= recent_10_high * 0.997)
+        
+        # Active throughout trading hours until 2:20 PM
+        time_breakout_ok = True
+        if is_indian:
+            curr_t = now.time()
+            t_open_allow = datetime.strptime("09:20", "%H:%M").time()
+            t_close_allow = datetime.strptime("14:20", "%H:%M").time()
+            time_breakout_ok = (t_open_allow <= curr_t <= t_close_allow)
+
+        if above_vwap and ema_aligned and rsi_healthy and vol_active and is_green_reversal and near_breakout and time_breakout_ok:
+            is_momentum_breakout = True
+
+    if is_momentum_breakout:
+        pred_pts += 3.5 * breakout_w
+        pillar_trend = True
+        pillar_momentum = True
+        pillar_predictive = True
+        sell_score = min(2.0, sell_score * 0.25)
+        thoughts.append("⚡ [Morning Momentum Breakout]: మార్కెట్ స్ట్రాంగ్ బుల్లిష్ ర్యాలీలో ఉంది! ప్రైస్ VWAP & EMA 9 పైన బ్రేక్‌అవుట్ ఇచ్చింది. పక్కా ప్రాఫిట్ మొమెంటమ్ ఎంట్రీ!")
+        if is_overnight_top_pick:
+            pred_pts += 2.0
+            thoughts.append(f"🌙 [Overnight Golden Pick]: రాత్రి AI రీసెర్చ్ టాప్ పిక్ ({clean_s})! బుల్లిష్ ర్యాలీ కన్ఫర్మేషన్!")
+
     # Determine Dominant Pro Strategy for Self-Learning Tracker
     chosen_strategy = "rsi_vwap_confluence"
-    if is_liquidity_sweep:
+    if is_momentum_breakout:
+        chosen_strategy = "morning_momentum_breakout"
+    elif is_dip_bounce:
+        chosen_strategy = "morning_dip_bounce"
+    elif is_fii_volume_surge:
+        chosen_strategy = "institutional_volume_surge"
+    elif is_orb_breakout:
+        chosen_strategy = "opening_range_breakout"
+    elif is_liquidity_sweep:
         chosen_strategy = "order_block_bounce"
     elif is_fvg_fill:
         chosen_strategy = "fvg_imbalance_fill"
@@ -1032,16 +1011,18 @@ def generate_signal(df, sym):
         chosen_strategy = "trend_pullback_ema"
 
     try:
-        x = np.arange(20)
-        y = df['close'].tail(20).values
-        slope, intercept = np.polyfit(x, y, 1)
-        predicted_next = slope * 20 + intercept
-        
-        if slope > 0 and predicted_next > current_price * 1.0015:
-            pred_pts += 1.5 * ai_brain.get('ML_weight', 1.0)
-            thoughts.append(f"[AI ML]: అప్ ట్రెండ్ ప్రిడిక్షన్ (టార్గెట్: ₹{predicted_next:.2f}).")
-        elif slope < 0 and predicted_next < current_price * 0.9985:
-            sell_score += 1.5
+        poly_n = min(20, len(df))
+        if poly_n >= 5:
+            x = np.arange(poly_n)
+            y = df['close'].tail(poly_n).values
+            slope, intercept = np.polyfit(x, y, 1)
+            predicted_next = slope * poly_n + intercept
+            
+            if slope > 0 and predicted_next > current_price * 1.0015:
+                pred_pts += 1.5 * ai_brain.get('ML_weight', 1.0)
+                thoughts.append(f"[AI ML]: అప్ ట్రెండ్ ప్రిడిక్షన్ (టార్గెట్: ₹{predicted_next:.2f}).")
+            elif slope < 0 and predicted_next < current_price * 0.9985:
+                sell_score += 1.5
     except Exception:
         pass
 
@@ -1108,7 +1089,10 @@ def generate_signal(df, sym):
     # BUY REQUIREMENT:
     buy_triggered = (
         (confluence_pillars >= min_pillars and buy_score >= req_buy_score and sell_score <= max_sell_score and htf_ok) or
+        (is_momentum_breakout and buy_score >= (3.5 if is_scalper else 4.8) and sell_score <= 3.8) or
+        (is_overnight_top_pick and buy_score >= 3.0 and sell_score <= 3.8) or
         (is_whale_pump and buy_score >= (3.5 if is_scalper else 6.0) and htf_ok) or
+        (is_dip_bounce and buy_score >= (3.2 if is_scalper else 4.8) and sell_score <= 3.8) or
         (is_scalper and last['RSI'] <= 34 and last['close'] <= (last['Lower_Band'] * 1.005) and sell_score <= max_sell_score)
     )
 
@@ -1128,103 +1112,101 @@ def log_status(msg, voice_alert=None, color_code='\033[0m'):
     with file_lock:
         with open('bot_logs.txt', 'a') as f:
             f.write(msg + '\n')
+    try:
+        # Also persist to MongoDB so Streamlit Cloud displays live logs in real time
+        logs = db_helper.get_state('bot_logs', [])
+        if not isinstance(logs, list):
+            logs = []
+        logs.append(msg)
+        if len(logs) > 100:
+            logs = logs[-100:]
+        db_helper.save_state('bot_logs', logs)
+    except Exception:
+        pass
     if voice_alert:
         # Mac OS Voice Command is muted as per user request
         pass # os.system(f'say "{voice_alert}" &')
 
 
 
+def calculate_trade_charges(sym, buy_value, sell_value):
+    """
+    Calculates exact real-world exchange and broker charges:
+    - For Indian Stocks (Angel One Intraday MIS):
+      Brokerage: 0.25% or ₹20 whichever is lower (on both Buy and Sell)
+      STT: 0.025% on sell turnover
+      Exchange Txn (NSE): 0.00297% on both legs
+      GST: 18% on (Brokerage + Exchange Txn)
+      SEBI: 0.0001%
+      Stamp Duty: 0.003% on buy
+    - For Crypto (Binance Spot):
+      0.10% buy + 0.10% sell
+    """
+    is_ind = (".NS" in sym or ".BO" in sym or sym in ["^NSEI", "^NSEBANK"])
+    if is_ind:
+        brok_buy = max(2.5, min(20.0, buy_value * 0.0025))
+        brok_sell = max(2.5, min(20.0, sell_value * 0.0025))
+        stt = sell_value * 0.00025
+        exch = (buy_value + sell_value) * 0.0000345
+        gst = (brok_buy + brok_sell + exch) * 0.18
+        stamp = buy_value * 0.00003
+        sebi = (buy_value + sell_value) * 0.000001
+        calc_sum = brok_buy + brok_sell + stt + exch + gst + stamp + sebi
+        # Real-world Angel One intraday minimum floor is ₹14.50-₹15.00 per round-trip
+        # Using ₹15.00 floor guarantees AI NEVER underestimates charges!
+        return max(15.00, round(calc_sum, 2))
+    else:
+        return round((buy_value + sell_value) * 0.001, 2)
+
+
 def process_symbol(sym):
-    mode = get_current_trading_mode()
     now = get_ist_now()
     is_crypto = sym.endswith("-USD")
     is_indian = sym.endswith(".NS") or sym.endswith(".BO") or sym in ["^NSEI", "^NSEBANK"]
-    clean_name = sym.replace('.NS', '').replace('.BO', '').replace('-USD', '')
-
-    # 🛑 If Angel One Live Mode is active: Completely skip Crypto trades
-    if mode == "ANGEL_ONE_LIVE" and is_crypto:
-        return {
-            "symbol": sym,
-            "clean_name": clean_name,
-            "price": 0.0,
-            "signal": "PAUSED",
-            "thought": "Binance ఆపబడింది — బాట్ ప్రస్తుతం Angel One లో మాత్రమే రియల్ ఇండియన్ స్టాక్స్ ట్రేడింగ్ చేస్తోంది.",
-            "strategy": "angel_one_live_focus",
-            "rsi": 50.0,
-            "trend": "PAUSED",
-            "action_taken": "PAUSED",
-            "has_position": False,
-            "pnl_pct": 0.0,
-            "avg_price": 0.0,
-            "total_qty": 0.0,
-            "target_price": 0.0,
-            "peak_price": 0.0,
-            "invested": 0.0,
-            "dca_layer": 0,
-            "timestamp": now.strftime('%H:%M:%S'),
-            "is_indian": False
-        }
-
-    # Load Fractional Micro-DCA State & Live Trading Mode
-    dca_state = load_dca_state()
-    pos = dca_state.get(sym)
-    live_mode = is_live_trading()
-
     if is_indian:
         if now.weekday() > 4: # Weekend
-            wk_df = fetch_data(sym)
-            last_close = float(wk_df['close'].iloc[-1]) if (wk_df is not None and not wk_df.empty) else (pos['avg_price'] if pos else 0.0)
-            return {
-                "symbol": sym,
-                "clean_name": clean_name,
-                "price": last_close,
-                "signal": "HOLD",
-                "thought": "భారతీయ స్టాక్ మార్కెట్ (NSE) వీకెండ్ సెలవులో ఉంది. సోమవారం ఉదయం 9:15 AM కి మార్కెట్ తిరిగి ప్రారంభమవుతుంది.",
-                "strategy": "weekend_hold",
-                "rsi": 50.0,
-                "trend": "CLOSED",
-                "action_taken": "HOLD",
-                "has_position": pos is not None,
-                "pnl_pct": 0.0,
-                "avg_price": pos['avg_price'] if pos else 0.0,
-                "total_qty": pos['total_qty'] if pos else 0.0,
-                "target_price": pos.get('target_sell_price', 0.0) if pos else 0.0,
-                "peak_price": pos.get('peak_price', 0.0) if pos else 0.0,
-                "invested": pos.get('total_cost', 0.0) if pos else 0.0,
-                "dca_layer": len(pos.get('entries', [])) if pos else 0,
-                "timestamp": now.strftime('%H:%M:%S'),
-                "is_indian": is_indian
-            }
+            return {'symbol': sym, 'status': 'MARKET_CLOSED'}
         
         curr_t = now.time()
         m_open = datetime.strptime("09:15", "%H:%M").time()
         m_close = datetime.strptime("15:30", "%H:%M").time()
         
         if not (m_open <= curr_t <= m_close):
-            wk_df = fetch_data(sym)
-            last_close = float(wk_df['close'].iloc[-1]) if (wk_df is not None and not wk_df.empty) else (pos['avg_price'] if pos else 0.0)
-            return {
-                "symbol": sym,
-                "clean_name": clean_name,
-                "price": last_close,
-                "signal": "HOLD",
-                "thought": "భారతీయ స్టాక్ మార్కెట్ (NSE) ట్రేడింగ్ సమయం ముగిసింది (09:15 - 15:30 IST). తదుపరి సెషన్ లో బాట్ ఆటోమేటిక్ గా ఆర్డర్స్ ఎగ్జిక్యూట్ చేస్తుంది.",
-                "strategy": "after_hours_hold",
-                "rsi": 50.0,
-                "trend": "AFTER_HOURS",
-                "action_taken": "HOLD",
-                "has_position": pos is not None,
-                "pnl_pct": 0.0,
-                "avg_price": pos['avg_price'] if pos else 0.0,
-                "total_qty": pos['total_qty'] if pos else 0.0,
-                "target_price": pos.get('target_sell_price', 0.0) if pos else 0.0,
-                "peak_price": pos.get('peak_price', 0.0) if pos else 0.0,
-                "invested": pos.get('total_cost', 0.0) if pos else 0.0,
-                "dca_layer": len(pos.get('entries', [])) if pos else 0,
-                "timestamp": now.strftime('%H:%M:%S'),
-                "is_indian": is_indian
-            }
+            return {'symbol': sym, 'status': 'MARKET_CLOSED'}
+            
+    clean_name = sym.replace('.NS', '').replace('.BO', '').replace('-USD', '')
     
+    # Load Fractional Micro-DCA State & Live Trading Mode
+    dca_state = load_dca_state()
+    pos = dca_state.get(sym)
+    live_mode = is_live_trading()
+    
+    if not is_crypto and now.weekday() >= 5:
+        # Weekend: stock markets closed
+        wk_df = fetch_data(sym)
+        last_close = float(wk_df['close'].iloc[-1]) if (wk_df is not None and not wk_df.empty) else (pos['avg_price'] if pos else 0.0)
+        return {
+            "symbol": sym,
+            "clean_name": clean_name,
+            "price": last_close,
+            "signal": "HOLD",
+            "thought": "భారతీయ స్టాక్ మార్కెట్ (NSE) వీకెండ్ సెలవులో ఉంది. సోమవారం ఉదయం 9:15 AM కి మార్కెట్ తిరిగి ప్రారంభమవుతుంది.",
+            "strategy": "weekend_hold",
+            "rsi": 50.0,
+            "trend": "CLOSED",
+            "action_taken": "HOLD",
+            "has_position": pos is not None,
+            "pnl_pct": 0.0,
+            "avg_price": pos['avg_price'] if pos else 0.0,
+            "total_qty": pos['total_qty'] if pos else 0.0,
+            "target_price": pos.get('target_sell_price', 0.0) if pos else 0.0,
+            "peak_price": pos.get('peak_price', 0.0) if pos else 0.0,
+            "invested": pos.get('total_cost', 0.0) if pos else 0.0,
+            "dca_layer": len(pos.get('entries', [])) if pos else 0,
+            "timestamp": now.strftime('%H:%M:%S'),
+            "is_indian": is_indian
+        }
+        
     df = fetch_data(sym)
     if df.empty:
         return {
@@ -1284,109 +1266,63 @@ def process_symbol(sym):
                 brain_conf = json.load(f_b).get('small_capital_compounding', {}).get('confidence_multiplier', 1.0)
         except: pass
         
-    # Indian Stocks (Angel One Live vs Zerodha Paper) vs Crypto (Binance) sizing
+    # Indian Stocks (Zerodha Paper vs Angel One Live) sizing
     if is_indian:
-        if mode == "ANGEL_ONE_LIVE":
-            mode_str = "🏛️ ANGEL ONE LIVE"
-            try:
-                a_funds = angel_one.get_angel_funds()
-                if a_funds.get("status"):
-                    live_cash = float(a_funds.get("availablecash", 0.0))
-                    portfolio_cap = live_cash if live_cash > 0 else 0.0
-                else:
-                    portfolio_cap = 0.0
-            except Exception:
-                portfolio_cap = 0.0
+        if live_mode and HAS_ANGEL:
+            mode_str = "🇮🇳💰 ANGEL ONE LIVE (5x MIS Scalper)"
+            angel_cash = angel_helper.angel_engine.get_available_cash()
+            if angel_cash <= 0:
+                angel_cash = 300.0
+            # 5x Intraday MIS Leverage (Angel One provides 5x margin for intraday equity)
+            intraday_buying_power = angel_cash * 5.0
+            portfolio_cap = intraday_buying_power
+            # Auto-Compounding Allocation: Up to 85% of buying power (leaving 15% cash safety buffer)
+            trade_budget = round(intraday_buying_power * 0.85, 2)
+            if current_price > 0 and trade_budget >= current_price:
+                slice_qty = float(max(1, int(trade_budget // current_price)))
+            else:
+                slice_qty = 0.0
+            slice_cost_inr = round(slice_qty * current_price, 2)
+            slice_cost_usd = round(slice_cost_inr / 84.5, 2)
         else:
             mode_str = "🇮🇳 ZERODHA VIRTUAL"
-            portfolio_cap = 0.0
-
-        # 🛡️ DYNAMIC CAPITAL ALLOCATION GUARD FOR MICRO/SMALL ACCOUNTS (₹100 - ₹50,000)
-        if mode == "ANGEL_ONE_LIVE" and portfolio_cap > 0 and portfolio_cap < 3000:
-            # For micro accounts (like ₹291), size precisely so margin never exceeds available cash
-            max_margin = portfolio_cap * 0.85
-            calc_q = int((max_margin * 5.0) // current_price)
-            if calc_q >= 1:
-                slice_qty = float(calc_q)
-            else:
-                # If even 1 share margin exceeds total capital, skip safely
-                if (current_price / 5.0) > portfolio_cap:
-                    return {
-                        "symbol": sym,
-                        "clean_name": clean_name,
-                        "price": current_price,
-                        "signal": "WAIT",
-                        "thought": f"ఖాతాలో ఉన్న లైవ్ క్యాష్ (₹{portfolio_cap:,.2f}) కంటే {clean_name} మార్జిన్ ఎక్కువ. ఆర్డర్ రిజెక్ట్ అవ్వకుండా సేఫ్ గా స్కిప్ చేశాను.",
-                        "strategy": "capital_guard",
-                        "rsi": 50.0, "trend": "WAIT", "action_taken": "WAIT",
-                        "has_position": False, "pnl_pct": 0.0, "avg_price": 0.0, "total_qty": 0.0,
-                        "target_price": 0.0, "peak_price": 0.0, "invested": 0.0, "dca_layer": 0,
-                        "timestamp": now.strftime('%H:%M:%S'), "is_indian": is_indian
-                    }
+            if cap_mode == "High Profit" or is_scalp_style:
+                portfolio_cap = 50000.0  # ₹50,000 active capital (Velocity Multi-Asset Scalper)
+                if current_price > 2500:
+                    slice_qty = 2.0   # 2 shares for Reliance/TCS (~₹5,000-₹6,000) -> Fast rotation
+                elif current_price > 700:
+                    slice_qty = 7.0   # 7 shares for TMCV, SBI, Infosys, HDFC Bank (~₹5,000-₹6,000)
+                elif current_price > 100:
+                    slice_qty = 20.0  # 20 shares for ITC, Zomato/Eternal (~₹5,000-₹5,500)
                 else:
-                    slice_qty = 1.0
-        elif cap_mode == "High Profit" or is_scalp_style:
-            if portfolio_cap < 20000:
+                    slice_qty = 75.0  # 75 shares for Suzlon (~₹5,000)
+            elif cap_mode == "Smart Dynamic":
+                portfolio_cap = 50000.0
+                if current_price > 2500: slice_qty = 2.0
+                elif current_price > 700: slice_qty = 6.0
+                elif current_price > 100: slice_qty = 20.0
+                else: slice_qty = 75.0
+            else: # Micro Safe
+                portfolio_cap = 50000.0
                 if current_price > 2500: slice_qty = 1.0
                 elif current_price > 700: slice_qty = 3.0
                 elif current_price > 100: slice_qty = 10.0
-                else: slice_qty = 50.0
-            elif portfolio_cap < 40000:
-                if current_price > 2500: slice_qty = 2.0
-                elif current_price > 700: slice_qty = 8.0
-                elif current_price > 100: slice_qty = 25.0
-                else: slice_qty = 100.0
-            else:
-                if current_price > 2500: slice_qty = 5.0   # 5 shares for Reliance/TCS (~₹13,500-₹17,000)
-                elif current_price > 700: slice_qty = 16.0  # 16 shares for TMCV, SBI, Infosys, HDFC Bank (~₹11,500-₹14,000)
-                elif current_price > 100: slice_qty = 50.0  # 50 shares for ITC, Zomato/Eternal (~₹13,000)
-                else: slice_qty = 200.0 # 200 shares for Suzlon (~₹12,000)
-        elif cap_mode == "Smart Dynamic":
-            if portfolio_cap < 20000:
-                if current_price > 2500: slice_qty = 1.0
-                elif current_price > 700: slice_qty = 2.0
-                elif current_price > 100: slice_qty = 6.0
                 else: slice_qty = 25.0
-            else:
-                if current_price > 2500: slice_qty = 3.0
-                elif current_price > 700: slice_qty = 8.0
-                elif current_price > 100: slice_qty = 25.0
-                else: slice_qty = 100.0
-        else: # Micro Safe
-            if current_price > 2500: slice_qty = 1.0
-            elif current_price > 700: slice_qty = 2.0
-            elif current_price > 100: slice_qty = 5.0
-            else: slice_qty = 20.0
-        slice_cost_inr = round(slice_qty * current_price, 2)
-        slice_cost_usd = round(slice_cost_inr / 84.5, 2)
+            slice_cost_inr = round(slice_qty * current_price, 2)
+            slice_cost_usd = round(slice_cost_inr / 84.5, 2)
     else:
         mode_str = "💰 LIVE BINANCE" if (live_mode and is_crypto) else "📝 VIRTUAL"
         if cap_mode == "High Profit" or is_scalp_style:
-            slice_cost_usd = round(150.0 * brain_conf, 1) # $150 per entry (~₹12,675)
-            portfolio_cap = 60000.0
+            slice_cost_usd = round(60.0 * brain_conf, 1) # $60 per entry (~₹5,070) for 8-asset high-speed rotation
+            portfolio_cap = 50000.0
         elif cap_mode == "Smart Dynamic":
-            slice_cost_usd = round(80.0 * brain_conf, 1)  # $80 (~₹6,760)
-            portfolio_cap = 60000.0
+            slice_cost_usd = round(45.0 * brain_conf, 1)  # $45 (~₹3,800)
+            portfolio_cap = 50000.0
         else:
-            slice_cost_usd = round(35.0 * brain_conf, 1)
-            portfolio_cap = 60000.0
+            slice_cost_usd = round(25.0 * brain_conf, 1)  # $25 (~₹2,100)
+            portfolio_cap = 50000.0
         slice_cost_inr = round(slice_cost_usd * 84.5, 2)
         slice_qty = slice_cost_usd / current_price
-
-    # ⚡ OPTION 2 & OPTION 4: Market Session Timing Multiplier & Winning Streak Compounding
-    session_mult, session_badge = get_market_session_multiplier(is_crypto=is_crypto)
-    streak_mult, win_streak = get_win_streak_multiplier()
-    combo_mult = min(1.50, round(session_mult * streak_mult, 2))
-    
-    slice_qty = round(slice_qty * combo_mult, 6 if is_crypto else 2)
-    slice_cost_inr = round(slice_cost_inr * combo_mult, 2)
-    slice_cost_usd = round(slice_cost_usd * combo_mult, 2)
-
-    # 🌊 OPTION 3: Market Regime Detection (Trend vs Choppy Range)
-    regime, bandwidth_val, regime_desc = detect_market_regime(df)
-
-    # 🎯 OPTION 1: Daily Target (+₹1,800) & Max Loss (-₹1,000) Guard
-    is_daily_locked, daily_guard_reason, today_pnl = check_daily_guard()
 
     action_taken = "HOLD"
     profit_pct = 0.0
@@ -1408,92 +1344,63 @@ def process_symbol(sym):
             
         peak_gain_pct = ((peak_p - avg_price) / avg_price) * 100.0
         
-        # 🧠 AUTONOMOUS SELF-GOVERNING AI PROFIT HARVESTER:
-        # The AI doesn't wait for static numbers: it reads live candle momentum, ATR volatility, and time decay!
-        
-        # 1. Volatility Adaptive Target (Dynamic ATR & Market Regime)
-        recent_bars = min(14, len(df))
-        recent_range = (df['high'].iloc[-recent_bars:] - df['low'].iloc[-recent_bars:]).mean()
-        atr_pct = (recent_range / current_price) * 100.0 if current_price > 0 else 0.5
-        fee_floor = 0.20 if is_indian else 0.25
-        
-        if regime == "RANGE":
-            # 🌊 Sideways Range: Rapid micro-scalp target (+0.40% to +0.65%) so bot doesn't get trapped in chop!
-            ai_dynamic_target = max(fee_floor + 0.15, min(0.65, round(atr_pct * 0.70, 2)))
-        else:
-            # 🚀 Trending Momentum: Let profits run (+0.85% to +2.5%) with trailing lock!
-            ai_dynamic_target = max(fee_floor + 0.25, round(atr_pct * 0.85, 2))
-        
-        # 2. AI Momentum Exhaustion & Reversal Detection:
-        # If trade is in profit and candle shows strong upper rejection wick or RSI stalls, harvest immediately!
-        last_c = df.iloc[-1]
-        prev_c = df.iloc[-2]
-        body = abs(last_c['close'] - last_c['open'])
-        upper_wick = last_c['high'] - max(last_c['open'], last_c['close'])
-        is_rejection_wick = upper_wick > (body * 1.3) and upper_wick > 0.001
-        is_rsi_falling = (last_c.get('RSI', 50) < prev_c.get('RSI', 50))
-        is_ai_exhaustion = (profit_pct >= (fee_floor + 0.15) and (is_rejection_wick or (is_rsi_falling and last_c['close'] < prev_c['close'])))
-        
-        # 3. Time-Decay Stagnancy Harvester:
-        # If held > 25 mins and in profit, don't trap cash all day — harvest profit and rotate capital!
-        pos_entries = pos.get('entries', [])
-        hold_time_mins = 0
-        if pos_entries and 'time' in pos_entries[0]:
-            try:
-                e_t = datetime.strptime(pos_entries[0]['time'], '%Y-%m-%d %H:%M:%S')
-                hold_time_mins = (get_ist_now().replace(tzinfo=None) - e_t).total_seconds() / 60.0
-            except: pass
-        is_ai_time_harvest = (hold_time_mins >= 25 and profit_pct >= (fee_floor + 0.10))
-        
-        # 4. Trailing & Breakeven Guards
-        is_ai_trailing = (peak_gain_pct >= (fee_floor + 0.35) and current_price <= (peak_p * (0.998 if is_indian else 0.997)))
-        is_ai_breakeven = (peak_gain_pct >= (fee_floor + 0.40) and profit_pct <= (fee_floor + 0.10))
-        is_ai_target = (profit_pct >= ai_dynamic_target)
-        is_reversal_exit = (profit_pct >= (fee_floor + 0.15) and signal == 'sell')
+        gross_profit = (current_price - avg_price) * total_qty
+        buy_val = avg_price * total_qty
+        sell_val = current_price * total_qty
+        trade_charges = calculate_trade_charges(sym, buy_val, sell_val)
+        net_profit = gross_profit - trade_charges
 
-        # 🕒 5. STRICT 3:14 PM INTRADAY AUTO-SQUARE-OFF (15:14 IST):
-        # Automatically market-sell open stock positions at 15:14 IST before Angel One RMS 15:15 cut-off!
-        is_intraday_cutoff = False
+        # 🏛️ INSTITUTIONAL FEE-AWARE SPOT PROFIT ENGINE:
+        # Exits strictly cover broker fees (₹15.00 min floor) and taxes to lock positive net cash:
+        min_gain_for_exit = 1.80 if is_indian else 0.90
+        
+        # ⏰ 3:05 PM EOD Market Close Shield: Auto-exit before Angel One RMS 3:15 PM cut-off
+        is_eod_exit = False
         if is_indian:
             curr_t = now.time()
-            t_cutoff_start = datetime.strptime("15:14", "%H:%M").time()
-            t_cutoff_end = datetime.strptime("15:29", "%H:%M").time()
-            if t_cutoff_start <= curr_t <= t_cutoff_end:
-                is_intraday_cutoff = True
+            t_eod = datetime.strptime("15:05", "%H:%M").time()
+            if curr_t >= t_eod:
+                is_eod_exit = True
+                thoughts.append("⏰ [3:05 PM EOD]: Angel One RMS ఆటో-స్క్వేర్ ఆఫ్ పెనాల్టీలు పడకుండా బాట్ స్వయంగా క్లీన్ గా ఎగ్జిట్ చేసింది.")
 
-        if is_ai_target or is_ai_trailing or is_ai_exhaustion or is_ai_time_harvest or is_ai_breakeven or is_reversal_exit or is_intraday_cutoff:
-            profit = (current_price - avg_price) * total_qty
+        if is_scalp_style:
+            # ⚡ AUTONOMOUS TRAILING PROFIT ENGINE (Unlimited Upside + Fee-Safe Floor):
+            # 1. Trailing Profit: Activates at +1.80% (NSE) / +0.90% (Crypto), lets profit run to +2.5%, +4.0%+!
+            #    Exits only if price retraces 0.35% from its highest peak (locking max gains).
+            is_trailing_exit = (peak_gain_pct >= min_gain_for_exit and current_price <= (peak_p * 0.9965) and net_profit > 0)
+            # 2. Breakeven / Safe Floor: If gain was >= 1.50% but is dropping near entry, exit before turning red
+            is_breakeven_exit = (peak_gain_pct >= 1.50 and profit_pct <= 1.10 and net_profit > 0)
+            # 3. Super Target Exit: Mega run-up target at +2.80% / +3.50%
+            is_target_exit = (profit_pct >= (2.80 if is_indian else 3.50) and net_profit > 0)
+            # 4. Reversal Exit: If sell signal appears after fee-safe threshold
+            is_reversal_exit = (profit_pct >= min_gain_for_exit and signal == 'sell' and net_profit > 0)
+        else:
+            # 🏛️ INSTITUTIONAL SWING ENGINE (Hours/Days Trend):
+            is_breakeven_exit = (peak_gain_pct >= 2.0 and profit_pct <= 1.2 and net_profit > 0)
+            is_trailing_exit = (peak_gain_pct >= 2.5 and current_price <= (peak_p * 0.994) and net_profit > 0)
+            is_target_exit = (profit_pct >= 3.0 and net_profit > 0)
+            is_reversal_exit = (profit_pct >= 1.8 and signal == 'sell' and net_profit > 0)
+        
+        if is_trailing_exit or is_target_exit or is_reversal_exit or is_breakeven_exit or is_eod_exit:
+            profit = gross_profit
             last_exit_times[sym] = time.time()
             
-            # Execute real order if in Live Mode (Binance or Angel One)
+            # Execute real order if in Live Mode on Binance or Angel One
             if live_mode:
-                if is_crypto and mode == "BINANCE_LIVE":
-                    success, res = execute_live_order("SELL", sym, quantity=total_qty)
-                    if not success:
-                        log_status(f"⚠️ Live Binance Sell Warning ({sym}): {res}")
-                elif is_indian and mode == "ANGEL_ONE_LIVE":
-                    success, res = execute_live_order("SELL", sym, quantity=total_qty)
-                    if not success:
-                        log_status(f"⚠️ Angel One Live Sell Warning ({sym}): {res}")
+                success, res = execute_live_order("SELL", sym, quantity=total_qty)
+                if not success:
+                    log_status(f"⚠️ Live Sell Warning ({sym}): {res}")
+                    return
             
             qty_label = f"{int(total_qty)} షేర్లు" if (is_indian and total_qty == int(total_qty)) else f"Qty: {total_qty:.5f}"
             price_disp = f"₹{current_price:,.2f}" if is_indian else f"${current_price:,.2f}"
             profit_disp = f"₹{profit:,.2f}"
+            net_disp = f"₹{net_profit:,.2f}"
+            charges_disp = f"₹{trade_charges:,.2f}"
+            exit_badge = "⏰ 3:05 PM మార్కెట్ క్లోజ్ షీల్డ్" if is_eod_exit else ("🔒 బ్రేక్‌ఈవెన్ లాక్ (Zero Loss)" if is_breakeven_exit and not (is_target_exit or is_trailing_exit) else "🎯 ప్రాఫిట్ మాక్సిమైజర్")
             
-            if is_intraday_cutoff:
-                exit_badge = "🕒 AI 3:14 PM ఇంట్రాడే ఆటో-స్క్వేర్ ఆఫ్ (సేఫ్ ఎగ్జిట్)"
-            elif is_ai_exhaustion:
-                exit_badge = "🧠 AI మొమెంటమ్ హార్వెస్ట్ (Profit Booked)"
-            elif is_ai_time_harvest:
-                exit_badge = "⚡ AI క్యాపిటల్ రొటేషన్ (Quick Profit & Exit)"
-            elif is_ai_trailing:
-                exit_badge = "🎯 AI ట్రేలింగ్ ప్రాఫిట్ లాక్"
-            elif is_ai_breakeven:
-                exit_badge = "🔒 AI జీరో-లాస్ బ్రేక్‌ఈవెన్"
-            else:
-                exit_badge = f"🎯 AI టార్గెట్ ప్రాఫిట్ మాక్సిమైజర్ ({regime})"
-            
-            msg = f"{exit_badge} [{mode_str}]: {sym} ({qty_label}) | ఫలితం: {profit_disp} (+{profit_pct:.2f}%)\n{thought} 🧠 [Peak: +{peak_gain_pct:.2f}% | DCA Layers: {len(pos.get('entries', []))}]"
+            fee_note = f" (ఛార్జీలు: {charges_disp} | చేతికి వచ్చిన నికర లాభం: {net_disp})" if is_indian else ""
+            msg = f"{exit_badge} [{mode_str}]: {sym} ({qty_label}) | ఫలితం: {profit_disp}{fee_note} (+{profit_pct:.2f}%)\n{thought} 🧠 [Peak: +{peak_gain_pct:.2f}% | DCA Layers: {len(pos.get('entries', []))}]"
             voice_msg = f"Alert. Profit taken on {clean_name}. Trade closed successfully."
             log_status(f"[{get_ist_now().strftime('%H:%M:%S IST')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
             strat_key = pos.get('strategy', 'rsi_vwap_confluence')
@@ -1507,17 +1414,69 @@ def process_symbol(sym):
             action_taken = "SELL"
             pos = None
 
-        # 🛑 STRICT DYNAMIC HARD STOP-LOSS: -1.8% max risk (Limits drawdowns so wins easily compound!)
-        elif profit_pct <= -1.8:
+        # -------------------------------------------------------------
+        # 2. PRO DCA ACCUMULATION ON DIPS (TURNING DIPS INTO BIG WINS)
+        # -------------------------------------------------------------
+        # In Spot trading, when price dips -1.5% to -2.0%, we average down!
+        # Layer 1 = Initial buy, Layer 2 = at -1.5% dip, Layer 3 = at -3.0% dip
+        dca_layers = len(pos.get('entries', []))
+        dip_needed = 0.985 if dca_layers == 1 else 0.970
+        is_dca_dip = current_price <= (avg_price * dip_needed)
+
+        if dca_layers < 3 and is_dca_dip:
+            if is_indian and live_mode and HAS_ANGEL:
+                active_angel_pos = {k: v for k, v in dca_state.items() if ('.NS' in k or '.BO' in k)}
+                current_blocked_margin = sum(float(p.get('total_cost', 0.0)) / 5.0 for p in active_angel_pos.values())
+                available_margin = max(0.0, angel_cash - current_blocked_margin)
+                margin_required = slice_cost_inr / 5.0
+                can_afford_dca = (slice_qty > 0 and margin_required <= available_margin)
+            else:
+                current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
+                can_afford_dca = (slice_qty > 0 and (current_invested + slice_cost_inr) <= portfolio_cap)
+
+            if can_afford_dca:
+                if live_mode:
+                    success, res = execute_live_order("BUY", sym, quantity=slice_qty, quote_amount=slice_cost_usd)
+                    if not success:
+                        log_status(f"⚠️ Live DCA Buy Warning ({sym}): {res}")
+                        return
+                
+                layer = dca_layers + 1
+                pos['entries'].append({
+                    "price": current_price,
+                    "qty": slice_qty,
+                    "cost": slice_cost_inr,
+                    "time": get_ist_now().strftime('%Y-%m-%d %H:%M:%S')
+                })
+                pos['total_qty'] += slice_qty
+                pos['total_cost'] += slice_cost_inr
+                # Always calculate avg_price in the asset's native currency (USD for Crypto, INR for Indian stocks)
+                total_native_spent = sum(float(e.get('price', 0)) * float(e.get('qty', 0)) for e in pos['entries'])
+                pos['avg_price'] = (total_native_spent / pos['total_qty']) if pos['total_qty'] > 0 else current_price
+                pos['target_sell_price'] = pos['avg_price'] * (1.010 if is_scalp_style else 1.015)
+                pos['peak_price'] = current_price
+                save_dca_state(dca_state)
+                
+                qty_label = f"{int(slice_qty)} షేర్లు" if (is_indian and slice_qty == int(slice_qty)) else f"Qty: {slice_qty:.5f}"
+                price_disp = f"₹{current_price:,.2f}" if is_indian else f"${current_price:,.2f}"
+                avg_disp = f"₹{pos['avg_price']:,.2f}" if is_indian else f"${pos['avg_price']:,.2f}"
+                target_disp = f"₹{pos['target_sell_price']:,.2f}" if is_indian else f"${pos['target_sell_price']:,.2f}"
+                
+                msg = f"🎯 [{mode_str} స్కామర్ బ్రెయిన్ 🥷 DCA Layer {layer}/3 | 🏛️ SMC OrderBlock]: {sym} @ {price_disp} ({qty_label})\nకొత్త సగటు ధర: {avg_disp} | టార్గెట్ (+1.0% క్విక్ ప్రాఫిట్): {target_disp}\n{thought}"
+                voice_msg = f"Alert. Averaging down on {clean_name}."
+                log_status(f"[{get_ist_now().strftime('%H:%M:%S IST')}] {msg}", voice_alert=voice_msg, color_code='\033[96m')
+                log_trade("BUY", sym, current_price, slice_qty, 0.0)
+                send_telegram_message(f"✅ {msg}")
+                action_taken = "DCA_BUY"
+
+        # 🛑 EMERGENCY CRASH SHIELD (Only after all DCA layers, or deep crash <= -6.0%):
+        elif (dca_layers >= 3 and profit_pct <= -5.0) or profit_pct <= -6.0:
             profit = (current_price - avg_price) * total_qty
             last_exit_times[sym] = time.time()
             if live_mode:
-                if is_crypto and mode == "BINANCE_LIVE":
-                    execute_live_order("SELL", sym, quantity=total_qty)
-                elif is_indian and mode == "ANGEL_ONE_LIVE":
-                    execute_live_order("SELL", sym, quantity=total_qty)
+                execute_live_order("SELL", sym, quantity=total_qty)
             loss_disp = f"₹{profit:,.2f}"
-            msg = f"🛑 [{mode_str} హార్డ్ స్టాప్-లాస్]: {sym} -1.8% నష్టానికి చేరుకోగానే క్యాపిటల్ ని కాపాడేందుకు వెంటనే అమ్మేసాను! (Loss: {loss_disp})"
+            msg = f"🛑 [{mode_str} ఎమర్జెన్సీ షీల్డ్]: {sym} -6.0% డీప్ క్రాష్ లో క్యాపిటల్ ని కాపాడేందుకు అమ్మేసాను! (Loss: {loss_disp})"
             log_status(f"[{get_ist_now().strftime('%H:%M:%S IST')}] {msg}", color_code='\033[91m')
             strat_key = pos.get('strategy', 'rsi_vwap_confluence')
             log_trade("SELL", sym, current_price, total_qty, profit, strategy_key=strat_key)
@@ -1528,107 +1487,112 @@ def process_symbol(sym):
             action_taken = "SELL"
             pos = None
 
-        # -------------------------------------------------------------
-        # 2. ADDITIONAL DCA DIP BUY (AVERAGING DOWN)
-        # -------------------------------------------------------------
-        elif not is_daily_locked and len(pos.get('entries', [])) < 3 and current_price <= (avg_price * 0.982) and signal == 'buy' and ml_brain.get_ml_signal(sym) == 1 and ml_brain.get_smc_analysis(sym).get('bias') != 'BEARISH':
-            # Capital Protection Guard
+    # -------------------------------------------------------------
+    # 3. FIRST DIP ENTRY (INITIAL FRACTIONAL SLICE)
+    # -------------------------------------------------------------
+    elif pos is None and signal == 'buy':
+        # ⏰ ADAPTIVE TIME-OF-DAY ENTRY FILTER (Indian Intraday Equities):
+        is_afternoon_entry = False
+        if is_indian:
+            curr_t = now.time()
+            t_base_cutoff = datetime.strptime("13:30", "%H:%M").time()
+            t_hard_cutoff = datetime.strptime("14:20", "%H:%M").time()
+
+            if curr_t > t_hard_cutoff:
+                return {
+                    "symbol": sym, "clean_name": clean_name, "price": round(current_price, 2),
+                    "signal": "HOLD", "thought": "⏰ [AFTERNOON CUTOFF]: 02:20 PM దాటింది. 3:15 PM లోపు MIS స్క్వేర్ ఆఫ్ అయ్యేలోపు క్యాపిటల్ రిస్క్ లేకుండా ట్రేడ్స్ క్లోజ్ చేయాలి కాబట్టి కొత్త ఎంట్రీస్ ఆపేశాను.",
+                    "strategy": strat_used, "rsi": round(float(last['RSI']), 1), "trend": htf_status,
+                    "action_taken": "HOLD", "has_position": False, "pnl_pct": 0.0, "avg_price": 0.0,
+                    "total_qty": 0.0, "target_price": 0.0, "peak_price": 0.0, "invested": 0.0,
+                    "dca_layer": 0, "timestamp": get_ist_now().strftime('%H:%M:%S IST'), "is_indian": is_indian
+                }
+
+            # Between 01:30 PM and 02:20 PM: User instruction:
+            # "marcket baga veltundi ani ardham aite ai ki 1 varaku kakunda teskomanu pakka profit vastundi antene"
+            if curr_t > t_base_cutoff:
+                n_status, _ = get_nifty_market_regime()
+                is_market_bullish = (n_status in ('BULLISH', 'STABLE', 'NEUTRAL'))
+                is_pakka_profit = (
+                    is_market_bullish and
+                    (last['close'] >= last['VWAP'] * 0.998) and
+                    (last['EMA_9'] >= last['EMA_21'] * 0.998) and
+                    (strat_used in ('morning_momentum_breakout', 'institutional_volume_surge', 'order_block_bounce', 'morning_dip_bounce', 'trend_pullback_ema'))
+                )
+                if not is_pakka_profit:
+                    return {
+                        "symbol": sym, "clean_name": clean_name, "price": round(current_price, 2),
+                        "signal": "HOLD", "thought": "⏰ [AFTERNOON HIGH-CONVICTION FILTER]: 01:30 PM దాటింది. మార్కెట్ స్ట్రాంగ్ గా ఉంది అని 'పక్కా ప్రాఫిట్' కన్ఫర్మేషన్ (VWAP & EMA 9 బుల్లిష్ బ్రేక్‌అవుట్) ఉన్నప్పుడు మాత్రమే మధ్యాహ్నం ఎంట్రీస్ తీసుకుంటాను.",
+                        "strategy": strat_used, "rsi": round(float(last['RSI']), 1), "trend": htf_status,
+                        "action_taken": "HOLD", "has_position": False, "pnl_pct": 0.0, "avg_price": 0.0,
+                        "total_qty": 0.0, "target_price": 0.0, "peak_price": 0.0, "invested": 0.0,
+                        "dca_layer": 0, "timestamp": get_ist_now().strftime('%H:%M:%S IST'), "is_indian": is_indian
+                    }
+                is_afternoon_entry = True
+
+        max_positions = 1 if (is_indian and live_mode and angel_cash <= 750) else (2 if (is_indian and live_mode and angel_cash <= 1500) else (8 if is_scalp_style else MAX_ACTIVE_POSITIONS))
+        if is_indian and live_mode and HAS_ANGEL:
+            active_angel_pos = {k: v for k, v in dca_state.items() if ('.NS' in k or '.BO' in k)}
+            current_blocked_margin = sum(float(p.get('total_cost', 0.0)) / 5.0 for p in active_angel_pos.values())
+            available_margin = max(0.0, angel_cash - current_blocked_margin)
+            can_enter = (len(active_angel_pos) < max_positions)
+            # With 5x Intraday MIS, margin required is 20% of slice_cost_inr
+            margin_required = slice_cost_inr / 5.0
+            can_afford = (slice_qty > 0 and margin_required <= available_margin)
+        else:
+            can_enter = (len(dca_state) < max_positions)
             current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
-            if (current_invested + slice_cost_inr) <= portfolio_cap:
-                if live_mode:
-                    if is_crypto and mode == "BINANCE_LIVE":
-                        success, res = execute_live_order("BUY", sym, quote_amount=slice_cost_usd)
-                        if not success:
-                            log_status(f"⚠️ Live Binance DCA Buy Warning ({sym}): {res}")
-                    elif is_indian and mode == "ANGEL_ONE_LIVE":
-                        success, res = execute_live_order("BUY", sym, quantity=slice_qty)
-                        if not success:
-                            log_status(f"⚠️ Angel One Live DCA Buy Warning ({sym}): {res}")
-                
-                layer = len(pos.get('entries', [])) + 1
-                pos['entries'].append({
+            can_afford = (slice_qty > 0 and (current_invested + slice_cost_inr) <= portfolio_cap)
+
+        if can_enter and can_afford:
+            if live_mode:
+                success, res = execute_live_order("BUY", sym, quantity=slice_qty, quote_amount=slice_cost_usd)
+                if not success:
+                    log_status(f"⚠️ Live Buy Warning ({sym}): {res}")
+                    return
+                    
+            if is_afternoon_entry:
+                target_p = current_price * 1.012  # Fast afternoon scalp target (+1.2% quick booking before 3:10 PM)
+            else:
+                # 🧠 AI Self-Preparing Dynamic Target Engine (+1.5% to +3.5% market-adaptive)
+                dynamic_mult = 1.025
+                try:
+                    bp = db_helper.get_state('morning_battle_plan', {})
+                    if bp and 'dynamic_target_multiplier' in bp:
+                        dynamic_mult = float(bp['dynamic_target_multiplier'])
+                except Exception:
+                    pass
+                target_p = current_price * (dynamic_mult if is_indian else (1.009 if is_scalp_style else 1.030))
+            dca_state[sym] = {
+                "entries": [{
                     "price": current_price,
                     "qty": slice_qty,
                     "cost": slice_cost_inr,
                     "time": get_ist_now().strftime('%Y-%m-%d %H:%M:%S')
-                })
-                pos['total_qty'] += slice_qty
-                pos['total_cost'] += slice_cost_inr
-                pos['avg_price'] = pos['total_cost'] / pos['total_qty']
-                pos['target_sell_price'] = pos['avg_price'] * 1.015
-                pos['peak_price'] = current_price
-                save_dca_state(dca_state)
-                
-                qty_label = f"{int(slice_qty)} షేర్లు" if (is_indian and slice_qty == int(slice_qty)) else f"Qty: {slice_qty:.5f}"
-                price_disp = f"₹{current_price:,.2f}" if is_indian else f"${current_price:,.2f}"
-                avg_disp = f"₹{pos['avg_price']:,.2f}" if is_indian else f"${pos['avg_price']:,.2f}"
-                target_disp = f"₹{pos['target_sell_price']:,.2f}" if is_indian else f"${pos['target_sell_price']:,.2f}"
-                
-                msg = f"🎯 [{mode_str} స్కామర్ బ్రెయిన్ 🥷 DCA Layer {layer}/3 | 🏛️ SMC OrderBlock]: {sym} @ {price_disp} ({qty_label})\nకొత్త సగటు ధర: {avg_disp} | టార్గెట్ (+1.5% క్విక్ ప్రాఫిట్): {target_disp}\n{thought}"
-                voice_msg = f"Alert. Averaging down on {clean_name}."
-                log_status(f"[{get_ist_now().strftime('%H:%M:%S IST')}] {msg}", voice_alert=voice_msg, color_code='\033[96m')
-                log_trade("BUY", sym, current_price, slice_qty, 0.0)
-                send_telegram_message(f"✅ {msg}")
-                action_taken = "DCA_BUY"
-
-    # -------------------------------------------------------------
-    # 3. FIRST DIP ENTRY (INITIAL FRACTIONAL SLICE)
-    # -------------------------------------------------------------
-    elif pos is None and not is_daily_locked and signal == 'buy' and ml_brain.get_ml_signal(sym) == 1 and ml_brain.get_smc_analysis(sym).get('bias') != 'BEARISH':
-        max_positions = 6 if is_scalp_style else MAX_ACTIVE_POSITIONS
-        if len(dca_state) < max_positions:
-            current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
-            if (current_invested + slice_cost_inr) <= portfolio_cap:
-                if live_mode:
-                    if is_crypto and mode == "BINANCE_LIVE":
-                        success, res = execute_live_order("BUY", sym, quote_amount=slice_cost_usd)
-                        if not success:
-                            log_status(f"⚠️ Live Binance Buy Warning ({sym}): {res}")
-                    elif is_indian and mode == "ANGEL_ONE_LIVE":
-                        success, res = execute_live_order("BUY", sym, quantity=slice_qty)
-                        if not success:
-                            log_status(f"⚠️ Angel One Live Buy Warning ({sym}): {res}")
-                        
-                if regime == "RANGE":
-                    target_p = current_price * (1.0050 if is_indian else 1.0065)
-                    tgt_pct_label = "0.50%" if is_indian else "0.65%"
-                else:
-                    target_p = current_price * (1.0085 if is_indian else 1.012)
-                    tgt_pct_label = "0.85%" if is_indian else "1.20%"
-
-                dca_state[sym] = {
-                    "entries": [{
-                        "price": current_price,
-                        "qty": slice_qty,
-                        "cost": slice_cost_inr,
-                        "time": get_ist_now().strftime('%Y-%m-%d %H:%M:%S')
-                    }],
-                    "avg_price": current_price,
-                    "total_qty": slice_qty,
-                    "total_cost": slice_cost_inr,
-                    "target_sell_price": target_p,
-                    "peak_price": current_price,
-                    "strategy": strat_used
-                }
-                save_dca_state(dca_state)
-                pos = dca_state[sym]
-                
-                qty_label = f"{int(slice_qty)} షేర్లు" if (is_indian and slice_qty == int(slice_qty)) else f"Qty: {slice_qty:.5f}"
-                price_disp = f"₹{current_price:,.2f}" if is_indian else f"${current_price:,.2f}"
-                cost_disp = f"₹{slice_cost_inr:,.2f}" if is_indian else f"${slice_cost_usd} / ₹{slice_cost_inr:,.2f}"
-                target_disp = f"₹{target_p:,.2f}" if is_indian else f"${target_p:,.2f}"
-                
-                msg = f"🎯 [{mode_str} స్కామర్ బ్రెయిన్ 🥷 స్నైపర్ DCA | {session_badge} | {regime}]: {sym} డిప్ లో కొన్నాను @ {price_disp} ({cost_disp} | {qty_label})\n🎯 టార్గెట్ (+{tgt_pct_label} క్విక్ ప్రాఫిట్): {target_disp} | టెక్నిక్: {strat_used}\n{thought}"
-                voice_msg = f"Alert. Buying fractional slice of {clean_name}."
-                log_status(f"[{get_ist_now().strftime('%H:%M:%S IST')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
-                log_trade("BUY", sym, current_price, slice_qty, 0.0)
-                send_telegram_message(f"✅ {msg}")
-                action_taken = "BUY"
-
-    # If Daily Guard is active and no position, notify on radar
-    if is_daily_locked and pos is None:
-        thought = f"🛡️ {daily_guard_reason}"
-        action_taken = "DAILY_GUARD_HOLD"
+                }],
+                "avg_price": current_price,
+                "total_qty": slice_qty,
+                "total_cost": slice_cost_inr,
+                "target_sell_price": target_p,
+                "peak_price": current_price,
+                "strategy": strat_used,
+                "mode": mode_str,
+                "is_live": live_mode
+            }
+            save_dca_state(dca_state)
+            pos = dca_state[sym]
+            
+            qty_label = f"{int(slice_qty)} షేర్లు" if (is_indian and slice_qty == int(slice_qty)) else f"Qty: {slice_qty:.5f}"
+            price_disp = f"₹{current_price:,.2f}" if is_indian else f"${current_price:,.2f}"
+            cost_disp = f"₹{slice_cost_inr:,.2f}" if is_indian else f"${slice_cost_usd} / ₹{slice_cost_inr:,.2f}"
+            target_disp = f"₹{target_p:,.2f}" if is_indian else f"${target_p:,.2f}"
+            
+            msg = f"🎯 [{mode_str} స్కామర్ బ్రెయిన్ 🥷 స్నైపర్ DCA | 🏛️ SMC Institutional Confluence]: {sym} డిప్ లో కొన్నాను @ {price_disp} ({cost_disp} | {qty_label})\n🎯 టార్గెట్ (+3.5% బెస్ట్ ప్రాఫిట్): {target_disp} | టెక్నిక్: {strat_used}\n{thought}"
+            voice_msg = f"Alert. Buying fractional slice of {clean_name}."
+            log_status(f"[{get_ist_now().strftime('%H:%M:%S IST')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
+            log_trade("BUY", sym, current_price, slice_qty, 0.0)
+            send_telegram_message(f"✅ {msg}")
+            action_taken = "BUY"
 
     # Return full diagnostic radar status
     return {
@@ -1655,6 +1619,13 @@ def process_symbol(sym):
 
 _bot_loop_active = False
 _bot_loop_lock = threading.Lock()
+_persistent_scan_executor = None
+
+def get_scan_executor():
+    global _persistent_scan_executor
+    if _persistent_scan_executor is None:
+        _persistent_scan_executor = concurrent.futures.ThreadPoolExecutor(max_workers=6, thread_name_prefix="StockScanner")
+    return _persistent_scan_executor
 
 def run_bot_loop():
     global _bot_loop_active
@@ -1674,54 +1645,42 @@ def run_bot_loop():
     while True:
         loop_count += 1
         try:
+            # 🧠 AI Self-Preparing Profit Brain: Check pre-market homework & battle plan
+            now_dt = get_ist_now()
+            if loop_count == 1 or (loop_count % 30 == 0):
+                try:
+                    import self_preparing_brain
+                    bp = db_helper.get_state('morning_battle_plan', {})
+                    today_str = now_dt.strftime("%Y-%m-%d")
+                    curr_t = now_dt.time()
+                    m_open = datetime.strptime("09:15", "%H:%M").time()
+                    needs_prep = (not bp) or (bp.get('date') != today_str)
+                    is_pre_market = (datetime.strptime("08:30", "%H:%M").time() <= curr_t < m_open)
+                    if needs_prep or (is_pre_market and (loop_count % 60 == 0)):
+                        log_status(f"[{now_dt.strftime('%H:%M:%S IST')}] 🧠 AI Self-Preparing Profit Brain: Running Pre-Market Warmup & Win-Rate Calibration...")
+                        self_preparing_brain.prepare_for_trading()
+                except Exception:
+                    pass
             mode = get_current_trading_mode()
             custom_wl = load_custom_watchlist()
             custom_crypto = [s for s, d in custom_wl.items() if d.get('type') == 'CRYPTO' or s.endswith('-USD')]
             custom_nse = [s for s, d in custom_wl.items() if d.get('type') == 'NSE' or s.endswith('.NS') or s.endswith('.BO')]
 
-            crypto_universe = get_dynamic_crypto_universe()
-            if mode == "ANGEL_ONE_LIVE":
+            if mode == "ANGEL_LIVE":
                 default_symbols = list(dict.fromkeys(NSE_SYMBOLS + custom_nse))
-                broker_name = "Angel One Live (SmartAPI Real Money)"
+                broker_name = "Angel One SmartAPI (Live NSE)"
             elif mode == "DUAL_TRADING":
-                default_symbols = list(dict.fromkeys(crypto_universe + NSE_SYMBOLS + list(custom_wl.keys())))
+                default_symbols = list(dict.fromkeys(CRYPTO_SYMBOLS + NSE_SYMBOLS + list(custom_wl.keys())))
                 broker_name = "Dual Hybrid (Crypto 24/7 + Zerodha NSE)"
             elif mode == "ZERODHA_PAPER":
                 default_symbols = list(dict.fromkeys(NSE_SYMBOLS + custom_nse))
                 broker_name = "Zerodha Kite (Paper)"
             elif mode == "BINANCE_LIVE":
-                default_symbols = list(dict.fromkeys(crypto_universe + custom_crypto))
+                default_symbols = list(dict.fromkeys(CRYPTO_SYMBOLS + custom_crypto))
                 broker_name = "Binance Spot (Live)"
             else:
-                default_symbols = list(dict.fromkeys(crypto_universe + custom_crypto))
+                default_symbols = list(dict.fromkeys(CRYPTO_SYMBOLS + custom_crypto))
                 broker_name = "Binance Virtual"
-
-            # 🔄 Reconcile with Angel One Live Positions to eliminate ghost positions
-            if mode == "ANGEL_ONE_LIVE":
-                try:
-                    a_pos_data = angel_one.get_angel_positions()
-                    if a_pos_data.get("status") and "raw" in a_pos_data and a_pos_data["raw"]:
-                        dca_st = load_dca_state()
-                        changed = False
-                        for raw_p in a_pos_data["raw"]:
-                            sym_n = raw_p.get("symbolname", "")
-                            full_sym = f"{sym_n}.NS"
-                            try:
-                                net_q = int(float(raw_p.get("netqty", 0)))
-                            except:
-                                net_q = 0
-                            if net_q == 0 and full_sym in dca_st:
-                                realised = float(raw_p.get("realised", raw_p.get("pnl", 0.0)) or 0.0)
-                                sell_avg = float(raw_p.get("sellavgprice", 0.0) or 0.0)
-                                sq_qty = dca_st[full_sym].get("total_qty", 1.0)
-                                log_status(f"🔄 [Angel Sync] {full_sym} broker లో స్క్వేర్-ఆఫ్ అయ్యింది. Realized PnL: ₹{realised:,.2f}")
-                                log_trade("SELL", full_sym, sell_avg, sq_qty, realised, strategy_key="broker_auto_squareoff")
-                                del dca_st[full_sym]
-                                changed = True
-                        if changed:
-                            save_dca_state(dca_st)
-                except Exception as e_recon:
-                    pass
 
             active_symbols = default_symbols
             if os.path.exists('selected_symbol.txt'):
@@ -1733,33 +1692,27 @@ def run_bot_loop():
                     elif sel == "ALL_NSE":
                         active_symbols = list(dict.fromkeys(NSE_SYMBOLS + custom_nse))
                     elif sel == "ALL_CRYPTO":
-                        active_symbols = list(dict.fromkeys(crypto_universe + custom_crypto))
+                        active_symbols = list(dict.fromkeys(CRYPTO_SYMBOLS + custom_crypto))
                     elif sel in ["ALL_DUAL", "ALL"]:
                         active_symbols = default_symbols
                 except: pass
 
-            # 🛑 100% STRICT ISOLATION: REAL MONEY MODE (ANGEL ONE LIVE)
-            # When Real Money mode is active, ABSOLUTELY ZERO VIRTUAL / CRYPTO TRADES ARE ALLOWED!
-            if mode == "ANGEL_ONE_LIVE":
-                active_symbols = [s for s in active_symbols if s.endswith('.NS') or s.endswith('.BO')]
-                if not active_symbols:
+            # 🛡️ Strict Mode Guard: If in ANGEL_LIVE, strictly scan Indian NSE Stocks only
+            if mode == "ANGEL_LIVE":
+                filtered_nse = [s for s in active_symbols if s.endswith('.NS') or s.endswith('.BO')]
+                if not filtered_nse:
                     active_symbols = list(dict.fromkeys(NSE_SYMBOLS + custom_nse))
-                
-                # Auto-purge any leftover virtual crypto positions from dca_state
-                try:
-                    dca_curr = load_dca_state()
-                    if any(k.endswith('-USD') for k in dca_curr.keys()):
-                        dca_curr = {k: v for k, v in dca_curr.items() if not k.endswith('-USD')}
-                        save_dca_state(dca_curr)
-                except Exception:
-                    pass
+                    try:
+                        with open('selected_symbol.txt', 'w') as f:
+                            f.write("ALL_NSE")
+                    except: pass
+                else:
+                    active_symbols = filtered_nse
 
             actions_taken = []
-            # Multi-Threading for active symbols
-            # 🛡️ Memory-Safe Thread Pool for Render 512MB RAM Limit (Max 3 parallel workers)
-            max_w = min(3, max(1, len(active_symbols)))
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_w) as executor:
-                results = list(executor.map(process_symbol, active_symbols))
+            # Reusable worker pool for active symbols (prevents thread exhaustion)
+            executor = get_scan_executor()
+            results = list(executor.map(process_symbol, active_symbols))
                 
             actions_taken = [r['symbol'] for r in results if r and isinstance(r, dict) and r.get('action_taken') in ['BUY', 'SELL', 'DCA_BUY']]
             
@@ -1771,22 +1724,12 @@ def run_bot_loop():
                         cap_mode_saved = json.load(f_s).get('capital_mode', 'High Profit')
                 except: pass
 
-            today_realized_pnl = get_today_realized_pnl()
-            is_locked, daily_guard_reason, _ = check_daily_guard()
-
             live_scan_data = {
                 "timestamp": get_ist_now().strftime('%Y-%m-%d %H:%M:%S'),
                 "broker": broker_name,
                 "mode": mode,
                 "capital_mode": cap_mode_saved,
                 "active_symbols": active_symbols,
-                "daily_guard": {
-                    "today_pnl": today_realized_pnl,
-                    "target_inr": DAILY_PROFIT_TARGET_INR,
-                    "max_loss_inr": DAILY_MAX_LOSS_INR,
-                    "is_locked": is_locked,
-                    "reason": daily_guard_reason
-                },
                 "assets": {r['symbol']: r for r in results if r and isinstance(r, dict) and 'symbol' in r}
             }
             try:
@@ -1804,8 +1747,9 @@ def run_bot_loop():
                     hold_label = f"Dual Hybrid ({crypto_count} క్రిప్టో + {stock_count} స్టాక్స్) సేఫ్ గా HOLD లో ఉన్నాయి"
                 elif has_nse:
                     short_names = [s.replace('.NS', '').replace('.BO', '') for s in active_symbols]
-                    sym_label = f"Zerodha NSE ({len(active_symbols)})"
-                    hold_label = f"Zerodha స్టాక్స్ ({', '.join(short_names[:4])}...) సేఫ్ గా HOLD లో ఉన్నాయి"
+                    broker_title = "Angel One" if mode == "ANGEL_LIVE" else "Zerodha"
+                    sym_label = f"{broker_title} NSE ({len(active_symbols)})"
+                    hold_label = f"{broker_title} స్టాక్స్ ({', '.join(short_names[:4])}...) సేఫ్ గా HOLD లో ఉన్నాయి"
                 else:
                     short_names = [s.replace('-USD', '') for s in active_symbols if '-USD' in s]
                     sym_label = f"మల్టీ-కాయిన్స్ ({len(active_symbols)})"
@@ -1852,8 +1796,6 @@ def run_bot_loop():
             except Exception:
                 pass
             
-        import gc
-        gc.collect() # Force free memory on Render 512MB limit
         time.sleep(10) # 10 seconds scan in Extreme mode
 
 if __name__ == "__main__":
