@@ -60,6 +60,7 @@ import numpy as np
 
 # Global Threading Lock for safe file writing
 file_lock = threading.Lock()
+order_placement_lock = threading.Lock()
 
 import requests
 import yfinance as yf
@@ -302,7 +303,9 @@ def get_current_trading_mode():
         c_mode = db_helper.get_state('trading_mode')
         if c_mode:
             content = str(c_mode.get('mode', c_mode) if isinstance(c_mode, dict) else c_mode).strip()
-            if "Angel" in content or "ANGEL" in content:
+            if "ANGEL_VIRTUAL" in content or ("Virtual" in content and "Angel" in content):
+                return "ANGEL_VIRTUAL"
+            elif "Angel" in content or "ANGEL" in content:
                 return "ANGEL_LIVE"
             elif "Dual" in content or "DUAL" in content:
                 return "DUAL_TRADING"
@@ -320,7 +323,9 @@ def get_current_trading_mode():
         try:
             with open('trading_mode.txt', 'r') as f:
                 content = f.read().strip()
-            if "Angel" in content or "ANGEL" in content:
+            if "ANGEL_VIRTUAL" in content or ("Virtual" in content and "Angel" in content):
+                return "ANGEL_VIRTUAL"
+            elif "Angel" in content or "ANGEL" in content:
                 return "ANGEL_LIVE"
             elif "Dual" in content or "DUAL" in content:
                 return "DUAL_TRADING"
@@ -1067,7 +1072,23 @@ def generate_signal(df, sym):
     confluence_pillars = sum([1 for p in [pillar_trend, pillar_momentum, pillar_volume, pillar_predictive] if p])
     strat_label = strat_dict.get(chosen_strategy, {}).get('name', chosen_strategy)
     
-    if is_scalper:
+    if is_indian:
+        # 🇮🇳 REAL MONEY SEBI/NSE MANDATE: Zero Tolerance for Blind Buys
+        # Requires 3 out of 4 pillars, Score >= 7.5/14, Price strictly above VWAP, 15m HTF Bullish/Neutral, No Negative News
+        min_pillars = 3
+        req_buy_score = 7.5
+        max_sell_score = 2.0
+        htf_ok = (htf_status in ('BULLISH', 'NEUTRAL')) and (last['RSI'] <= 68)
+        mode_tag = "స్కామర్ బ్రెయిన్ 🥷 (Institutional Safe Sniper)"
+
+        # Hard institutional safety gates for Indian real money:
+        if not pd.isna(last['VWAP']) and last['close'] < (last['VWAP'] * 0.999):
+            return 'hold', f" 🧠 AI ఆలోచన (VWAP Shield): {sym} ప్రైస్ VWAP కింద ఉంది (ఇన్స్టిట్యూషనల్ సెల్లర్స్ ఉన్నారు). రియల్ మనీ రిస్క్ చేయను.", None
+        if htf_status == 'BEARISH':
+            return 'hold', f" 🧠 AI ఆలోచన (HTF Shield): {sym} 15-నిమిషాల ట్రెండ్ డౌన్‌ట్రెండ్ (BEARISH) లో ఉంది. సేఫ్టీ కోసం కొనడం లేదు.", None
+        if news_score < 0:
+            return 'hold', f" 🧠 AI ఆలోచన (News Shield): {sym} పై మార్కెట్ లో నెగెటివ్ సెంటిమెంట్ ఉంది. రియల్ మనీ రిస్క్ చేయను.", None
+    elif is_scalper:
         min_pillars = 1
         req_buy_score = 3.5
         max_sell_score = 4.5
@@ -1087,14 +1108,18 @@ def generate_signal(df, sym):
         mode_tag = "స్కామర్ బ్రెయిన్ 🥷 (Balanced Swing)"
 
     # BUY REQUIREMENT:
-    buy_triggered = (
-        (confluence_pillars >= min_pillars and buy_score >= req_buy_score and sell_score <= max_sell_score and htf_ok) or
-        (is_momentum_breakout and buy_score >= (3.5 if is_scalper else 4.8) and sell_score <= 3.8) or
-        (is_overnight_top_pick and buy_score >= 3.0 and sell_score <= 3.8) or
-        (is_whale_pump and buy_score >= (3.5 if is_scalper else 6.0) and htf_ok) or
-        (is_dip_bounce and buy_score >= (3.2 if is_scalper else 4.8) and sell_score <= 3.8) or
-        (is_scalper and last['RSI'] <= 34 and last['close'] <= (last['Lower_Band'] * 1.005) and sell_score <= max_sell_score)
-    )
+    if is_indian:
+        # Strict High-Conviction Confluence for Indian Real Money:
+        buy_triggered = (confluence_pillars >= min_pillars and buy_score >= req_buy_score and sell_score <= max_sell_score and htf_ok)
+    else:
+        buy_triggered = (
+            (confluence_pillars >= min_pillars and buy_score >= req_buy_score and sell_score <= max_sell_score and htf_ok) or
+            (is_momentum_breakout and buy_score >= (3.5 if is_scalper else 4.8) and sell_score <= 3.8) or
+            (is_overnight_top_pick and buy_score >= 3.0 and sell_score <= 3.8) or
+            (is_whale_pump and buy_score >= (3.5 if is_scalper else 6.0) and htf_ok) or
+            (is_dip_bounce and buy_score >= (3.2 if is_scalper else 4.8) and sell_score <= 3.8) or
+            (is_scalper and last['RSI'] <= 34 and last['close'] <= (last['Lower_Band'] * 1.005) and sell_score <= max_sell_score)
+        )
 
     if buy_triggered:
         return 'buy', f" 🎯 AI ఆలోచన [{mode_tag} ({strat_label})]: " + " ".join(thoughts) + f" [స్కోర్: {buy_score:.1f}/14 | పిల్లర్స్: {confluence_pillars}/4 | HTF: {htf_status}] కన్ఫర్మేషన్ తో BUY సిగ్నల్!", chosen_strategy
@@ -1285,7 +1310,7 @@ def process_symbol(sym):
             slice_cost_inr = round(slice_qty * current_price, 2)
             slice_cost_usd = round(slice_cost_inr / 84.5, 2)
         else:
-            mode_str = "🇮🇳 ZERODHA VIRTUAL"
+            mode_str = "🇮🇳🎮 ANGEL ONE VIRTUAL (₹ Practice)" if get_current_trading_mode() == "ANGEL_VIRTUAL" else "🇮🇳 ZERODHA VIRTUAL"
             if cap_mode == "High Profit" or is_scalp_style:
                 portfolio_cap = 50000.0  # ₹50,000 active capital (Velocity Multi-Asset Scalper)
                 if current_price > 2500:
@@ -1352,7 +1377,7 @@ def process_symbol(sym):
 
         # 🏛️ INSTITUTIONAL FEE-AWARE SPOT PROFIT ENGINE:
         # Exits strictly cover broker fees (₹15.00 min floor) and taxes to lock positive net cash:
-        min_gain_for_exit = 1.80 if is_indian else 0.90
+        min_gain_for_exit = 1.15 if is_indian else 0.90
         
         # ⏰ 3:05 PM EOD Market Close Shield: Auto-exit before Angel One RMS 3:15 PM cut-off
         is_eod_exit = False
@@ -1363,25 +1388,31 @@ def process_symbol(sym):
                 is_eod_exit = True
                 thoughts.append("⏰ [3:05 PM EOD]: Angel One RMS ఆటో-స్క్వేర్ ఆఫ్ పెనాల్టీలు పడకుండా బాట్ స్వయంగా క్లీన్ గా ఎగ్జిట్ చేసింది.")
 
+        # 🛑 STRICT INTRADAY CAPITAL PROTECTION STOP-LOSS (-1.20% Max Loss Cut):
+        is_stoploss_exit = False
+        if is_indian and profit_pct <= -1.20:
+            is_stoploss_exit = True
+            thoughts.append(f"🛑 [స్టాప్‌లాస్ షీల్డ్]: {sym} -1.20% వద్ద క్యాపిటల్ రక్షణ కోసం చిన్న నష్టంతో వెంటనే ఎగ్జిట్ అయ్యాను.")
+
         if is_scalp_style:
             # ⚡ AUTONOMOUS TRAILING PROFIT ENGINE (Unlimited Upside + Fee-Safe Floor):
-            # 1. Trailing Profit: Activates at +1.80% (NSE) / +0.90% (Crypto), lets profit run to +2.5%, +4.0%+!
-            #    Exits only if price retraces 0.35% from its highest peak (locking max gains).
-            is_trailing_exit = (peak_gain_pct >= min_gain_for_exit and current_price <= (peak_p * 0.9965) and net_profit > 0)
-            # 2. Breakeven / Safe Floor: If gain was >= 1.50% but is dropping near entry, exit before turning red
-            is_breakeven_exit = (peak_gain_pct >= 1.50 and profit_pct <= 1.10 and net_profit > 0)
-            # 3. Super Target Exit: Mega run-up target at +2.80% / +3.50%
-            is_target_exit = (profit_pct >= (2.80 if is_indian else 3.50) and net_profit > 0)
+            # 1. Trailing Profit: Activates at +1.15% (NSE) / +0.90% (Crypto), lets profit run!
+            #    Exits if price retraces 0.25% from its highest peak (locking max gains).
+            is_trailing_exit = (peak_gain_pct >= min_gain_for_exit and current_price <= (peak_p * 0.9975) and net_profit > 0)
+            # 2. Breakeven / Safe Floor: If gain was >= 1.20% but is dropping near entry, exit before turning red
+            is_breakeven_exit = (peak_gain_pct >= 1.20 and profit_pct <= 0.80 and net_profit > 0)
+            # 3. Super Target Exit: Fast target at +1.45% (NSE) / +3.50% (Crypto)
+            is_target_exit = (profit_pct >= (1.45 if is_indian else 3.50) and net_profit > 0)
             # 4. Reversal Exit: If sell signal appears after fee-safe threshold
             is_reversal_exit = (profit_pct >= min_gain_for_exit and signal == 'sell' and net_profit > 0)
         else:
             # 🏛️ INSTITUTIONAL SWING ENGINE (Hours/Days Trend):
-            is_breakeven_exit = (peak_gain_pct >= 2.0 and profit_pct <= 1.2 and net_profit > 0)
-            is_trailing_exit = (peak_gain_pct >= 2.5 and current_price <= (peak_p * 0.994) and net_profit > 0)
-            is_target_exit = (profit_pct >= 3.0 and net_profit > 0)
-            is_reversal_exit = (profit_pct >= 1.8 and signal == 'sell' and net_profit > 0)
+            is_breakeven_exit = (peak_gain_pct >= 1.3 and profit_pct <= 0.9 and net_profit > 0)
+            is_trailing_exit = (peak_gain_pct >= (1.15 if is_indian else 2.5) and current_price <= (peak_p * 0.996) and net_profit > 0)
+            is_target_exit = (profit_pct >= (1.50 if is_indian else 3.0) and net_profit > 0)
+            is_reversal_exit = (profit_pct >= min_gain_for_exit and signal == 'sell' and net_profit > 0)
         
-        if is_trailing_exit or is_target_exit or is_reversal_exit or is_breakeven_exit or is_eod_exit:
+        if is_trailing_exit or is_target_exit or is_reversal_exit or is_breakeven_exit or is_eod_exit or is_stoploss_exit:
             profit = gross_profit
             last_exit_times[sym] = time.time()
             
@@ -1397,7 +1428,7 @@ def process_symbol(sym):
             profit_disp = f"₹{profit:,.2f}"
             net_disp = f"₹{net_profit:,.2f}"
             charges_disp = f"₹{trade_charges:,.2f}"
-            exit_badge = "⏰ 3:05 PM మార్కెట్ క్లోజ్ షీల్డ్" if is_eod_exit else ("🔒 బ్రేక్‌ఈవెన్ లాక్ (Zero Loss)" if is_breakeven_exit and not (is_target_exit or is_trailing_exit) else "🎯 ప్రాఫిట్ మాక్సిమైజర్")
+            exit_badge = "🛑 స్టాప్‌లాస్ షీల్డ్" if is_stoploss_exit else ("⏰ 3:05 PM మార్కెట్ క్లోజ్ షీల్డ్" if is_eod_exit else ("🔒 బ్రేక్‌ఈవెన్ లాక్ (Zero Loss)" if is_breakeven_exit and not (is_target_exit or is_trailing_exit) else "🎯 ప్రాఫిట్ మాక్సిమైజర్"))
             
             fee_note = f" (ఛార్జీలు: {charges_disp} | చేతికి వచ్చిన నికర లాభం: {net_disp})" if is_indian else ""
             msg = f"{exit_badge} [{mode_str}]: {sym} ({qty_label}) | ఫలితం: {profit_disp}{fee_note} (+{profit_pct:.2f}%)\n{thought} 🧠 [Peak: +{peak_gain_pct:.2f}% | DCA Layers: {len(pos.get('entries', []))}]"
@@ -1531,68 +1562,73 @@ def process_symbol(sym):
                 is_afternoon_entry = True
 
         max_positions = 1 if (is_indian and live_mode and angel_cash <= 750) else (2 if (is_indian and live_mode and angel_cash <= 1500) else (8 if is_scalp_style else MAX_ACTIVE_POSITIONS))
-        if is_indian and live_mode and HAS_ANGEL:
-            active_angel_pos = {k: v for k, v in dca_state.items() if ('.NS' in k or '.BO' in k)}
-            current_blocked_margin = sum(float(p.get('total_cost', 0.0)) / 5.0 for p in active_angel_pos.values())
-            available_margin = max(0.0, angel_cash - current_blocked_margin)
-            can_enter = (len(active_angel_pos) < max_positions)
-            # With 5x Intraday MIS, margin required is 20% of slice_cost_inr
-            margin_required = slice_cost_inr / 5.0
-            can_afford = (slice_qty > 0 and margin_required <= available_margin)
-        else:
-            can_enter = (len(dca_state) < max_positions)
-            current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
-            can_afford = (slice_qty > 0 and (current_invested + slice_cost_inr) <= portfolio_cap)
-
-        if can_enter and can_afford:
-            if live_mode:
-                success, res = execute_live_order("BUY", sym, quantity=slice_qty, quote_amount=slice_cost_usd)
-                if not success:
-                    log_status(f"⚠️ Live Buy Warning ({sym}): {res}")
-                    return
-                    
-            if is_afternoon_entry:
-                target_p = current_price * 1.012  # Fast afternoon scalp target (+1.2% quick booking before 3:10 PM)
+        
+        with order_placement_lock:
+            fresh_dca = load_dca_state()
+            if is_indian and live_mode and HAS_ANGEL:
+                active_angel_pos = {k: v for k, v in fresh_dca.items() if ('.NS' in k or '.BO' in k)}
+                if len(active_angel_pos) >= max_positions:
+                    return {
+                        "symbol": sym, "clean_name": clean_name, "price": round(current_price, 2),
+                        "signal": "HOLD", "thought": f"🔒 [MAX POSITION LIMIT]: ఇప్పటికే {len(active_angel_pos)} లైవ్ ట్రేడ్ యాక్టివ్ గా ఉంది. అదనపు రిస్క్ తీసుకోను.",
+                        "strategy": strat_used, "rsi": round(float(last['RSI']), 1), "trend": htf_status,
+                        "action_taken": "HOLD", "has_position": False, "pnl_pct": 0.0, "avg_price": 0.0,
+                        "total_qty": 0.0, "target_price": 0.0, "peak_price": 0.0, "invested": 0.0,
+                        "dca_layer": 0, "timestamp": get_ist_now().strftime('%H:%M:%S IST'), "is_indian": is_indian
+                    }
+                current_blocked_margin = sum(float(p.get('total_cost', 0.0)) / 5.0 for p in active_angel_pos.values())
+                available_margin = max(0.0, angel_cash - current_blocked_margin)
+                can_enter = (len(active_angel_pos) < max_positions)
+                margin_required = slice_cost_inr / 5.0
+                can_afford = (slice_qty > 0 and margin_required <= available_margin)
             else:
-                # 🧠 AI Self-Preparing Dynamic Target Engine (+1.5% to +3.5% market-adaptive)
-                dynamic_mult = 1.025
-                try:
-                    bp = db_helper.get_state('morning_battle_plan', {})
-                    if bp and 'dynamic_target_multiplier' in bp:
-                        dynamic_mult = float(bp['dynamic_target_multiplier'])
-                except Exception:
-                    pass
-                target_p = current_price * (dynamic_mult if is_indian else (1.009 if is_scalp_style else 1.030))
-            dca_state[sym] = {
-                "entries": [{
-                    "price": current_price,
-                    "qty": slice_qty,
-                    "cost": slice_cost_inr,
-                    "time": get_ist_now().strftime('%Y-%m-%d %H:%M:%S')
-                }],
-                "avg_price": current_price,
-                "total_qty": slice_qty,
-                "total_cost": slice_cost_inr,
-                "target_sell_price": target_p,
-                "peak_price": current_price,
-                "strategy": strat_used,
-                "mode": mode_str,
-                "is_live": live_mode
-            }
-            save_dca_state(dca_state)
-            pos = dca_state[sym]
-            
-            qty_label = f"{int(slice_qty)} షేర్లు" if (is_indian and slice_qty == int(slice_qty)) else f"Qty: {slice_qty:.5f}"
-            price_disp = f"₹{current_price:,.2f}" if is_indian else f"${current_price:,.2f}"
-            cost_disp = f"₹{slice_cost_inr:,.2f}" if is_indian else f"${slice_cost_usd} / ₹{slice_cost_inr:,.2f}"
-            target_disp = f"₹{target_p:,.2f}" if is_indian else f"${target_p:,.2f}"
-            
-            msg = f"🎯 [{mode_str} స్కామర్ బ్రెయిన్ 🥷 స్నైపర్ DCA | 🏛️ SMC Institutional Confluence]: {sym} డిప్ లో కొన్నాను @ {price_disp} ({cost_disp} | {qty_label})\n🎯 టార్గెట్ (+3.5% బెస్ట్ ప్రాఫిట్): {target_disp} | టెక్నిక్: {strat_used}\n{thought}"
-            voice_msg = f"Alert. Buying fractional slice of {clean_name}."
-            log_status(f"[{get_ist_now().strftime('%H:%M:%S IST')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
-            log_trade("BUY", sym, current_price, slice_qty, 0.0)
-            send_telegram_message(f"✅ {msg}")
-            action_taken = "BUY"
+                can_enter = (len(fresh_dca) < max_positions)
+                current_invested = sum(p.get('total_cost', 0.0) for p in fresh_dca.values())
+                can_afford = (slice_qty > 0 and (current_invested + slice_cost_inr) <= portfolio_cap)
+
+            if can_enter and can_afford:
+                if live_mode:
+                    success, res = execute_live_order("BUY", sym, quantity=slice_qty, quote_amount=slice_cost_usd)
+                    if not success:
+                        log_status(f"⚠️ Live Buy Warning ({sym}): {res}")
+                        return
+                        
+                if is_afternoon_entry:
+                    target_p = current_price * 1.012  # Fast afternoon scalp target (+1.2% quick booking before 3:10 PM)
+                else:
+                    # 🧠 Dynamic Quick Target (+1.5% for Indian Equities, locking real gains)
+                    target_p = current_price * (1.015 if is_indian else (1.009 if is_scalp_style else 1.030))
+                fresh_dca[sym] = {
+                    "entries": [{
+                        "price": current_price,
+                        "qty": slice_qty,
+                        "cost": slice_cost_inr,
+                        "time": get_ist_now().strftime('%Y-%m-%d %H:%M:%S')
+                    }],
+                    "avg_price": current_price,
+                    "total_qty": slice_qty,
+                    "total_cost": slice_cost_inr,
+                    "target_sell_price": target_p,
+                    "peak_price": current_price,
+                    "strategy": strat_used,
+                    "mode": mode_str,
+                    "is_live": live_mode
+                }
+                save_dca_state(fresh_dca)
+                pos = fresh_dca[sym]
+                dca_state = fresh_dca
+                
+                qty_label = f"{int(slice_qty)} షేర్లు" if (is_indian and slice_qty == int(slice_qty)) else f"Qty: {slice_qty:.5f}"
+                price_disp = f"₹{current_price:,.2f}" if is_indian else f"${current_price:,.2f}"
+                cost_disp = f"₹{slice_cost_inr:,.2f}" if is_indian else f"${slice_cost_usd} / ₹{slice_cost_inr:,.2f}"
+                target_disp = f"₹{target_p:,.2f}" if is_indian else f"${target_p:,.2f}"
+                
+                msg = f"🎯 [{mode_str} స్కామర్ బ్రెయిన్ 🥷 స్నైపర్ DCA | 🏛️ SMC Institutional Confluence]: {sym} డిప్ లో కొన్నాను @ {price_disp} ({cost_disp} | {qty_label})\n🎯 టార్గెట్ (+1.5% ప్రాఫిట్ లాక్): {target_disp} | టెక్నిక్: {strat_used}\n{thought}"
+                voice_msg = f"Alert. Buying fractional slice of {clean_name}."
+                log_status(f"[{get_ist_now().strftime('%H:%M:%S IST')}] {msg}", voice_alert=voice_msg, color_code='\033[92m')
+                log_trade("BUY", sym, current_price, slice_qty, 0.0)
+                send_telegram_message(f"✅ {msg}")
+                action_taken = "BUY"
 
     # Return full diagnostic radar status
     return {
@@ -1669,6 +1705,9 @@ def run_bot_loop():
             if mode == "ANGEL_LIVE":
                 default_symbols = list(dict.fromkeys(NSE_SYMBOLS + custom_nse))
                 broker_name = "Angel One SmartAPI (Live NSE)"
+            elif mode == "ANGEL_VIRTUAL":
+                default_symbols = list(dict.fromkeys(NSE_SYMBOLS + custom_nse))
+                broker_name = "Angel One Virtual Practice (₹ Paper NSE)"
             elif mode == "DUAL_TRADING":
                 default_symbols = list(dict.fromkeys(CRYPTO_SYMBOLS + NSE_SYMBOLS + list(custom_wl.keys())))
                 broker_name = "Dual Hybrid (Crypto 24/7 + Zerodha NSE)"
@@ -1747,7 +1786,7 @@ def run_bot_loop():
                     hold_label = f"Dual Hybrid ({crypto_count} క్రిప్టో + {stock_count} స్టాక్స్) సేఫ్ గా HOLD లో ఉన్నాయి"
                 elif has_nse:
                     short_names = [s.replace('.NS', '').replace('.BO', '') for s in active_symbols]
-                    broker_title = "Angel One" if mode == "ANGEL_LIVE" else "Zerodha"
+                    broker_title = "Angel One" if mode in ("ANGEL_LIVE", "ANGEL_VIRTUAL") else "Zerodha"
                     sym_label = f"{broker_title} NSE ({len(active_symbols)})"
                     hold_label = f"{broker_title} స్టాక్స్ ({', '.join(short_names[:4])}...) సేఫ్ గా HOLD లో ఉన్నాయి"
                 else:

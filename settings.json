@@ -1,7 +1,7 @@
 {
-    "risk_level": "Extreme (High Profit)",
-    "trading_style": "Scalping (Fast)",
-    "capital_mode": "High Profit",
+    "risk_level": "Safe (High Precision)",
+    "trading_style": "Swing / High Precision",
+    "capital_mode": "Smart Dynamic",
     "panic_mode": false,
     "daily_target_inr": 1500,
     "daily_target_usd": 18.0

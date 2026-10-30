@@ -686,6 +686,7 @@ st.sidebar.title("🤖 AI Trading Mode")
 # ⚡ 1-CLICK INSTANT TRADING MODE SWITCH
 mode_options = [
     "🇮🇳💰 Angel One Live Trading (Real Indian Stocks)",
+    "🇮🇳🎮 Angel One Virtual Trading (₹ Practice - Zero Real Risk)",
     "📝 Binance Paper Trading (Crypto 24/7 Practice)",
     "🌐🇮🇳 Dual Trading (Crypto 24/7 + Indian Stocks NSE)",
     "🇮🇳 Paper Trading (Indian Stocks - Zerodha Virtual)",
@@ -698,7 +699,9 @@ try:
     c_doc = db_helper.get_state('trading_mode')
     if c_doc:
         c_val = str(c_doc.get('mode', c_doc) if isinstance(c_doc, dict) else c_doc).lower()
-        if "angel" in c_val:
+        if "angel_virtual" in c_val or ("angel" in c_val and ("virtual" in c_val or "practice" in c_val)):
+            saved_mode = "🇮🇳🎮 Angel One Virtual Trading (₹ Practice - Zero Real Risk)"
+        elif "angel" in c_val:
             saved_mode = "🇮🇳💰 Angel One Live Trading (Real Indian Stocks)"
         elif "paper" in c_val or "binance_paper" in c_val:
             saved_mode = "📝 Binance Paper Trading (Crypto 24/7 Practice)"
@@ -716,7 +719,9 @@ if os.path.exists('trading_mode.txt'):
     try:
         with open('trading_mode.txt', 'r') as f:
             c = f.read().strip().lower()
-            if "angel" in c:
+            if "angel_virtual" in c or ("angel" in c and ("virtual" in c or "practice" in c)):
+                saved_mode = "🇮🇳🎮 Angel One Virtual Trading (₹ Practice - Zero Real Risk)"
+            elif "angel" in c:
                 saved_mode = "🇮🇳💰 Angel One Live Trading (Real Indian Stocks)"
             elif "paper" in c or "binance_paper" in c:
                 saved_mode = "📝 Binance Paper Trading (Crypto 24/7 Practice)"
@@ -733,12 +738,25 @@ trading_mode = st.sidebar.radio("⚡ 1-Click Trading Mode Switch", mode_options,
 st.sidebar.markdown("---")
 
 is_dual_mode = "Dual" in trading_mode
-is_angel_live = "Angel" in trading_mode
-is_zerodha_mode = ("Zerodha" in trading_mode or is_dual_mode or is_angel_live)
+is_angel_virtual = ("Angel" in trading_mode and ("Virtual" in trading_mode or "Practice" in trading_mode))
+is_angel_live = ("Angel" in trading_mode and not is_angel_virtual)
+is_angel_mode = (is_angel_live or is_angel_virtual)
+is_zerodha_mode = ("Zerodha" in trading_mode or is_dual_mode or is_angel_mode)
 
 # Persist mode selection immediately to both local file and MongoDB Atlas
 try:
-    clean_mode_str = "ANGEL_LIVE" if is_angel_live else ("DUAL_TRADING" if is_dual_mode else ("ZERODHA_PAPER" if "Zerodha" in trading_mode else ("BINANCE_LIVE" if "Live" in trading_mode else "BINANCE_PAPER")))
+    if is_angel_virtual:
+        clean_mode_str = "ANGEL_VIRTUAL"
+    elif is_angel_live:
+        clean_mode_str = "ANGEL_LIVE"
+    elif is_dual_mode:
+        clean_mode_str = "DUAL_TRADING"
+    elif "Zerodha" in trading_mode:
+        clean_mode_str = "ZERODHA_PAPER"
+    elif "Live" in trading_mode:
+        clean_mode_str = "BINANCE_LIVE"
+    else:
+        clean_mode_str = "BINANCE_PAPER"
     with open('trading_mode.txt', 'w') as f:
         f.write(clean_mode_str)
     db_helper.save_state('trading_mode', {'mode': clean_mode_str})
@@ -984,9 +1002,11 @@ if os.path.exists('selected_symbol.txt'):
         pass
 
 is_dual_mode = "Dual" in trading_mode
-is_angel_live = "Angel" in trading_mode
+is_angel_virtual = ("Angel" in trading_mode and ("Virtual" in trading_mode or "Practice" in trading_mode))
+is_angel_live = ("Angel" in trading_mode and not is_angel_virtual)
+is_angel_mode = (is_angel_live or is_angel_virtual)
 is_zerodha_mode = ("Zerodha" in trading_mode and not is_dual_mode)
-is_indian_mode = is_angel_live or is_zerodha_mode
+is_indian_mode = is_angel_mode or is_zerodha_mode
 
 if is_dual_mode:
     focus_options = [
@@ -1497,7 +1517,7 @@ for sym_k, price_info in live_prices.items():
 # ─────────────────────────────────────────────────────────────
 # ⚡ LIVE TICKER TAPE
 # ─────────────────────────────────────────────────────────────
-if is_angel_live or (is_zerodha_mode and not is_dual_mode):
+if is_angel_mode or (is_zerodha_mode and not is_dual_mode):
     _TICKER_META = [
         ("BEL.NS",       "Bharat Electronics",  "BEL"),
         ("GAIL.NS",      "GAIL India",          "GAIL"),
@@ -1542,7 +1562,7 @@ for sym_t, _, _ in _TICKER_META:
 
 # Real-Time WebSocket Streaming Ticker (Live 0 Page Reloads)
 try:
-    if is_angel_live:
+    if is_angel_mode:
         _ticker_symbols_json = """[
         {"proName": "BSE:BEL", "title": "BEL"},
         {"proName": "BSE:ITC", "title": "ITC"},
@@ -1819,14 +1839,14 @@ with top_b1:
     st.markdown(fancy_metric("🏦 Net Portfolio", f"₹{portfolio_value:,.2f}", f"{roi:+.2f}% Booked ROI"), unsafe_allow_html=True)
     with st.popover("🔍 Realized Profit Details", use_container_width=True):
         st.markdown("### 🏦 Net Portfolio Details")
-        if is_angel_live:
+        if is_angel_mode:
             st.info(f"**👤 Account:** SHAIK KALESHA (`AABZ864543`)\n\n**Initial Deposit:** ₹{initial_capital:,.2f}\n\n- **NSE Stock Realized P&L:** ₹{spot_profit:+,.2f}\n\n**Total Booked P&L:** ₹{total_profit:+,.2f}\n**Total Account Value:** ₹{portfolio_value:,.2f}")
         else:
             st.info(f"**Initial Capital:** ₹50,000.00\n\n- **Spot Realized:** ₹{spot_profit:+,.2f}\n- **Futures Realized:** ₹{futures_profit:+,.2f}\n\n**Total Booked P&L:** ₹{total_profit:+,.2f}\n**Total Account Balance:** ₹{portfolio_value:,.2f}")
 
 with top_b2:
     st_tot_trades = len(dca_positions) + len(futures_positions)
-    if is_angel_live:
+    if is_angel_mode:
         sub_title = f"5x Margin: ₹{blocked_margin:,.2f} Blocked"
         st.markdown(fancy_metric("🚀 5x Market Exposure", f"₹{invested_amount:,.2f}", sub_title), unsafe_allow_html=True)
     else:
@@ -1834,7 +1854,7 @@ with top_b2:
         st.markdown(fancy_metric("🔒 Total Invested", f"₹{invested_amount:,.2f}", sub_title), unsafe_allow_html=True)
     with st.popover("🔍 Capital Allocation Details", use_container_width=True):
         st.markdown("### 🔒 Investment Capital Breakdown")
-        if is_angel_live:
+        if is_angel_mode:
             st.markdown(f"**📌 Angel One 5x Market Exposure:** ₹{spot_invested:,.2f} ({len(dca_positions)} stocks)")
             st.markdown(f"**⚡ Actual Cash Margin Blocked (20%):** ₹{blocked_margin:,.2f}")
             if dca_positions:
@@ -1858,7 +1878,7 @@ with top_b3:
     st.markdown(fancy_metric("💵 Free Liquid Cash", f"₹{available_cash:,.2f}", "Angel One Free Buffer" if is_angel_live else "Available Capital"), unsafe_allow_html=True)
     with st.popover("🔍 Cash Allocation Details", use_container_width=True):
         st.markdown("### 💵 Free Cash Balance")
-        if is_angel_live:
+        if is_angel_mode:
             st.write("Live available funds in your Angel One trading account.")
             st.write(f"- Angel One Client: `AABZ864543`")
             st.write(f"- Blocked Margin (5x MIS): ₹{blocked_margin:,.2f}")
@@ -1878,7 +1898,7 @@ with top_b4:
     st.markdown(fancy_metric("📈 Floating P&L (Unrealized)", f"₹{total_floating_pnl:+,.2f}", pnl_sub, top_pnl_color), unsafe_allow_html=True)
     with st.popover("🔍 Live P&L Breakdown", use_container_width=True):
         st.markdown("### 📈 Floating (Unrealized) P&L")
-        if is_angel_live:
+        if is_angel_mode:
             st.markdown(f"**📌 Angel One Stocks Floating P&L:** ₹{spot_floating_pnl:+.2f}")
             if dca_positions:
                 for s, pd_info in per_position_pnl.items():
@@ -1921,9 +1941,10 @@ st.markdown("<br>", unsafe_allow_html=True)
 # -------------------------------------------------------------
 # 🌟 3. TOP-LEVEL PRO WEB TABS (100% SEPARATED BETWEEN MODES)
 # -------------------------------------------------------------
-if is_angel_live:
-    tab_pos, tab_mind, tab_charts, tab_orders, tab_search, tab_voice = st.tabs([
+if is_angel_mode:
+    tab_pos, tab_virtual, tab_mind, tab_charts, tab_orders, tab_search, tab_voice = st.tabs([
         "📌 Live Positions (Angel One)",
+        "🎮 Angel One Virtual Trading (₹ Practice)",
         "🧠 AI Brain & NSE Reasoning",
         "📊 NSE Live Charts & Patterns",
         "📋 Angel One Orders & Settlement History",
@@ -1941,12 +1962,13 @@ else:
         "🔍 Crypto 24/7 Market Screener",
         "💬 AI Assistant"
     ])
+    tab_virtual = None
 
 # =============================================================
 # TAB 1: 📌 Live Positions
 # =============================================================
 with tab_pos:
-    if is_angel_live:
+    if is_angel_mode:
         st.markdown("### 🎯 Active Angel One Positions (NSE Live)")
         st.caption("Real-time live positions executed on National Stock Exchange (NSE) via Angel One SmartAPI:")
     else:
@@ -2031,7 +2053,7 @@ with tab_pos:
                     st.rerun()
 
     else:
-        if is_angel_live:
+        if is_angel_mode:
             st.info(f"ℹ️ **No open positions in Angel One currently.**\n\nLive Cash: **₹{available_cash:,.2f}** | Client: **SHAIK KALESHA (AABZ864543)**\n\nThe bot is actively scanning NSE (ITC, TATASTEEL, ONGC, IOC, SUZLON, SBIN, HDFCBANK) and will place a live BUY order as soon as a high-confluence entry triggers.")
         elif futures_positions:
             f_names = ", ".join([f"{k} ({v.get('side', 'SHORT')} 5x)" for k, v in futures_positions.items()])
@@ -2039,6 +2061,98 @@ with tab_pos:
         else:
             st.info("No active spot positions open currently. All prior trades closed in profit. Bot is scanning the market for fresh high-probability entries.")
 
+
+# =============================================================
+# TAB 1B: 🎮 ANGEL ONE VIRTUAL TRADING (PRACTICE WITH VIRTUAL ₹ CAPITAL)
+# =============================================================
+if is_angel_mode and tab_virtual is not None:
+    with tab_virtual:
+        st.markdown("### 🎮 Angel One Virtual Trading (₹ Practice Mode)")
+        st.caption("🔒 **100% రిస్క్-ఫ్రీ పేపర్ ట్రేడింగ్:** Angel One లైవ్ NSE మార్కెట్ ప్రైసెస్ & AI స్కానర్ తో సిమ్యులేట్ అవుతుంది. మీ రియల్ మనీ ₹1 కూడా టచ్ అవ్వదు!")
+
+        # 1-Click Bot Mode Switcher
+        v_col1, v_col2, v_col3 = st.columns([2, 2, 2])
+        with v_col1:
+            st.metric("💵 Virtual Practice Capital", "₹50,000.00", "Zero Real Risk")
+        with v_col2:
+            current_active_mode = "🎮 VIRTUAL PRACTICE" if is_angel_virtual else "💰 REAL ANGEL ONE"
+            st.metric("⚡ Current Bot Mode", current_active_mode)
+        with v_col3:
+            if is_angel_virtual:
+                if st.button("⚡ Switch to Real Angel One", key="btn_sw_real_tab", use_container_width=True):
+                    db_helper.save_state('trading_mode', {'mode': 'ANGEL_LIVE'})
+                    with open('trading_mode.txt', 'w') as f:
+                        f.write('ANGEL_LIVE')
+                    st.toast("Switched to Real Angel One!", icon="💰")
+                    st.rerun()
+            else:
+                if st.button("🎮 Switch to Virtual Practice Mode", key="btn_sw_virt_tab", use_container_width=True):
+                    db_helper.save_state('trading_mode', {'mode': 'ANGEL_VIRTUAL'})
+                    with open('trading_mode.txt', 'w') as f:
+                        f.write('ANGEL_VIRTUAL')
+                    st.toast("Switched to Virtual Practice Mode!", icon="🎮")
+                    st.rerun()
+
+        st.markdown("---")
+        # Virtual Positions
+        v_pos = {k: v for k, v in dca_positions.items() if ('.NS' in k or '.BO' in k) and not v.get('is_live', False)}
+        if v_pos:
+            st.markdown("#### 🎯 Active Virtual Positions (NSE Practice)")
+            v_rows = ""
+            for v_sym, v_info in v_pos.items():
+                pdata = per_position_pnl.get(v_sym, {})
+                v_lp = pdata.get("live_price", float(v_info.get("avg_price", 0)))
+                v_avg = pdata.get("avg_price", float(v_info.get("avg_price", 0)))
+                v_pnl_pct = pdata.get("pnl_pct", 0.0)
+                v_pnl_inr = pdata.get("pnl_inr", 0.0)
+                v_tgt = float(v_info.get("target_sell_price", v_avg * 1.015))
+                v_qty = float(v_info.get("total_qty", 0))
+                v_cost = float(v_info.get("total_cost", 0))
+                v_clr = "#00e676" if v_pnl_inr >= 0 else "#ff5252"
+                v_dist = ((v_tgt - v_lp) / v_avg) * 100.0 if v_avg > 0 else 0.0
+                v_rows += f"""<tr>
+                  <td><b>{v_sym}</b><br><span style="font-size:11px;color:#00bcd4;">VIRTUAL PRACTICE</span></td>
+                  <td>{v_qty:.0f}</td>
+                  <td>₹{v_avg:,.2f}</td>
+                  <td style="color:#00bcd4;">₹{v_lp:,.2f}</td>
+                  <td style="color:#ffa726;">₹{v_tgt:,.2f}</td>
+                  <td>₹{v_cost:,.2f}</td>
+                  <td style="color:{v_clr};font-weight:700;">₹{v_pnl_inr:+,.2f} ({v_pnl_pct:+.2f}%)</td>
+                  <td style="color:#ffa726;">{v_dist:+.2f}% more</td>
+                </tr>"""
+            st.markdown(f"""
+            <div style="overflow-x:auto; margin-bottom:20px;">
+            <table class="zk-pos-table" style="width:100%;border-collapse:separate;border-spacing:0;background:#131722;border:1px solid #2a2e39;border-radius:10px;overflow:hidden;">
+              <thead>
+                <tr style="background:#181c27;">
+                  <th style="padding:10px;color:#787b86;text-align:left;">Asset</th>
+                  <th style="padding:10px;color:#787b86;text-align:left;">Qty</th>
+                  <th style="padding:10px;color:#787b86;text-align:left;">Buy Price</th>
+                  <th style="padding:10px;color:#00bcd4;text-align:left;">Live Price</th>
+                  <th style="padding:10px;color:#ffa726;text-align:left;">Target (+1.5%)</th>
+                  <th style="padding:10px;color:#787b86;text-align:left;">Invested</th>
+                  <th style="padding:10px;color:#787b86;text-align:left;">PnL</th>
+                  <th style="padding:10px;color:#787b86;text-align:left;">To Target</th>
+                </tr>
+              </thead>
+              <tbody style="font-family:'JetBrains Mono',monospace;color:#e0e3eb;">
+                {v_rows}
+              </tbody>
+            </table>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.info("ℹ️ **ప్రస్తుతం వర్చువల్ పొజిషన్లు ఏవీ ఓపెన్ లో లేవు.**\n\nAI బాట్ NSE మార్కెట్ లో టాప్ 25 స్టాక్స్ (BEL, IRFC, GAIL, PNB, MOTHERSON, SBIN, etc.) ని నిరంతరం స్కాన్ చేస్తోంది. ఖచ్చితమైన 3/4 పిల్లర్స్ కన్ఫర్మేషన్ రాగానే వర్చువల్ గా బై చేసి ఇక్కడ లైవ్ PnL చూపిస్తుంది.")
+
+        st.markdown("---")
+        st.markdown("#### 🛡️ AI Risk Management Verification Rules")
+        st.markdown("""
+        * ✅ **Pillar Gate:** కనీసం 3 పిల్లర్లు (Pillars >= 3/4) గ్రీన్ ఉంటేనే ఎంట్రీ.
+        * ✅ **VWAP Gate:** ప్రైస్ ఖచ్చితంగా VWAP పైన ఉంటేనే ఎంట్రీ (ఇన్స్టిట్యూషనల్ బయ్యర్స్ ధృవీకరణ).
+        * ✅ **Stop-Loss Protection:** -1.20% వద్దే స్టాప్‌లాస్ తో కట్ అయిపోవడం (క్యాపిటల్ సేఫ్).
+        * ✅ **Profit Target:** +1.2% నుండి +1.5% వద్దే క్విక్ ప్రాఫిట్ లాక్.
+        * ✅ **Order Lock:** ఒకేసారి ఒకే ఒక్క ట్రేడ్ (మల్టీ-ఆర్డర్ రిజెక్షన్స్ ఉండవు).
+        """)
 
 # =============================================================
 # TAB 2: 🚀 FUTURES PAPER TRADING (5x LEVERAGE - CRYPTO ONLY)
@@ -2405,7 +2519,7 @@ with tab_charts:
     elif not is_angel_live and str(st.session_state.get("selected_chart_sym", "")).endswith((".NS", ".BO")):
         st.session_state["selected_chart_sym"] = target_default
 
-    if is_angel_live:
+    if is_angel_mode:
         st.markdown("##### 🇮🇳 Top Indian Stocks (NSE):")
         dyn_chips = [
             ("🇮🇳 BEL", "BEL.NS"),
@@ -2636,7 +2750,7 @@ with tab_charts:
 # TAB 5: 📋 Order Book & Performance History
 # =============================================================
 with tab_orders:
-    if is_angel_live:
+    if is_angel_mode:
         st.subheader("📋 Angel One Order Book & Settlement Statement")
         st.caption("Official Angel One SmartAPI trade ledger, brokerage breakdown, and regulatory settlement statement:")
 
@@ -2888,7 +3002,7 @@ with tab_orders:
 # TAB 5: 🔍 Smart Asset Screener (ASSET SCREENER)
 # =============================================================
 with tab_search:
-    if is_angel_live:
+    if is_angel_mode:
         st.header("🔍 NSE 25 Momentum Stock Screener & Watchlist")
         st.caption("Active screener for Indian equities eligible for 5x MIS Intraday Trading on Angel One:")
         col_s1, col_s2 = st.columns([3, 1])

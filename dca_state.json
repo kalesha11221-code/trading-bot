@@ -1,1 +1,128 @@
-{}
+{
+    "SOL-USD": {
+        "entries": [
+            {
+                "price": 102.87000274658203,
+                "qty": 0.5832604102073242,
+                "cost": 5070.0,
+                "time": "2026-10-28 15:49:57"
+            },
+            {
+                "price": 101.30000305175781,
+                "qty": 0.5923000808730859,
+                "cost": 5070.0,
+                "time": "2026-10-28 18:07:56"
+            }
+        ],
+        "avg_price": 102.07896651044547,
+        "total_qty": 1.17556049108041,
+        "total_cost": 10140.0,
+        "target_sell_price": 103.09975617554993,
+        "peak_price": 102.8499984741211,
+        "strategy": "trend_pullback_ema",
+        "mode": "\ud83d\udcdd VIRTUAL",
+        "is_live": false
+    },
+    "ETH-USD": {
+        "entries": [
+            {
+                "price": 2366.9599609375,
+                "qty": 0.02534897125012429,
+                "cost": 5070.0,
+                "time": "2026-10-28 15:50:31"
+            }
+        ],
+        "avg_price": 2366.9599609375,
+        "total_qty": 0.02534897125012429,
+        "total_cost": 5070.0,
+        "target_sell_price": 2388.2626005859374,
+        "peak_price": 2372.929931640625,
+        "strategy": "trend_pullback_ema",
+        "mode": "\ud83d\udcdd VIRTUAL",
+        "is_live": false
+    },
+    "BTC-USD": {
+        "entries": [
+            {
+                "price": 81416.0,
+                "qty": 0.0007369558809079297,
+                "cost": 5070.0,
+                "time": "2026-10-28 15:51:04"
+            }
+        ],
+        "avg_price": 81416.0,
+        "total_qty": 0.0007369558809079297,
+        "total_cost": 5070.0,
+        "target_sell_price": 82148.74399999999,
+        "peak_price": 81806.9921875,
+        "strategy": "fvg_imbalance_fill",
+        "mode": "\ud83d\udcdd VIRTUAL",
+        "is_live": false
+    },
+    "XRP-USD": {
+        "entries": [
+            {
+                "price": 1.3278000354766846,
+                "qty": 45.18752703486697,
+                "cost": 5070.0,
+                "time": "2026-10-28 15:52:12"
+            },
+            {
+                "price": 1.2928999662399292,
+                "qty": 46.40730262720537,
+                "cost": 5070.0,
+                "time": "2026-10-29 12:13:16"
+            }
+        ],
+        "avg_price": 1.3101176173668863,
+        "total_qty": 91.59482966207233,
+        "total_cost": 10140.0,
+        "target_sell_price": 1.323218793540555,
+        "peak_price": 1.3142999410629272,
+        "strategy": "rsi_vwap_confluence",
+        "mode": "\ud83d\udcdd VIRTUAL",
+        "is_live": false
+    },
+    "BNB-USD": {
+        "entries": [
+            {
+                "price": 757.6799926757812,
+                "qty": 0.07918910434483993,
+                "cost": 5070.0,
+                "time": "2026-10-28 17:35:36"
+            },
+            {
+                "price": 746.1400146484375,
+                "qty": 0.08041386177133322,
+                "cost": 5070.0,
+                "time": "2026-10-29 23:07:19"
+            }
+        ],
+        "avg_price": 751.8657260583327,
+        "total_qty": 0.15960296611617314,
+        "total_cost": 10140.0,
+        "target_sell_price": 759.3843833189161,
+        "peak_price": 746.6799926757812,
+        "strategy": "trend_pullback_ema",
+        "mode": "\ud83d\udcdd VIRTUAL",
+        "is_live": false
+    },
+    "DOGE-USD": {
+        "entries": [
+            {
+                "price": 0.0810299962759018,
+                "qty": 740.466527922622,
+                "cost": 5070.0,
+                "time": "2026-10-29 21:41:36"
+            }
+        ],
+        "avg_price": 0.0810299962759018,
+        "total_qty": 740.466527922622,
+        "total_cost": 5070.0,
+        "target_sell_price": 0.0817592662423849,
+        "peak_price": 0.0810299962759018,
+        "strategy": "trend_pullback_ema",
+        "mode": "\ud83d\udcdd VIRTUAL",
+        "is_live": false
+    }
+}
