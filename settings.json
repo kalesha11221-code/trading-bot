@@ -1,6 +1,6 @@
 {
-    "risk_level": "Safe (High Precision)",
-    "trading_style": "Swing / High Precision",
+    "risk_level": "Safe (Low Risk)",
+    "trading_style": "Swing (Hold for Targets)",
     "capital_mode": "Smart Dynamic",
     "panic_mode": false,
     "daily_target_inr": 1500,

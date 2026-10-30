@@ -881,10 +881,14 @@ market_segment = st.sidebar.selectbox(
 )
 
 # 4. Risk Management
+risk_opts = ["Safe (Low Risk)", "Moderate (Smart AI)", "Extreme (High Profit)"]
+raw_risk = bot_settings.get("risk_level", "Moderate (Smart AI)")
+current_risk_val = raw_risk if raw_risk in risk_opts else ("Safe (Low Risk)" if "Safe" in str(raw_risk) else ("Extreme (High Profit)" if "Extreme" in str(raw_risk) else "Moderate (Smart AI)"))
+
 new_risk = st.sidebar.select_slider(
     "🔥 Risk Aggression",
-    options=["Safe (Low Risk)", "Moderate (Smart AI)", "Extreme (High Profit)"],
-    value=bot_settings.get("risk_level", "Moderate (Smart AI)")
+    options=risk_opts,
+    value=current_risk_val
 )
 
 # 5. Panic Button & Balance Reset
