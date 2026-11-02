@@ -1461,8 +1461,13 @@ def process_symbol(sym):
                 available_margin = max(0.0, angel_cash - current_blocked_margin)
                 margin_required = slice_cost_inr / 5.0
                 can_afford_dca = (slice_qty > 0 and margin_required <= available_margin)
+            elif is_indian:
+                active_stocks_pos = {k: v for k, v in dca_state.items() if ('.NS' in k or '.BO' in k)}
+                current_invested = sum(p.get('total_cost', 0.0) for p in active_stocks_pos.values())
+                can_afford_dca = (slice_qty > 0 and (current_invested + slice_cost_inr) <= portfolio_cap)
             else:
-                current_invested = sum(p.get('total_cost', 0.0) for p in dca_state.values())
+                active_crypto_pos = {k: v for k, v in dca_state.items() if '-USD' in k}
+                current_invested = sum(p.get('total_cost', 0.0) for p in active_crypto_pos.values())
                 can_afford_dca = (slice_qty > 0 and (current_invested + slice_cost_inr) <= portfolio_cap)
 
             if can_afford_dca:
@@ -1581,9 +1586,16 @@ def process_symbol(sym):
                 can_enter = (len(active_angel_pos) < max_positions)
                 margin_required = slice_cost_inr / 5.0
                 can_afford = (slice_qty > 0 and margin_required <= available_margin)
+            elif is_indian:
+                # 🎮 ANGEL_VIRTUAL / ZERODHA_PAPER: isolate Indian stock capital from crypto
+                active_stocks_pos = {k: v for k, v in fresh_dca.items() if ('.NS' in k or '.BO' in k)}
+                can_enter = (len(active_stocks_pos) < max_positions)
+                current_invested = sum(p.get('total_cost', 0.0) for p in active_stocks_pos.values())
+                can_afford = (slice_qty > 0 and (current_invested + slice_cost_inr) <= portfolio_cap)
             else:
-                can_enter = (len(fresh_dca) < max_positions)
-                current_invested = sum(p.get('total_cost', 0.0) for p in fresh_dca.values())
+                active_crypto_pos = {k: v for k, v in fresh_dca.items() if '-USD' in k}
+                can_enter = (len(active_crypto_pos) < max_positions)
+                current_invested = sum(p.get('total_cost', 0.0) for p in active_crypto_pos.values())
                 can_afford = (slice_qty > 0 and (current_invested + slice_cost_inr) <= portfolio_cap)
 
             if can_enter and can_afford:
@@ -1736,8 +1748,8 @@ def run_bot_loop():
                         active_symbols = default_symbols
                 except: pass
 
-            # 🛡️ Strict Mode Guard: If in ANGEL_LIVE, strictly scan Indian NSE Stocks only
-            if mode == "ANGEL_LIVE":
+            # 🛡️ Strict Mode Guard: If in ANGEL_LIVE or ANGEL_VIRTUAL, strictly scan Indian NSE Stocks only
+            if mode in ("ANGEL_LIVE", "ANGEL_VIRTUAL"):
                 filtered_nse = [s for s in active_symbols if s.endswith('.NS') or s.endswith('.BO')]
                 if not filtered_nse:
                     active_symbols = list(dict.fromkeys(NSE_SYMBOLS + custom_nse))
