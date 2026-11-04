@@ -1375,41 +1375,56 @@ def process_symbol(sym):
         trade_charges = calculate_trade_charges(sym, buy_val, sell_val)
         net_profit = gross_profit - trade_charges
 
-        # 🏛️ INSTITUTIONAL FEE-AWARE SPOT PROFIT ENGINE:
-        # Exits strictly cover broker fees (₹15.00 min floor) and taxes to lock positive net cash:
-        min_gain_for_exit = 1.15 if is_indian else 0.90
-        
-        # ⏰ 3:05 PM EOD Market Close Shield: Auto-exit before Angel One RMS 3:15 PM cut-off
-        is_eod_exit = False
-        if is_indian:
-            curr_t = now.time()
-            t_eod = datetime.strptime("15:05", "%H:%M").time()
-            if curr_t >= t_eod:
-                is_eod_exit = True
-                thoughts.append("⏰ [3:05 PM EOD]: Angel One RMS ఆటో-స్క్వేర్ ఆఫ్ పెనాల్టీలు పడకుండా బాట్ స్వయంగా క్లీన్ గా ఎగ్జిట్ చేసింది.")
+        # 🏛️ INSTITUTIONAL FEE-AWARE AUTONOMOUS EXIT ENGINE:
+        # Accounts for broker fees, STT, GST, exchange charges and guarantees net cash:
+        curr_t = now.time()
+        t_afternoon = datetime.strptime("13:00", "%H:%M").time()
+        t_final_hour = datetime.strptime("14:30", "%H:%M").time()
+        t_eod_cutoff = datetime.strptime("15:08", "%H:%M").time()
 
-        # 🛑 STRICT INTRADAY CAPITAL PROTECTION STOP-LOSS (-1.20% Max Loss Cut):
+        # ⏰ 1. 3:08 PM HARD INTRADAY CLOSE SHIELD:
+        # At 3:08 PM, cleanly exit all intraday positions before Angel One RMS 3:15 PM auto-square-off penalty (₹59/trade)
+        # and prevent carrying intraday positions overnight!
+        is_eod_exit = False
+        if is_indian and curr_t >= t_eod_cutoff:
+            is_eod_exit = True
+            thoughts.append("⏰ [3:08 PM EOD SHIELD]: 3:15 PM RMS ఆటో-స్క్వేర్ ఆఫ్ పెనాల్టీలు పడకుండా, రాత్రికి స్టాక్స్ ఇరుక్కుపోకుండా బాట్ స్వయంగా క్లీన్ గా ఎగ్జిట్ చేసింది.")
+
+        # 🧠 2. DYNAMIC TIME-DECAY TARGET (Self-Thinking Profit Optimization):
+        # Morning (before 1:00 PM): Aim for strong momentum (+1.35%)
+        # Afternoon (1:00 PM - 2:30 PM): Target compresses to +0.65% (lock green profits before session ends)
+        # Final Hour (after 2:30 PM): Fee-safe exit (take any green profit covering charges + buffer)
+        if is_indian:
+            if curr_t >= t_final_hour:
+                target_gain_pct = 0.35
+                min_gain_for_exit = 0.30
+            elif curr_t >= t_afternoon:
+                target_gain_pct = 0.65
+                min_gain_for_exit = 0.55
+            else:
+                target_gain_pct = 1.35
+                min_gain_for_exit = 1.10
+        else:
+            target_gain_pct = 1.45 if is_scalp_style else 3.0
+            min_gain_for_exit = 0.90
+
+        # 🛑 PROFIT-ONLY POLICY WITH EMERGENCY DEEP SHIELD:
+        # Never sell on minor dips. Cut loss only on deep -2.5% market crash to protect capital:
         is_stoploss_exit = False
-        if is_indian and profit_pct <= -1.20:
+        if is_indian and profit_pct <= -2.50:
             is_stoploss_exit = True
-            thoughts.append(f"🛑 [స్టాప్‌లాస్ షీల్డ్]: {sym} -1.20% వద్ద క్యాపిటల్ రక్షణ కోసం చిన్న నష్టంతో వెంటనే ఎగ్జిట్ అయ్యాను.")
+            thoughts.append(f"🛑 [ఎమర్జెన్సీ సేఫ్టీ షీల్డ్]: {sym} -2.50% డీప్ ఫాల్ లో క్యాపిటల్ రక్షణ కోసం ఎగ్జిట్ అయ్యాను.")
 
         if is_scalp_style:
             # ⚡ AUTONOMOUS TRAILING PROFIT ENGINE (Unlimited Upside + Fee-Safe Floor):
-            # 1. Trailing Profit: Activates at +1.15% (NSE) / +0.90% (Crypto), lets profit run!
-            #    Exits if price retraces 0.25% from its highest peak (locking max gains).
             is_trailing_exit = (peak_gain_pct >= min_gain_for_exit and current_price <= (peak_p * 0.9975) and net_profit > 0)
-            # 2. Breakeven / Safe Floor: If gain was >= 1.20% but is dropping near entry, exit before turning red
-            is_breakeven_exit = (peak_gain_pct >= 1.20 and profit_pct <= 0.80 and net_profit > 0)
-            # 3. Super Target Exit: Fast target at +1.45% (NSE) / +3.50% (Crypto)
-            is_target_exit = (profit_pct >= (1.45 if is_indian else 3.50) and net_profit > 0)
-            # 4. Reversal Exit: If sell signal appears after fee-safe threshold
+            is_breakeven_exit = ((curr_t >= t_final_hour and net_profit > 0) or (peak_gain_pct >= 0.90 and profit_pct <= 0.40 and net_profit > 0))
+            is_target_exit = (profit_pct >= target_gain_pct and net_profit > 0)
             is_reversal_exit = (profit_pct >= min_gain_for_exit and signal == 'sell' and net_profit > 0)
         else:
-            # 🏛️ INSTITUTIONAL SWING ENGINE (Hours/Days Trend):
-            is_breakeven_exit = (peak_gain_pct >= 1.3 and profit_pct <= 0.9 and net_profit > 0)
-            is_trailing_exit = (peak_gain_pct >= (1.15 if is_indian else 2.5) and current_price <= (peak_p * 0.996) and net_profit > 0)
-            is_target_exit = (profit_pct >= (1.50 if is_indian else 3.0) and net_profit > 0)
+            is_breakeven_exit = ((curr_t >= t_final_hour and net_profit > 0) or (peak_gain_pct >= 1.1 and profit_pct <= 0.6 and net_profit > 0))
+            is_trailing_exit = (peak_gain_pct >= min_gain_for_exit and current_price <= (peak_p * 0.996) and net_profit > 0)
+            is_target_exit = (profit_pct >= target_gain_pct and net_profit > 0)
             is_reversal_exit = (profit_pct >= min_gain_for_exit and signal == 'sell' and net_profit > 0)
         
         if is_trailing_exit or is_target_exit or is_reversal_exit or is_breakeven_exit or is_eod_exit or is_stoploss_exit:
@@ -1527,27 +1542,37 @@ def process_symbol(sym):
     # 3. FIRST DIP ENTRY (INITIAL FRACTIONAL SLICE)
     # -------------------------------------------------------------
     elif pos is None and signal == 'buy':
-        # ⏰ ADAPTIVE TIME-OF-DAY ENTRY FILTER (Indian Intraday Equities):
+        # ⏰ ADAPTIVE TIME-OF-DAY FILTER (Indian Intraday Equities):
         is_afternoon_entry = False
         if is_indian:
             curr_t = now.time()
             t_base_cutoff = datetime.strptime("13:30", "%H:%M").time()
             t_hard_cutoff = datetime.strptime("14:20", "%H:%M").time()
 
-            if curr_t > t_hard_cutoff:
+            # Extreme Crash Shield only (protects against sudden -500 pt Nifty flash crash):
+            n_status, n_thought = get_nifty_market_regime()
+            if n_status == 'SEVERE_CRASH':
                 return {
                     "symbol": sym, "clean_name": clean_name, "price": round(current_price, 2),
-                    "signal": "HOLD", "thought": "⏰ [AFTERNOON CUTOFF]: 02:20 PM దాటింది. 3:15 PM లోపు MIS స్క్వేర్ ఆఫ్ అయ్యేలోపు క్యాపిటల్ రిస్క్ లేకుండా ట్రేడ్స్ క్లోజ్ చేయాలి కాబట్టి కొత్త ఎంట్రీస్ ఆపేశాను.",
+                    "signal": "HOLD", "thought": f"🛑 [NIFTY CRASH SHIELD]: నిఫ్టీ 50 లో సడెన్ భారీ ఫ్లాష్ క్రాష్ జరుగుతోంది ({n_thought}). క్యాపిటల్ ని కాపాడుతున్నాను.",
                     "strategy": strat_used, "rsi": round(float(last['RSI']), 1), "trend": htf_status,
                     "action_taken": "HOLD", "has_position": False, "pnl_pct": 0.0, "avg_price": 0.0,
                     "total_qty": 0.0, "target_price": 0.0, "peak_price": 0.0, "invested": 0.0,
                     "dca_layer": 0, "timestamp": get_ist_now().strftime('%H:%M:%S IST'), "is_indian": is_indian
                 }
 
-            # Between 01:30 PM and 02:20 PM: User instruction:
-            # "marcket baga veltundi ani ardham aite ai ki 1 varaku kakunda teskomanu pakka profit vastundi antene"
+            if curr_t > t_hard_cutoff:
+                return {
+                    "symbol": sym, "clean_name": clean_name, "price": round(current_price, 2),
+                    "signal": "HOLD", "thought": "⏰ [AFTERNOON CUTOFF]: 02:20 PM దాటింది. 3:08 PM లోపు లాభాలతో ట్రేడ్స్ క్లోజ్ చేయాలి కాబట్టి కొత్త ఎంట్రీస్ ఆపేశాను.",
+                    "strategy": strat_used, "rsi": round(float(last['RSI']), 1), "trend": htf_status,
+                    "action_taken": "HOLD", "has_position": False, "pnl_pct": 0.0, "avg_price": 0.0,
+                    "total_qty": 0.0, "target_price": 0.0, "peak_price": 0.0, "invested": 0.0,
+                    "dca_layer": 0, "timestamp": get_ist_now().strftime('%H:%M:%S IST'), "is_indian": is_indian
+                }
+
+            # Between 01:30 PM and 02:20 PM:
             if curr_t > t_base_cutoff:
-                n_status, _ = get_nifty_market_regime()
                 is_market_bullish = (n_status in ('BULLISH', 'STABLE', 'NEUTRAL'))
                 is_pakka_profit = (
                     is_market_bullish and
@@ -1558,7 +1583,7 @@ def process_symbol(sym):
                 if not is_pakka_profit:
                     return {
                         "symbol": sym, "clean_name": clean_name, "price": round(current_price, 2),
-                        "signal": "HOLD", "thought": "⏰ [AFTERNOON HIGH-CONVICTION FILTER]: 01:30 PM దాటింది. మార్కెట్ స్ట్రాంగ్ గా ఉంది అని 'పక్కా ప్రాఫిట్' కన్ఫర్మేషన్ (VWAP & EMA 9 బుల్లిష్ బ్రేక్‌అవుట్) ఉన్నప్పుడు మాత్రమే మధ్యాహ్నం ఎంట్రీస్ తీసుకుంటాను.",
+                        "signal": "HOLD", "thought": "⏰ [AFTERNOON CONVICTION]: 01:30 PM దాటింది. VWAP & EMA 9 పాజిటివ్ కన్ఫర్మేషన్ ఉన్నప్పుడు మాత్రమే మధ్యాహ్నం ఎంట్రీస్ తీసుకుంటాను.",
                         "strategy": strat_used, "rsi": round(float(last['RSI']), 1), "trend": htf_status,
                         "action_taken": "HOLD", "has_position": False, "pnl_pct": 0.0, "avg_price": 0.0,
                         "total_qty": 0.0, "target_price": 0.0, "peak_price": 0.0, "invested": 0.0,
@@ -1566,7 +1591,7 @@ def process_symbol(sym):
                     }
                 is_afternoon_entry = True
 
-        max_positions = 1 if (is_indian and live_mode and angel_cash <= 750) else (2 if (is_indian and live_mode and angel_cash <= 1500) else (8 if is_scalp_style else MAX_ACTIVE_POSITIONS))
+        max_positions = 8 if is_scalp_style else MAX_ACTIVE_POSITIONS
         
         with order_placement_lock:
             fresh_dca = load_dca_state()
