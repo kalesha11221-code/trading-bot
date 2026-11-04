@@ -1184,25 +1184,52 @@ def calculate_trade_charges(sym, buy_value, sell_value):
         return round((buy_value + sell_value) * 0.001, 2)
 
 
+def get_today_realized_pnl(is_indian=True):
+    """
+    Computes today's net booked PnL for Indian stocks from trades_log in real time.
+    """
+    try:
+        today_str = get_ist_now().strftime('%Y-%m-%d')
+        df = db_helper.get_trade_history_df(is_futures=False)
+        if df.empty or 'Time' not in df.columns or 'Action' not in df.columns:
+            return 0.0
+        sells = df[(df['Action'] == 'SELL') & (df['Time'].str.startswith(today_str))]
+        if sells.empty:
+            return 0.0
+        
+        tot_net = 0.0
+        for _, row in sells.iterrows():
+            sym = str(row.get('Symbol', ''))
+            if is_indian and not (sym.endswith('.NS') or sym.endswith('.BO')):
+                continue
+            p_val = float(str(row.get('Profit', '0.0')).replace('₹', '').replace(',', '').strip() or 0.0)
+            tot_net += p_val
+        return round(tot_net, 2)
+    except Exception:
+        return 0.0
+
+
 def get_capital_profit_target_plan(capital, is_indian=True):
     """
-    🧠 CAPITAL-DRIVEN QUANTITATIVE AI PROFIT BRAIN:
-    Derives profit benchmarks dynamically based on total capital:
-    - Capital ₹50,000  -> Trade size: ₹16,500 | Net Cash/trade: ₹200 - ₹300 | Daily Goal: ₹750 - ₹1,000
-    - Capital ₹1,00,000 -> Trade size: ₹33,000 | Net Cash/trade: ₹400 - ₹600 | Daily Goal: ₹1,500 - ₹2,000
-    - Capital ₹10,000  -> Trade size: ₹3,300  | Net Cash/trade: ₹45 - ₹70   | Daily Goal: ₹150 - ₹200
+    🧠 QUANTITATIVE ASYMMETRIC PROFIT & SIZING BRAIN:
+    Tailored for ₹50,000 Capital Intraday Equity Trading:
+    - Capital ₹50,000 -> 2 Concentrated Positions (~₹22,500 each, 45% alloc)
+    - Net Profit Target per trade: ₹225 - ₹350 (after ALL broker charges & taxes)
+    - Strict Stop Loss: -0.75% max (cut at -₹168 loss, never allow -2% or -3% crash!)
+    - Breakeven Lock: At +0.60% move, stoploss moved to +0.18% (Zero risk!)
+    - Daily Goal Lock: +₹750 to +₹1,000 net profit (Locks and stops trading to protect gains)
+    - Daily Max Loss Cap: -₹500 (Halts trading to protect 99% of capital)
     """
     cap = max(1000.0, float(capital))
     if is_indian:
-        # Intraday Equity: Allocate ~33% of capital per high-conviction trade
-        trade_budget = round(cap * 0.33, 2)
+        # Concentrated 2-position intraday allocation: 45% per trade (~₹22,500 on ₹50k)
+        trade_budget = round(cap * 0.45, 2)
         # Expected net cash in pocket per trade (after ALL broker charges & taxes):
-        # 0.45% of total capital (e.g. ₹225 on ₹50k)
-        target_net_cash = round(cap * 0.0045, 2)
-        # Minimum acceptable net profit (never exit for micro-peanuts under 0.25% capital):
-        min_net_floor = max(35.0, round(cap * 0.0025, 2))
+        target_net_cash = round(cap * 0.005, 2)  # ₹250 net cash
+        # Minimum acceptable net profit floor:
+        min_net_floor = max(50.0, round(cap * 0.003, 2))  # ₹150 min floor
         # Daily goal: 1.5% to 2.0% daily return
-        daily_goal = round(cap * 0.015, 2)
+        daily_goal = round(cap * 0.016, 2)  # ₹800 daily goal
     else:
         trade_budget = round(cap * 0.20, 2)
         target_net_cash = max(3.0, round(cap * 0.004, 2))
@@ -1217,27 +1244,118 @@ def get_capital_profit_target_plan(capital, is_indian=True):
     }
 
 
+def intraday_eod_squareoff_sweep():
+    """
+    ⏰ BULLETPROOF INTRADAY AUTO-SQUARE-OFF SWEEP:
+    Indian stock intraday trades (MIS / Virtual Practice) MUST NEVER be held overnight past market close!
+    Holding past 3:15 PM triggers broker RMS square-off penalties (₹59/trade in Angel One) and breaks intraday rules.
+    If current time >= 15:15 IST (or if market is closed) and any Indian stock remains open in dca_state:
+    - Auto-squares off each stock at the day's official close / CMP
+    - Deducts brokerage, STT, and exchange taxes
+    - Logs SELL trade permanently to MongoDB trades_log & local CSV
+    - Clears position from dca_state so portfolio is 100% clean cash (₹50,000) for morning!
+    """
+    now = get_ist_now()
+    curr_t = now.time()
+    t_cutoff = datetime.strptime("15:15", "%H:%M").time()
+    m_open = datetime.strptime("09:15", "%H:%M").time()
+    
+    # Outside active market trading window (after 3:15 PM or before 9:15 AM or weekend)
+    is_eod_time = (curr_t >= t_cutoff) or (curr_t < m_open) or (now.weekday() > 4)
+    if not is_eod_time:
+        return []
+
+    with order_placement_lock:
+        dca_state = load_dca_state()
+        if not dca_state:
+            return []
+
+        indian_positions = [s for s in list(dca_state.keys()) if (s.endswith('.NS') or s.endswith('.BO'))]
+        if not indian_positions:
+            return []
+
+        mode = get_current_trading_mode()
+        is_live = (mode == "ANGEL_LIVE")
+        mode_label = "🇮🇳 ANGEL ONE LIVE (Real NSE)" if is_live else "🇮🇳🎮 ANGEL ONE VIRTUAL (₹ Practice)"
+
+        log_status(f"[{now.strftime('%H:%M:%S IST')}] ⏰ [INTRADAY EOD SWEEP]: మార్కెట్ సమయం ముగిసింది / 3:15 PM దాటింది. ఇంట్రాడే స్టాక్స్ రాత్రికి ఉండిపోకుండా & పెనాల్టీలు పడకుండా {len(indian_positions)} పొజిషన్స్ ని క్లీన్ గా స్క్వేర్ ఆఫ్ చేస్తున్నాను...", color_code='\033[93m')
+        
+        closed_syms = []
+        for sym in indian_positions:
+            pos = dca_state.get(sym)
+            if not pos:
+                continue
+            total_qty = float(pos.get('total_qty', 0.0))
+            avg_price = float(pos.get('avg_price', 0.0))
+            total_cost = float(pos.get('total_cost', avg_price * total_qty))
+
+            close_p = avg_price
+            try:
+                df = fetch_data(sym)
+                if df is not None and not df.empty:
+                    close_p = float(df['close'].iloc[-1])
+            except Exception:
+                pass
+
+            sell_val = close_p * total_qty
+            gross_profit = sell_val - total_cost
+            charges = calculate_trade_charges(sym, total_cost, sell_val)
+            net_profit = gross_profit - charges
+            profit_pct = ((close_p - avg_price) / avg_price) * 100.0 if avg_price > 0 else 0.0
+
+            if is_live:
+                try:
+                    execute_live_order("SELL", sym, quantity=total_qty)
+                except Exception as e:
+                    log_status(f"⚠️ Live Sell Error during EOD Sweep ({sym}): {e}")
+
+            clean_name = sym.replace('.NS', '').replace('.BO', '')
+            log_trade("SELL", sym, close_p, total_qty, gross_profit, strategy_key='eod_auto_squareoff')
+            
+            qty_label = f"{int(total_qty)} షేర్లు" if total_qty == int(total_qty) else f"{total_qty:.2f} షేర్లు"
+            msg = (
+                f"⏰ [ఇంట్రాడే మార్కెట్ క్లోజ్ స్క్వేర్-ఆఫ్] [{mode_label}]: {clean_name} ({qty_label})\n"
+                f"ఎగ్జిట్ ధర: ₹{close_p:.2f} (యావరేజ్: ₹{avg_price:.2f}) | PnL: ₹{gross_profit:+.2f} ({profit_pct:+.2f}%)\n"
+                f"బ్రోకర్ ఛార్జీలు & పన్నులు: ₹{charges:.2f} | చేతికి వచ్చిన నికర ఫలితం: ₹{net_profit:+.2f}\n"
+                f"రాత్రికి స్టాక్స్ హోల్డ్ చేయకుండా క్లీన్ గా ఎగ్జిట్ అయ్యాను."
+            )
+            log_status(f"[{get_ist_now().strftime('%H:%M:%S IST')}] {msg}", color_code='\033[92m')
+            send_telegram_message(f"✅ {msg}")
+
+            if sym in dca_state:
+                del dca_state[sym]
+            closed_syms.append(sym)
+
+        save_dca_state(dca_state)
+        log_status(f"[{get_ist_now().strftime('%H:%M:%S IST')}] ✅ [EOD SWEEP DONE]: అన్ని ఇంట్రాడే స్టాక్ పొజిషన్స్ క్లోజ్ చేయబడ్డాయి. రేపటి మార్కెట్ ఓపెనింగ్ (09:15 AM) కోసం ₹50,000 క్లీన్ క్యాష్ రెడీగా ఉంది.", color_code='\033[92m')
+        return closed_syms
+
+
 def process_symbol(sym):
     now = get_ist_now()
     is_crypto = sym.endswith("-USD")
     is_indian = sym.endswith(".NS") or sym.endswith(".BO") or sym in ["^NSEI", "^NSEBANK"]
-    if is_indian:
-        if now.weekday() > 4: # Weekend
-            return {'symbol': sym, 'status': 'MARKET_CLOSED'}
-        
-        curr_t = now.time()
-        m_open = datetime.strptime("09:15", "%H:%M").time()
-        m_close = datetime.strptime("15:30", "%H:%M").time()
-        
-        if not (m_open <= curr_t <= m_close):
-            return {'symbol': sym, 'status': 'MARKET_CLOSED'}
-            
     clean_name = sym.replace('.NS', '').replace('.BO', '').replace('-USD', '')
     
     # Load Fractional Micro-DCA State & Live Trading Mode
     dca_state = load_dca_state()
     pos = dca_state.get(sym)
     live_mode = is_live_trading()
+    
+    is_market_closed = False
+    if is_indian:
+        curr_t = now.time()
+        m_open = datetime.strptime("09:15", "%H:%M").time()
+        m_close = datetime.strptime("15:30", "%H:%M").time()
+        is_market_closed = (now.weekday() > 4) or not (m_open <= curr_t <= m_close)
+        
+        # ⏰ INTRADAY AUTO-SQUARE-OFF:
+        # If market is closed or 15:15 has passed and an open stock position exists,
+        # do NOT ignore it with MARKET_CLOSED! Fall through so the exit engine cleanly squares it off!
+        if pos is not None and (is_market_closed or curr_t >= datetime.strptime("15:15", "%H:%M").time()):
+            pass
+        elif is_market_closed:
+            return {'symbol': sym, 'status': 'MARKET_CLOSED'}
     
     if not is_crypto and now.weekday() >= 5:
         # Weekend: stock markets closed
@@ -1267,40 +1385,46 @@ def process_symbol(sym):
         
     df = fetch_data(sym)
     if df.empty:
-        return {
-            "symbol": sym,
-            "clean_name": clean_name,
-            "price": pos['avg_price'] if pos else 0.0,
-            "signal": "WAIT",
-            "thought": f"{clean_name} లైవ్ డేటా కోసం వేచి చూస్తోంది...",
-            "strategy": "data_fetch",
-            "rsi": 50.0,
-            "trend": "WAIT",
-            "action_taken": "WAIT",
-            "has_position": pos is not None,
-            "pnl_pct": 0.0,
-            "avg_price": pos['avg_price'] if pos else 0.0,
-            "total_qty": pos['total_qty'] if pos else 0.0,
-            "target_price": pos.get('target_sell_price', 0.0) if pos else 0.0,
-            "peak_price": pos.get('peak_price', 0.0) if pos else 0.0,
-            "invested": pos.get('total_cost', 0.0) if pos else 0.0,
-            "dca_layer": len(pos.get('entries', [])) if pos else 0,
-            "timestamp": now.strftime('%H:%M:%S'),
-            "is_indian": is_indian
-        }
-        
-    sig_res = generate_signal(df, sym)
-    if isinstance(sig_res, (list, tuple)) and len(sig_res) >= 3:
-        signal, thought, strat_used = sig_res[0], sig_res[1], sig_res[2]
+        if is_indian and pos is not None and (is_market_closed or curr_t >= datetime.strptime("15:15", "%H:%M").time()):
+            current_price = float(pos.get('avg_price', 0.0))
+            last = pd.Series({'RSI': 50.0, 'EMA_200': current_price, 'close': current_price})
+            signal, thought, strat_used = 'sell', '⏰ [INTRADAY EOD AUTO-SQUAREOFF]: మార్కెట్ ముగిసింది. పొజిషన్ క్లీన్ గా ఎగ్జిట్ అయ్యాను.', 'eod_auto_squareoff'
+            rsi_val, ema_200, htf_trend = 50.0, current_price, "NEUTRAL"
+        else:
+            return {
+                "symbol": sym,
+                "clean_name": clean_name,
+                "price": pos['avg_price'] if pos else 0.0,
+                "signal": "WAIT",
+                "thought": f"{clean_name} లైవ్ డేటా కోసం వేచి చూస్తోంది...",
+                "strategy": "data_fetch",
+                "rsi": 50.0,
+                "trend": "WAIT",
+                "action_taken": "WAIT",
+                "has_position": pos is not None,
+                "pnl_pct": 0.0,
+                "avg_price": pos['avg_price'] if pos else 0.0,
+                "total_qty": pos['total_qty'] if pos else 0.0,
+                "target_price": pos.get('target_sell_price', 0.0) if pos else 0.0,
+                "peak_price": pos.get('peak_price', 0.0) if pos else 0.0,
+                "invested": pos.get('total_cost', 0.0) if pos else 0.0,
+                "dca_layer": len(pos.get('entries', [])) if pos else 0,
+                "timestamp": now.strftime('%H:%M:%S'),
+                "is_indian": is_indian
+            }
     else:
-        signal, thought = sig_res[0], sig_res[1]
-        strat_used = 'rsi_vwap_confluence'
+        sig_res = generate_signal(df, sym)
+        if isinstance(sig_res, (list, tuple)) and len(sig_res) >= 3:
+            signal, thought, strat_used = sig_res[0], sig_res[1], sig_res[2]
+        else:
+            signal, thought = sig_res[0], sig_res[1]
+            strat_used = 'rsi_vwap_confluence'
 
-    current_price = df.iloc[-1]['close']
-    last = df.iloc[-1]
-    rsi_val = float(last['RSI']) if 'RSI' in last and not pd.isna(last['RSI']) else 50.0
-    ema_200 = float(last['EMA_200']) if 'EMA_200' in last and not pd.isna(last['EMA_200']) else current_price
-    htf_trend = "BULLISH" if current_price >= ema_200 else "BEARISH"
+        current_price = df.iloc[-1]['close']
+        last = df.iloc[-1]
+        rsi_val = float(last['RSI']) if 'RSI' in last and not pd.isna(last['RSI']) else 50.0
+        ema_200 = float(last['EMA_200']) if 'EMA_200' in last and not pd.isna(last['EMA_200']) else current_price
+        htf_trend = "BULLISH" if current_price >= ema_200 else "BEARISH"
     
     # Capital Sizing Engine & Trading Style (High Profit vs Dynamic vs Micro Safe)
     cap_mode = "High Profit"
@@ -1326,34 +1450,24 @@ def process_symbol(sym):
         
     # Indian Stocks (Zerodha Paper vs Angel One Live) sizing
     if is_indian:
+        portfolio_cap = 50000.0
+        cap_plan = get_capital_profit_target_plan(portfolio_cap, is_indian=True)
+        trade_budget = cap_plan['trade_budget'] # ₹22,500 (45% of capital)
+        
         if live_mode and HAS_ANGEL:
             mode_str = "🇮🇳💰 ANGEL ONE LIVE (5x MIS Scalper)"
             angel_cash = angel_helper.angel_engine.get_available_cash()
             if angel_cash <= 0:
                 angel_cash = 300.0
-            # 5x Intraday MIS Leverage (Angel One provides 5x margin for intraday equity)
-            intraday_buying_power = angel_cash * 5.0
-            portfolio_cap = intraday_buying_power
-            # Auto-Compounding Allocation: Up to 85% of buying power (leaving 15% cash safety buffer)
-            trade_budget = round(intraday_buying_power * 0.85, 2)
-            if current_price > 0 and trade_budget >= current_price:
-                slice_qty = float(max(1, int(trade_budget // current_price)))
-            else:
-                slice_qty = 0.0
-            slice_cost_inr = round(slice_qty * current_price, 2)
-            slice_cost_usd = round(slice_cost_inr / 84.5, 2)
         else:
             mode_str = "🇮🇳🎮 ANGEL ONE VIRTUAL (₹ Practice)" if get_current_trading_mode() == "ANGEL_VIRTUAL" else "🇮🇳 ZERODHA VIRTUAL"
-            portfolio_cap = 50000.0
-            # 🧠 Capital-Driven Allocation: Dynamic trade budget scaled to portfolio capital
-            cap_plan = get_capital_profit_target_plan(portfolio_cap, is_indian=True)
-            trade_budget = cap_plan['trade_budget'] # ~₹16,500 on ₹50,000 capital (33%)
-            if current_price > 0 and trade_budget >= current_price:
-                slice_qty = float(max(1, int(trade_budget // current_price)))
-            else:
-                slice_qty = 1.0
-            slice_cost_inr = round(slice_qty * current_price, 2)
-            slice_cost_usd = round(slice_cost_inr / 84.5, 2)
+            
+        if current_price > 0 and trade_budget >= current_price:
+            slice_qty = float(max(1, int(trade_budget // current_price)))
+        else:
+            slice_qty = 1.0
+        slice_cost_inr = round(slice_qty * current_price, 2)
+        slice_cost_usd = round(slice_cost_inr / 84.5, 2)
     else:
         mode_str = "💰 LIVE BINANCE" if (live_mode and is_crypto) else "📝 VIRTUAL"
         if cap_mode == "High Profit" or is_scalp_style:
@@ -1402,12 +1516,12 @@ def process_symbol(sym):
         t_eod_cutoff = datetime.strptime("15:08", "%H:%M").time()
 
         # ⏰ 1. 3:08 PM HARD INTRADAY CLOSE SHIELD:
-        # At 3:08 PM, cleanly exit all intraday positions before Angel One RMS 3:15 PM auto-square-off penalty (₹59/trade)
+        # At 3:08 PM (or post-market/closed), cleanly exit all intraday positions before Angel One RMS 3:15 PM auto-square-off penalty (₹59/trade)
         # and prevent carrying intraday positions overnight!
         is_eod_exit = False
-        if is_indian and curr_t >= t_eod_cutoff:
+        if is_indian and (curr_t >= t_eod_cutoff or is_market_closed):
             is_eod_exit = True
-            thoughts.append("⏰ [3:08 PM EOD SHIELD]: 3:15 PM RMS ఆటో-స్క్వేర్ ఆఫ్ పెనాల్టీలు పడకుండా, రాత్రికి స్టాక్స్ ఇరుక్కుపోకుండా బాట్ స్వయంగా క్లీన్ గా ఎగ్జిట్ చేసింది.")
+            thoughts.append("⏰ [INTRADAY EOD SHIELD]: 3:15 PM RMS ఆటో-స్క్వేర్ ఆఫ్ పెనాల్టీలు పడకుండా, రాత్రికి స్టాక్స్ ఇరుక్కుపోకుండా బాట్ స్వయంగా క్లీన్ గా ఎగ్జిట్ చేసింది.")
 
         # 🧠 CAPITAL-DRIVEN QUANTITATIVE PROFIT BRAIN:
         # Dynamically scales rupee profit targets directly from capital size:
@@ -1433,25 +1547,27 @@ def process_symbol(sym):
             min_gain_for_exit = 0.90
             target_cash = cap_plan['target_net_cash']
 
-        # 🛑 PROFIT-ONLY POLICY WITH EMERGENCY DEEP SHIELD:
-        # Never sell on minor dips. Cut loss only on deep -2.5% market crash to protect capital:
+        # 🛑 STRICT ASYMMETRIC RISK-TO-REWARD ENGINE (1:1.7+):
+        # 1. Tight Stop Loss: Cut loss strictly at -0.75% to protect capital (never allow a dip to turn into -2% or -3% crash!)
         is_stoploss_exit = False
-        if is_indian and profit_pct <= -2.50:
+        if is_indian and profit_pct <= -0.75:
             is_stoploss_exit = True
-            thoughts.append(f"🛑 [ఎమర్జెన్సీ సేఫ్టీ షీల్డ్]: {sym} -2.50% డీప్ ఫాల్ లో క్యాపిటల్ రక్షణ కోసం ఎగ్జిట్ అయ్యాను.")
+            thoughts.append(f"🛑 [స్ట్రిక్ట్ స్టాప్‌లాస్]: {sym} -0.75% వద్ద క్యాపిటల్ రక్షణ కోసం చిన్న నష్టంతో వెంటనే కట్ చేశాను.")
 
-        if is_scalp_style:
-            # ⚡ AUTONOMOUS CAPITAL-LINKED PROFIT ENGINE:
-            # Guarantees BOTH % move AND exact rupee cash target in hand (after ALL fees/taxes):
-            is_trailing_exit = (peak_gain_pct >= min_gain_for_exit and current_price <= (peak_p * 0.9975) and net_profit >= min_net_floor)
-            is_breakeven_exit = ((curr_t >= t_final_hour and net_profit >= target_cash) or (peak_gain_pct >= 0.90 and profit_pct <= 0.40 and net_profit >= min_net_floor))
-            is_target_exit = (profit_pct >= target_gain_pct and net_profit >= target_cash)
-            is_reversal_exit = (profit_pct >= min_gain_for_exit and signal == 'sell' and net_profit >= min_net_floor)
-        else:
-            is_breakeven_exit = ((curr_t >= t_final_hour and net_profit >= target_cash) or (peak_gain_pct >= 1.1 and profit_pct <= 0.6 and net_profit >= min_net_floor))
-            is_trailing_exit = (peak_gain_pct >= min_gain_for_exit and current_price <= (peak_p * 0.996) and net_profit >= min_net_floor)
-            is_target_exit = (profit_pct >= target_gain_pct and net_profit >= target_cash)
-            is_reversal_exit = (profit_pct >= min_gain_for_exit and signal == 'sell' and net_profit >= min_net_floor)
+        # 🔒 2. Zero-Loss Breakeven Lock:
+        # Once price gained +0.60%, stop-loss is automatically moved to Breakeven (+0.18% to cover all broker fees)
+        is_breakeven_exit = False
+        if is_indian and peak_gain_pct >= 0.60 and profit_pct <= 0.18 and net_profit >= 15.0:
+            is_breakeven_exit = True
+            thoughts.append(f"🔒 [జీరో-లాస్ బ్రేక్‌ఈవెన్ లాక్]: {sym} +0.60% గెయిన్ తర్వాత రివర్స్ అయ్యింది. ఫీజులు కవర్ చేసి జీరో లాస్ తో ఎగ్జిట్ అయ్యాను.")
+
+        # 🎯 3. Take Profit Target: +1.20% to +1.50% (Net Cash: +₹200 to +₹350)
+        target_gain_pct = 1.25 if is_indian else (1.45 if is_scalp_style else 3.0)
+        min_net_cash = 150.0 if is_indian else cap_plan['min_net_floor']
+
+        is_target_exit = (profit_pct >= target_gain_pct and net_profit >= min_net_cash)
+        is_trailing_exit = (peak_gain_pct >= target_gain_pct and current_price <= (peak_p * 0.9965) and net_profit >= min_net_cash)
+        is_reversal_exit = (profit_pct >= 0.85 and signal == 'sell' and net_profit >= min_net_cash)
         
         if is_trailing_exit or is_target_exit or is_reversal_exit or is_breakeven_exit or is_eod_exit or is_stoploss_exit:
             profit = gross_profit
@@ -1483,19 +1599,39 @@ def process_symbol(sym):
             if sym in dca_state:
                 del dca_state[sym]
                 save_dca_state(dca_state)
-            action_taken = "SELL"
-            pos = None
+            return {
+                "symbol": sym,
+                "clean_name": clean_name,
+                "price": round(current_price, 2),
+                "signal": "SELL",
+                "thought": msg,
+                "strategy": strat_key,
+                "rsi": rsi_val,
+                "trend": htf_trend,
+                "action_taken": "SELL",
+                "has_position": False,
+                "pnl_pct": round(profit_pct, 2),
+                "avg_price": round(avg_price, 2),
+                "total_qty": 0.0,
+                "target_price": 0.0,
+                "peak_price": 0.0,
+                "invested": 0.0,
+                "dca_layer": 0,
+                "timestamp": get_ist_now().strftime('%H:%M:%S IST'),
+                "is_indian": is_indian
+            }
 
         # -------------------------------------------------------------
         # 2. PRO DCA ACCUMULATION ON DIPS (TURNING DIPS INTO BIG WINS)
         # -------------------------------------------------------------
         # In Spot trading, when price dips -1.5% to -2.0%, we average down!
         # Layer 1 = Initial buy, Layer 2 = at -1.5% dip, Layer 3 = at -3.0% dip
-        dca_layers = len(pos.get('entries', []))
+        dca_layers = len(pos.get('entries', [])) if pos else 0
         dip_needed = 0.985 if dca_layers == 1 else 0.970
         is_dca_dip = current_price <= (avg_price * dip_needed)
 
-        if dca_layers < 3 and is_dca_dip:
+        # STRICT RULE: Never average down on losing Indian intraday stocks!
+        if not is_indian and dca_layers < 3 and is_dca_dip:
             if is_indian and live_mode and HAS_ANGEL:
                 active_angel_pos = {k: v for k, v in dca_state.items() if ('.NS' in k or '.BO' in k)}
                 current_blocked_margin = sum(float(p.get('total_cost', 0.0)) / 5.0 for p in active_angel_pos.values())
@@ -1561,21 +1697,96 @@ def process_symbol(sym):
             if sym in dca_state:
                 del dca_state[sym]
                 save_dca_state(dca_state)
-            action_taken = "SELL"
-            pos = None
+            return {
+                "symbol": sym,
+                "clean_name": clean_name,
+                "price": round(current_price, 2),
+                "signal": "SELL",
+                "thought": msg,
+                "strategy": strat_key,
+                "rsi": rsi_val,
+                "trend": htf_trend,
+                "action_taken": "SELL",
+                "has_position": False,
+                "pnl_pct": round(profit_pct, 2),
+                "avg_price": round(avg_price, 2),
+                "total_qty": 0.0,
+                "target_price": 0.0,
+                "peak_price": 0.0,
+                "invested": 0.0,
+                "dca_layer": 0,
+                "timestamp": get_ist_now().strftime('%H:%M:%S IST'),
+                "is_indian": is_indian
+            }
 
     # -------------------------------------------------------------
     # 3. FIRST DIP ENTRY (INITIAL FRACTIONAL SLICE)
     # -------------------------------------------------------------
     elif pos is None and signal == 'buy':
-        # ⏰ ADAPTIVE TIME-OF-DAY FILTER (Indian Intraday Equities):
+        # ⏰ ADAPTIVE INSTITUTIONAL ENTRY FILTER (Indian Intraday Equities):
         is_afternoon_entry = False
         if is_indian:
             curr_t = now.time()
+            t_market_open = datetime.strptime("09:15", "%H:%M").time()
+            t_first_candle = datetime.strptime("09:20", "%H:%M").time()
             t_base_cutoff = datetime.strptime("13:30", "%H:%M").time()
-            t_hard_cutoff = datetime.strptime("14:20", "%H:%M").time()
+            t_hard_cutoff = datetime.strptime("14:15", "%H:%M").time()
 
-            # Extreme Crash Shield only (protects against sudden -500 pt Nifty flash crash):
+            # 1. ⏰ 09:15 - 09:20 AM Opening Noise Buffer:
+            if t_market_open <= curr_t < t_first_candle:
+                return {
+                    "symbol": sym, "clean_name": clean_name, "price": round(current_price, 2),
+                    "signal": "WAIT", "thought": "⏰ [9:15-9:20 AM OPENING BUFFER]: మార్కెట్ ఓపెనింగ్ మొదటి 5 నిమిషాల్లో ట్రాప్ క్యాండిల్స్, వైడ్ స్ప్రెడ్స్ ఉంటాయి. మార్నింగ్ వోలటాలిటీ సెటిల్ అయ్యేంత వరకు వేచి చూస్తున్నాను.",
+                    "strategy": "opening_buffer", "rsi": 50.0, "trend": "WAIT",
+                    "action_taken": "WAIT", "has_position": False, "pnl_pct": 0.0, "avg_price": 0.0,
+                    "total_qty": 0.0, "target_price": 0.0, "peak_price": 0.0, "invested": 0.0,
+                    "dca_layer": 0, "timestamp": get_ist_now().strftime('%H:%M:%S IST'), "is_indian": is_indian
+                }
+
+            # 2. 🛡️ DAILY PROFIT GOAL LOCK (+₹800) & LOSS CAP (-₹500):
+            today_net_pnl = get_today_realized_pnl(is_indian=True)
+            if today_net_pnl >= 800.0:
+                return {
+                    "symbol": sym, "clean_name": clean_name, "price": round(current_price, 2),
+                    "signal": "HOLD", "thought": f"🎉 [DAILY GOAL ACHIEVED]: ఈ రోజు టార్గెట్ (+₹{today_net_pnl:,.2f}) సాధించబడింది! సంపాదించిన లాభాలను కాపాడుకోవడానికి ఈ రోజు కొత్త ట్రేడ్స్ తీసుకోను.",
+                    "strategy": "daily_goal_lock", "rsi": 50.0, "trend": "LOCKED",
+                    "action_taken": "HOLD", "has_position": False, "pnl_pct": 0.0, "avg_price": 0.0,
+                    "total_qty": 0.0, "target_price": 0.0, "peak_price": 0.0, "invested": 0.0,
+                    "dca_layer": 0, "timestamp": get_ist_now().strftime('%H:%M:%S IST'), "is_indian": is_indian
+                }
+            if today_net_pnl <= -500.0:
+                return {
+                    "symbol": sym, "clean_name": clean_name, "price": round(current_price, 2),
+                    "signal": "HOLD", "thought": f"🛡️ [DAILY LOSS CAP]: నేటి మార్కెట్ బాగోలేదు (లాస్: ₹{today_net_pnl:,.2f}). క్యాపిటల్ ని కాపాడుకోవడానికి ఈ రోజు కొత్త ట్రేడింగ్ ఆపేశాను.",
+                    "strategy": "daily_loss_shield", "rsi": 50.0, "trend": "HALTED",
+                    "action_taken": "HOLD", "has_position": False, "pnl_pct": 0.0, "avg_price": 0.0,
+                    "total_qty": 0.0, "target_price": 0.0, "peak_price": 0.0, "invested": 0.0,
+                    "dca_layer": 0, "timestamp": get_ist_now().strftime('%H:%M:%S IST'), "is_indian": is_indian
+                }
+
+            # 3. ⏰ 02:15 PM AFTERNOON ENTRY CUTOFF:
+            if curr_t > t_hard_cutoff:
+                return {
+                    "symbol": sym, "clean_name": clean_name, "price": round(current_price, 2),
+                    "signal": "HOLD", "thought": "⏰ [AFTERNOON CUTOFF]: 02:15 PM దాటింది. 3:08 PM లోపు లాభాలతో ట్రేడ్స్ క్లోజ్ చేయాలి కాబట్టి కొత్త ఎంట్రీస్ ఆపేశాను.",
+                    "strategy": strat_used, "rsi": round(float(last['RSI']), 1), "trend": htf_status,
+                    "action_taken": "HOLD", "has_position": False, "pnl_pct": 0.0, "avg_price": 0.0,
+                    "total_qty": 0.0, "target_price": 0.0, "peak_price": 0.0, "invested": 0.0,
+                    "dca_layer": 0, "timestamp": get_ist_now().strftime('%H:%M:%S IST'), "is_indian": is_indian
+                }
+
+            # 4. 🔒 MANDATORY INSTITUTIONAL VWAP GATE:
+            if not pd.isna(last['VWAP']) and last['close'] < (last['VWAP'] * 0.999):
+                return {
+                    "symbol": sym, "clean_name": clean_name, "price": round(current_price, 2),
+                    "signal": "HOLD", "thought": "🔒 [VWAP SHIELD]: ప్రైస్ VWAP కింద ఉంది (ఇన్స్టిట్యూషనల్ సెల్లింగ్). స్ట్రిక్ట్ రూల్ ప్రకారం కొనడం లేదు.",
+                    "strategy": strat_used, "rsi": round(float(last['RSI']), 1), "trend": htf_status,
+                    "action_taken": "HOLD", "has_position": False, "pnl_pct": 0.0, "avg_price": 0.0,
+                    "total_qty": 0.0, "target_price": 0.0, "peak_price": 0.0, "invested": 0.0,
+                    "dca_layer": 0, "timestamp": get_ist_now().strftime('%H:%M:%S IST'), "is_indian": is_indian
+                }
+
+            # 5. 🛑 NIFTY MARKET CRASH SHIELD:
             n_status, n_thought = get_nifty_market_regime()
             if n_status == 'SEVERE_CRASH':
                 return {
@@ -1587,17 +1798,7 @@ def process_symbol(sym):
                     "dca_layer": 0, "timestamp": get_ist_now().strftime('%H:%M:%S IST'), "is_indian": is_indian
                 }
 
-            if curr_t > t_hard_cutoff:
-                return {
-                    "symbol": sym, "clean_name": clean_name, "price": round(current_price, 2),
-                    "signal": "HOLD", "thought": "⏰ [AFTERNOON CUTOFF]: 02:20 PM దాటింది. 3:08 PM లోపు లాభాలతో ట్రేడ్స్ క్లోజ్ చేయాలి కాబట్టి కొత్త ఎంట్రీస్ ఆపేశాను.",
-                    "strategy": strat_used, "rsi": round(float(last['RSI']), 1), "trend": htf_status,
-                    "action_taken": "HOLD", "has_position": False, "pnl_pct": 0.0, "avg_price": 0.0,
-                    "total_qty": 0.0, "target_price": 0.0, "peak_price": 0.0, "invested": 0.0,
-                    "dca_layer": 0, "timestamp": get_ist_now().strftime('%H:%M:%S IST'), "is_indian": is_indian
-                }
-
-            # Between 01:30 PM and 02:20 PM:
+            # Between 01:30 PM and 02:15 PM:
             if curr_t > t_base_cutoff:
                 is_market_bullish = (n_status in ('BULLISH', 'STABLE', 'NEUTRAL'))
                 is_pakka_profit = (
@@ -1617,7 +1818,7 @@ def process_symbol(sym):
                     }
                 is_afternoon_entry = True
 
-        max_positions = 8 if is_scalp_style else MAX_ACTIVE_POSITIONS
+        max_positions = 2 if is_indian else (8 if is_scalp_style else MAX_ACTIVE_POSITIONS)
         
         with order_placement_lock:
             fresh_dca = load_dca_state()
@@ -1626,7 +1827,7 @@ def process_symbol(sym):
                 if len(active_angel_pos) >= max_positions:
                     return {
                         "symbol": sym, "clean_name": clean_name, "price": round(current_price, 2),
-                        "signal": "HOLD", "thought": f"🔒 [MAX POSITION LIMIT]: ఇప్పటికే {len(active_angel_pos)} లైవ్ ట్రేడ్ యాక్టివ్ గా ఉంది. అదనపు రిస్క్ తీసుకోను.",
+                        "signal": "HOLD", "thought": f"🔒 [MAX 2 POSITIONS LIMIT]: ఇప్పటికే {len(active_angel_pos)}/2 లైవ్ ట్రేడ్స్ యాక్టివ్ గా ఉన్నాయి. ₹50,000 క్యాపిటల్ ని కాపాడుకోవడానికి అదనపు రిస్క్ తీసుకోను.",
                         "strategy": strat_used, "rsi": round(float(last['RSI']), 1), "trend": htf_status,
                         "action_taken": "HOLD", "has_position": False, "pnl_pct": 0.0, "avg_price": 0.0,
                         "total_qty": 0.0, "target_price": 0.0, "peak_price": 0.0, "invested": 0.0,
@@ -1640,6 +1841,15 @@ def process_symbol(sym):
             elif is_indian:
                 # 🎮 ANGEL_VIRTUAL / ZERODHA_PAPER: isolate Indian stock capital from crypto
                 active_stocks_pos = {k: v for k, v in fresh_dca.items() if ('.NS' in k or '.BO' in k)}
+                if len(active_stocks_pos) >= max_positions:
+                    return {
+                        "symbol": sym, "clean_name": clean_name, "price": round(current_price, 2),
+                        "signal": "HOLD", "thought": f"🔒 [MAX 2 POSITIONS LIMIT]: ఇప్పటికే {len(active_stocks_pos)}/2 ట్రేడ్స్ యాక్టివ్ గా ఉన్నాయి. ₹50,000 క్యాపిటల్ ని కాపాడుకోవడానికి అదనపు రిస్క్ తీసుకోను.",
+                        "strategy": strat_used, "rsi": round(float(last['RSI']), 1), "trend": htf_status,
+                        "action_taken": "HOLD", "has_position": False, "pnl_pct": 0.0, "avg_price": 0.0,
+                        "total_qty": 0.0, "target_price": 0.0, "peak_price": 0.0, "invested": 0.0,
+                        "dca_layer": 0, "timestamp": get_ist_now().strftime('%H:%M:%S IST'), "is_indian": is_indian
+                    }
                 can_enter = (len(active_stocks_pos) < max_positions)
                 current_invested = sum(p.get('total_cost', 0.0) for p in active_stocks_pos.values())
                 can_afford = (slice_qty > 0 and (current_invested + slice_cost_inr) <= portfolio_cap)
@@ -1744,6 +1954,14 @@ def run_bot_loop():
     while True:
         loop_count += 1
         try:
+            # ⏰ BULLETPROOF INTRADAY AUTO-SQUARE-OFF SWEEP:
+            # Auto-square off any lingering Indian stock intraday positions if past 15:15 IST or market closed
+            if loop_count == 1 or (loop_count % 10 == 0):
+                try:
+                    intraday_eod_squareoff_sweep()
+                except Exception as _e_sweep:
+                    pass
+
             # 🧠 AI Self-Preparing Profit Brain: Check pre-market homework & battle plan
             now_dt = get_ist_now()
             if loop_count == 1 or (loop_count % 30 == 0):
