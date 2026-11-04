@@ -91,9 +91,9 @@ class AngelOneEngine:
             "totp_secret": "MDXMIH4K46DYD77VFGFT4FO6YU"
         }
 
-    def login(self):
-        # Minimum 30s throttle on login attempts to avoid rate limits
-        if time.time() - self.last_login_attempt < 30:
+    def login(self, force=False):
+        # Minimum 30s throttle on login attempts unless forced
+        if not force and time.time() - self.last_login_attempt < 30:
             return False, "Login throttled to prevent rate limits"
         self.last_login_attempt = time.time()
 
@@ -105,6 +105,14 @@ class AngelOneEngine:
 
         if not (api_key and client_code and pin and totp_secret):
             return False, "Angel One credentials missing"
+
+        # Ensure cwd is writable so SmartConnect logger doesn't throw [Errno 30] Read-only file system
+        proj_dir = os.path.dirname(os.path.abspath(__file__))
+        try:
+            os.chdir(proj_dir)
+            os.makedirs(os.path.join(proj_dir, "logs"), exist_ok=True)
+        except Exception:
+            pass
 
         try:
             client = SmartConnect(api_key=api_key)
@@ -123,15 +131,18 @@ class AngelOneEngine:
         except Exception as e:
             return False, str(e)
 
-    def ensure_session(self):
+    def ensure_session(self, force=False):
         with self._lock:
-            # Re-login only if no session or older than 12 hours (43200s)
-            if self.smart_api and self.session_data and (time.time() - self.last_login_time < 43200):
+            # Re-login only if forced or no session or older than 4 hours (14400s)
+            if not force and self.smart_api and self.session_data and (time.time() - self.last_login_time < 14400):
                 return True
-            success, msg = self.login()
+            if force:
+                self.smart_api = None
+                self.session_data = None
+            success, msg = self.login(force=force)
             if not success:
-                # If we already had an active session, keep using it rather than failing
-                if self.smart_api and self.session_data:
+                # If we already had an active session and it wasn't forced, keep using it
+                if not force and self.smart_api and self.session_data:
                     return True
                 print(f"⚠️ Angel One Auto-Login Warning: {msg}", flush=True)
                 return False
@@ -142,26 +153,52 @@ class AngelOneEngine:
         if not force_refresh and (time.time() - self.last_cash_time < 60) and self.cached_cash > 0:
             return self.cached_cash
 
+        # Throttle repeated calls even on failure to avoid rate limit loops
+        if not force_refresh and (time.time() - self.last_cash_time < 30):
+            return self.cached_cash if self.cached_cash > 0 else 50000.0
+
         if not self.ensure_session():
-            return self.cached_cash if self.cached_cash > 0 else 300.0
+            self.last_cash_time = time.time()
+            return self.cached_cash if self.cached_cash > 0 else 50000.0
 
         with self._lock:
             # Re-check cache inside lock
             if not force_refresh and (time.time() - self.last_cash_time < 60) and self.cached_cash > 0:
                 return self.cached_cash
 
+            self.last_cash_time = time.time()  # Recorded immediately to prevent runaway spam
+
             try:
                 rms = self.smart_api.rmsLimit()
+
+                # Check for Invalid Token (AG8001)
+                is_invalid_token = False
+                if isinstance(rms, dict):
+                    err_code = str(rms.get('errorCode', ''))
+                    err_msg = str(rms.get('message', '')).lower()
+                    if err_code == 'AG8001' or 'invalid token' in err_msg or rms.get('status') is False:
+                        if 'invalid token' in err_msg or err_code == 'AG8001':
+                            is_invalid_token = True
+
+                if is_invalid_token:
+                    print("🔄 Angel One JWT Token Expired (AG8001). Regenerating session with TOTP...", flush=True)
+                    if self.ensure_session(force=True):
+                        rms = self.smart_api.rmsLimit()
+
                 if rms and isinstance(rms, dict) and rms.get('status') and 'data' in rms:
                     cash_val = float(rms['data'].get('availablecash', 0.0))
                     if cash_val > 0:
                         self.cached_cash = cash_val
-                        self.last_cash_time = time.time()
                         return self.cached_cash
             except Exception as e:
-                # Graceful fallback to cached cash on any transient rate limit
-                pass
-        return self.cached_cash if self.cached_cash > 0 else 300.0
+                err_str = str(e).lower()
+                if 'invalid token' in err_str or 'ag8001' in err_str:
+                    print("🔄 Angel One Token Exception. Regenerating session with TOTP...", flush=True)
+                    try:
+                        self.ensure_session(force=True)
+                    except Exception:
+                        pass
+        return self.cached_cash if self.cached_cash > 0 else 50000.0
 
     def execute_order(self, action, nse_symbol, quantity, product_type="INTRADAY"):
         """
@@ -198,6 +235,20 @@ class AngelOneEngine:
             try:
                 print(f"🚀 Placing Angel One {action} order: {quantity} shares of {tradingsymbol} ({product_type})...", flush=True)
                 order_res = self.smart_api.placeOrderFullResponse(order_params)
+
+                # Check if token expired during order placement
+                is_invalid_token = False
+                if isinstance(order_res, dict):
+                    err_code = str(order_res.get('errorCode', ''))
+                    err_msg = str(order_res.get('message', '')).lower()
+                    if err_code == 'AG8001' or 'invalid token' in err_msg:
+                        is_invalid_token = True
+
+                if is_invalid_token:
+                    print("🔄 Angel One Token Expired during order placement. Re-authenticating with TOTP...", flush=True)
+                    if self.ensure_session(force=True):
+                        order_res = self.smart_api.placeOrderFullResponse(order_params)
+
                 if order_res and isinstance(order_res, dict) and order_res.get('status'):
                     order_id = order_res.get('data', {}).get('orderid', 'SUCCESS')
                     print(f"✅ Angel One {action} Executed Successfully! Order ID: {order_id}", flush=True)

@@ -768,10 +768,15 @@ except Exception:
 
 angel_live_cash = 0.0
 try:
-    import angel_helper
-    angel_live_cash = angel_helper.angel_engine.get_available_cash()
+    if clean_mode_str == "ANGEL_LIVE":
+        import angel_helper
+        angel_live_cash = angel_helper.angel_engine.get_available_cash()
+    elif clean_mode_str == "ANGEL_VIRTUAL":
+        angel_live_cash = 50000.0
+    else:
+        angel_live_cash = 50000.0
 except Exception:
-    pass
+    angel_live_cash = 50000.0
 
 live_usdt_balance = 0.0
 try:
@@ -804,6 +809,10 @@ if is_angel_live:
         st.sidebar.warning("⚡ Real Indian Stock orders will execute on NSE with live funds.")
     else:
         st.sidebar.info("💡 Deposit funds via PhonePe / GPay into Angel One to begin executing live orders.")
+elif is_angel_virtual:
+    st.sidebar.success("🇮🇳🎮 **Angel One Virtual Simulator Active!**")
+    st.sidebar.markdown(f"**💰 Practice Capital:** `₹50,000.00`")
+    st.sidebar.info("Risk-free virtual paper trading with live NSE prices matching Angel One 5x MIS margin rules.")
 elif is_dual_mode:
     st.sidebar.success("🌐🇮🇳 **Dual Trading Active!**")
     st.sidebar.info("🚀 24/7 Crypto Spot and Indian NSE Stocks running concurrently.")
@@ -821,10 +830,6 @@ else:
             trading_mode = "📝 Paper Trading (Crypto - Binance Virtual)"
     else:
         st.sidebar.info("Crypto Virtual Practice Mode is active. No real funds are at risk.")
-
-# Save mode to file for binance_bot.py to read
-with open('trading_mode.txt', 'w') as f:
-    f.write(trading_mode)
 
 
 import json
