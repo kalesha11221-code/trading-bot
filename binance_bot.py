@@ -1184,6 +1184,39 @@ def calculate_trade_charges(sym, buy_value, sell_value):
         return round((buy_value + sell_value) * 0.001, 2)
 
 
+def get_capital_profit_target_plan(capital, is_indian=True):
+    """
+    🧠 CAPITAL-DRIVEN QUANTITATIVE AI PROFIT BRAIN:
+    Derives profit benchmarks dynamically based on total capital:
+    - Capital ₹50,000  -> Trade size: ₹16,500 | Net Cash/trade: ₹200 - ₹300 | Daily Goal: ₹750 - ₹1,000
+    - Capital ₹1,00,000 -> Trade size: ₹33,000 | Net Cash/trade: ₹400 - ₹600 | Daily Goal: ₹1,500 - ₹2,000
+    - Capital ₹10,000  -> Trade size: ₹3,300  | Net Cash/trade: ₹45 - ₹70   | Daily Goal: ₹150 - ₹200
+    """
+    cap = max(1000.0, float(capital))
+    if is_indian:
+        # Intraday Equity: Allocate ~33% of capital per high-conviction trade
+        trade_budget = round(cap * 0.33, 2)
+        # Expected net cash in pocket per trade (after ALL broker charges & taxes):
+        # 0.45% of total capital (e.g. ₹225 on ₹50k)
+        target_net_cash = round(cap * 0.0045, 2)
+        # Minimum acceptable net profit (never exit for micro-peanuts under 0.25% capital):
+        min_net_floor = max(35.0, round(cap * 0.0025, 2))
+        # Daily goal: 1.5% to 2.0% daily return
+        daily_goal = round(cap * 0.015, 2)
+    else:
+        trade_budget = round(cap * 0.20, 2)
+        target_net_cash = max(3.0, round(cap * 0.004, 2))
+        min_net_floor = max(1.5, round(cap * 0.002, 2))
+        daily_goal = round(cap * 0.015, 2)
+        
+    return {
+        'trade_budget': trade_budget,
+        'target_net_cash': target_net_cash,
+        'min_net_floor': min_net_floor,
+        'daily_goal': daily_goal
+    }
+
+
 def process_symbol(sym):
     now = get_ist_now()
     is_crypto = sym.endswith("-USD")
@@ -1311,28 +1344,14 @@ def process_symbol(sym):
             slice_cost_usd = round(slice_cost_inr / 84.5, 2)
         else:
             mode_str = "🇮🇳🎮 ANGEL ONE VIRTUAL (₹ Practice)" if get_current_trading_mode() == "ANGEL_VIRTUAL" else "🇮🇳 ZERODHA VIRTUAL"
-            if cap_mode == "High Profit" or is_scalp_style:
-                portfolio_cap = 50000.0  # ₹50,000 active capital (Velocity Multi-Asset Scalper)
-                if current_price > 2500:
-                    slice_qty = 2.0   # 2 shares for Reliance/TCS (~₹5,000-₹6,000) -> Fast rotation
-                elif current_price > 700:
-                    slice_qty = 7.0   # 7 shares for TMCV, SBI, Infosys, HDFC Bank (~₹5,000-₹6,000)
-                elif current_price > 100:
-                    slice_qty = 20.0  # 20 shares for ITC, Zomato/Eternal (~₹5,000-₹5,500)
-                else:
-                    slice_qty = 75.0  # 75 shares for Suzlon (~₹5,000)
-            elif cap_mode == "Smart Dynamic":
-                portfolio_cap = 50000.0
-                if current_price > 2500: slice_qty = 2.0
-                elif current_price > 700: slice_qty = 6.0
-                elif current_price > 100: slice_qty = 20.0
-                else: slice_qty = 75.0
-            else: # Micro Safe
-                portfolio_cap = 50000.0
-                if current_price > 2500: slice_qty = 1.0
-                elif current_price > 700: slice_qty = 3.0
-                elif current_price > 100: slice_qty = 10.0
-                else: slice_qty = 25.0
+            portfolio_cap = 50000.0
+            # 🧠 Capital-Driven Allocation: Dynamic trade budget scaled to portfolio capital
+            cap_plan = get_capital_profit_target_plan(portfolio_cap, is_indian=True)
+            trade_budget = cap_plan['trade_budget'] # ~₹16,500 on ₹50,000 capital (33%)
+            if current_price > 0 and trade_budget >= current_price:
+                slice_qty = float(max(1, int(trade_budget // current_price)))
+            else:
+                slice_qty = 1.0
             slice_cost_inr = round(slice_qty * current_price, 2)
             slice_cost_usd = round(slice_cost_inr / 84.5, 2)
     else:
@@ -1390,23 +1409,29 @@ def process_symbol(sym):
             is_eod_exit = True
             thoughts.append("⏰ [3:08 PM EOD SHIELD]: 3:15 PM RMS ఆటో-స్క్వేర్ ఆఫ్ పెనాల్టీలు పడకుండా, రాత్రికి స్టాక్స్ ఇరుక్కుపోకుండా బాట్ స్వయంగా క్లీన్ గా ఎగ్జిట్ చేసింది.")
 
-        # 🧠 2. DYNAMIC TIME-DECAY TARGET (Self-Thinking Profit Optimization):
-        # Morning (before 1:00 PM): Aim for strong momentum (+1.35%)
-        # Afternoon (1:00 PM - 2:30 PM): Target compresses to +0.65% (lock green profits before session ends)
-        # Final Hour (after 2:30 PM): Fee-safe exit (take any green profit covering charges + buffer)
+        # 🧠 CAPITAL-DRIVEN QUANTITATIVE PROFIT BRAIN:
+        # Dynamically scales rupee profit targets directly from capital size:
+        cap_plan = get_capital_profit_target_plan(portfolio_cap, is_indian=is_indian)
+        desired_net_cash = cap_plan['target_net_cash']  # e.g. ₹225 net cash on ₹50k capital
+        min_net_floor = cap_plan['min_net_floor']        # e.g. ₹125 net cash minimum floor
+
         if is_indian:
             if curr_t >= t_final_hour:
                 target_gain_pct = 0.35
                 min_gain_for_exit = 0.30
+                target_cash = max(35.0, round(min_net_floor * 0.4, 2))
             elif curr_t >= t_afternoon:
                 target_gain_pct = 0.65
                 min_gain_for_exit = 0.55
+                target_cash = max(75.0, round(desired_net_cash * 0.65, 2))
             else:
                 target_gain_pct = 1.35
                 min_gain_for_exit = 1.10
+                target_cash = desired_net_cash  # Full target cash (₹200 - ₹300)
         else:
             target_gain_pct = 1.45 if is_scalp_style else 3.0
             min_gain_for_exit = 0.90
+            target_cash = cap_plan['target_net_cash']
 
         # 🛑 PROFIT-ONLY POLICY WITH EMERGENCY DEEP SHIELD:
         # Never sell on minor dips. Cut loss only on deep -2.5% market crash to protect capital:
@@ -1416,16 +1441,17 @@ def process_symbol(sym):
             thoughts.append(f"🛑 [ఎమర్జెన్సీ సేఫ్టీ షీల్డ్]: {sym} -2.50% డీప్ ఫాల్ లో క్యాపిటల్ రక్షణ కోసం ఎగ్జిట్ అయ్యాను.")
 
         if is_scalp_style:
-            # ⚡ AUTONOMOUS TRAILING PROFIT ENGINE (Unlimited Upside + Fee-Safe Floor):
-            is_trailing_exit = (peak_gain_pct >= min_gain_for_exit and current_price <= (peak_p * 0.9975) and net_profit > 0)
-            is_breakeven_exit = ((curr_t >= t_final_hour and net_profit > 0) or (peak_gain_pct >= 0.90 and profit_pct <= 0.40 and net_profit > 0))
-            is_target_exit = (profit_pct >= target_gain_pct and net_profit > 0)
-            is_reversal_exit = (profit_pct >= min_gain_for_exit and signal == 'sell' and net_profit > 0)
+            # ⚡ AUTONOMOUS CAPITAL-LINKED PROFIT ENGINE:
+            # Guarantees BOTH % move AND exact rupee cash target in hand (after ALL fees/taxes):
+            is_trailing_exit = (peak_gain_pct >= min_gain_for_exit and current_price <= (peak_p * 0.9975) and net_profit >= min_net_floor)
+            is_breakeven_exit = ((curr_t >= t_final_hour and net_profit >= target_cash) or (peak_gain_pct >= 0.90 and profit_pct <= 0.40 and net_profit >= min_net_floor))
+            is_target_exit = (profit_pct >= target_gain_pct and net_profit >= target_cash)
+            is_reversal_exit = (profit_pct >= min_gain_for_exit and signal == 'sell' and net_profit >= min_net_floor)
         else:
-            is_breakeven_exit = ((curr_t >= t_final_hour and net_profit > 0) or (peak_gain_pct >= 1.1 and profit_pct <= 0.6 and net_profit > 0))
-            is_trailing_exit = (peak_gain_pct >= min_gain_for_exit and current_price <= (peak_p * 0.996) and net_profit > 0)
-            is_target_exit = (profit_pct >= target_gain_pct and net_profit > 0)
-            is_reversal_exit = (profit_pct >= min_gain_for_exit and signal == 'sell' and net_profit > 0)
+            is_breakeven_exit = ((curr_t >= t_final_hour and net_profit >= target_cash) or (peak_gain_pct >= 1.1 and profit_pct <= 0.6 and net_profit >= min_net_floor))
+            is_trailing_exit = (peak_gain_pct >= min_gain_for_exit and current_price <= (peak_p * 0.996) and net_profit >= min_net_floor)
+            is_target_exit = (profit_pct >= target_gain_pct and net_profit >= target_cash)
+            is_reversal_exit = (profit_pct >= min_gain_for_exit and signal == 'sell' and net_profit >= min_net_floor)
         
         if is_trailing_exit or is_target_exit or is_reversal_exit or is_breakeven_exit or is_eod_exit or is_stoploss_exit:
             profit = gross_profit
