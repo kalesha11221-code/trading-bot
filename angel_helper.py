@@ -263,5 +263,72 @@ class AngelOneEngine:
             except Exception as e:
                 return False, str(e)
 
+    def get_live_ltp(self, nse_symbol):
+        """
+        Fetches official NSE real-time Last Traded Price (0-second delay) directly from Angel One SmartAPI.
+        """
+        if not self.ensure_session():
+            return None
+        clean_sym = nse_symbol.replace('.NS', '').replace('.BO', '').upper()
+        tradingsymbol = f"{clean_sym}-EQ"
+        token_info = self.tokens_map.get(tradingsymbol)
+        if not token_info:
+            return None
+        symbol_token = str(token_info.get('token'))
+        try:
+            res = self.smart_api.ltpData('NSE', tradingsymbol, symbol_token)
+            if res and isinstance(res, dict) and res.get('status') and 'data' in res:
+                ltp = float(res['data'].get('ltp', 0.0))
+                if ltp > 0:
+                    return ltp
+        except Exception:
+            pass
+        return None
+
+    def get_live_candles(self, nse_symbol, interval='FIVE_MINUTE'):
+        """
+        Fetches official NSE historical/live candles from Angel One SmartAPI (0-second delay).
+        """
+        import pandas as pd
+        from datetime import datetime, timedelta
+        if not self.ensure_session():
+            return None
+        clean_sym = nse_symbol.replace('.NS', '').replace('.BO', '').upper()
+        tradingsymbol = f"{clean_sym}-EQ"
+        token_info = self.tokens_map.get(tradingsymbol)
+        if not token_info:
+            return None
+        symbol_token = str(token_info.get('token'))
+        now = datetime.now()
+        from_d = (now - timedelta(days=5)).strftime('%Y-%m-%d 09:15')
+        to_d = now.strftime('%Y-%m-%d %H:%M')
+        try:
+            params = {
+                'exchange': 'NSE',
+                'symboltoken': symbol_token,
+                'interval': interval,
+                'fromdate': from_d,
+                'todate': to_d
+            }
+            res = self.smart_api.getCandleData(params)
+            if res and isinstance(res, dict) and res.get('status') and 'data' in res:
+                rows = []
+                for c in res['data']:
+                    rows.append({
+                        'timestamp': pd.to_datetime(c[0]),
+                        'open': float(c[1]),
+                        'high': float(c[2]),
+                        'low': float(c[3]),
+                        'close': float(c[4]),
+                        'volume': float(c[5])
+                    })
+                if rows:
+                    df = pd.DataFrame(rows)
+                    if not df.empty:
+                        return df
+        except Exception:
+            pass
+        return None
+
 # Singleton Instance
 angel_engine = AngelOneEngine()

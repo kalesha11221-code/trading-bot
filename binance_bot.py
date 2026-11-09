@@ -468,7 +468,16 @@ def fetch_data(sym):
         except Exception:
             pass
 
-    # 2. Direct Yahoo v8 Chart API (Bypasses crumb requirement on Cloud IP addresses)
+    # 2. Official Angel One SmartAPI Gateway for Indian Equities (0-second NSE Real-time feed)
+    if (sym.endswith('.NS') or sym.endswith('.BO')) and HAS_ANGEL:
+        try:
+            angel_df = angel_helper.angel_engine.get_live_candles(sym, interval='FIVE_MINUTE')
+            if angel_df is not None and not angel_df.empty and len(angel_df) >= 10:
+                return angel_df
+        except Exception:
+            pass
+
+    # 3. Direct Yahoo v8 Chart API (Bypasses crumb requirement on Cloud IP addresses)
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         'Accept': 'application/json'
@@ -1421,6 +1430,14 @@ def process_symbol(sym):
             strat_used = 'rsi_vwap_confluence'
 
         current_price = df.iloc[-1]['close']
+        # ⚡ Real-Time Official NSE Price Feed (0-second delay from Angel One Gateway)
+        if is_indian and HAS_ANGEL:
+            try:
+                real_ltp = angel_helper.angel_engine.get_live_ltp(sym)
+                if real_ltp and real_ltp > 0:
+                    current_price = real_ltp
+            except Exception:
+                pass
         last = df.iloc[-1]
         rsi_val = float(last['RSI']) if 'RSI' in last and not pd.isna(last['RSI']) else 50.0
         ema_200 = float(last['EMA_200']) if 'EMA_200' in last and not pd.isna(last['EMA_200']) else current_price
