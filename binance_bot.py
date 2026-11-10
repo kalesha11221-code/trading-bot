@@ -45,6 +45,9 @@ def analyze_pattern_future(df):
 
 
 import os
+import json
+import urllib.request
+from urllib.request import Request, urlopen
 import db_helper
 try:
     import angel_helper
@@ -1399,6 +1402,8 @@ def process_symbol(sym):
             last = pd.Series({'RSI': 50.0, 'EMA_200': current_price, 'close': current_price})
             signal, thought, strat_used = 'sell', '⏰ [INTRADAY EOD AUTO-SQUAREOFF]: మార్కెట్ ముగిసింది. పొజిషన్ క్లీన్ గా ఎగ్జిట్ అయ్యాను.', 'eod_auto_squareoff'
             rsi_val, ema_200, htf_trend = 50.0, current_price, "NEUTRAL"
+            htf_status = "NEUTRAL"
+            thoughts = [thought]
         else:
             return {
                 "symbol": sym,
@@ -1442,6 +1447,14 @@ def process_symbol(sym):
         rsi_val = float(last['RSI']) if 'RSI' in last and not pd.isna(last['RSI']) else 50.0
         ema_200 = float(last['EMA_200']) if 'EMA_200' in last and not pd.isna(last['EMA_200']) else current_price
         htf_trend = "BULLISH" if current_price >= ema_200 else "BEARISH"
+        htf_status = htf_trend
+        try:
+            _htf_stat, _, _ = get_htf_trend(df)
+            if _htf_stat:
+                htf_status = _htf_stat
+        except Exception:
+            pass
+        thoughts = [thought] if thought else []
     
     # Capital Sizing Engine & Trading Style (High Profit vs Dynamic vs Micro Safe)
     cap_mode = "High Profit"
@@ -1589,6 +1602,8 @@ def process_symbol(sym):
         if is_trailing_exit or is_target_exit or is_reversal_exit or is_breakeven_exit or is_eod_exit or is_stoploss_exit:
             profit = gross_profit
             last_exit_times[sym] = time.time()
+            if thoughts:
+                thought = " | ".join(thoughts)
             
             # Execute real order if in Live Mode on Binance or Angel One
             if live_mode:
