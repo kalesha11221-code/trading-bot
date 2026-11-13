@@ -2770,47 +2770,60 @@ with tab_orders:
         st.subheader("📋 Angel One Order Book & Settlement Statement")
         st.caption("Official Angel One SmartAPI trade ledger, brokerage breakdown, and regulatory settlement statement:")
 
-        # ─── ANGEL ONE OFFICIAL CONTRACT NOTE BREAKDOWN ───
-        st.markdown("""
-<div style="background: linear-gradient(135deg, #131722 0%, #1e222d 100%);
-            border: 1.5px solid #00c853; border-radius: 12px; padding: 18px 22px; margin-bottom: 20px;">
-  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
-    <span style="font-size:16px; font-weight:800; color:#00e676;">🏛️ Angel One Contract Note Breakdown (BEL MIS Intraday)</span>
-    <span style="background:rgba(0,200,83,0.15); color:#00e676; border:1px solid #00c853; padding:4px 12px; border-radius:16px; font-size:12px; font-weight:700;">SETTLED</span>
-  </div>
-  <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; font-size:13px;">
-    <div style="background:#0d1117; padding:10px 14px; border-radius:8px; border:1px solid #2a2e39;">
-      <span style="color:#8892b0;">Account:</span><br><b style="color:#fff;">SHAIK KALESHA (AABZ864543)</b>
-    </div>
-    <div style="background:#0d1117; padding:10px 14px; border-radius:8px; border:1px solid #2a2e39;">
-      <span style="color:#8892b0;">Intraday Equity P&L:</span><br><b style="color:#ff5252;">-₹5.70</b> (3 qty @ ₹358.75 ➔ ₹356.85)
-    </div>
-    <div style="background:#0d1117; padding:10px 14px; border-radius:8px; border:1px solid #2a2e39;">
-      <span style="color:#8892b0;">Brokerage & Taxes:</span><br><b style="color:#ffa726;">-₹11.88</b> (Brokerage, STT, GST, SEBI)
-    </div>
-    <div style="background:#0d1117; padding:10px 14px; border-radius:8px; border:1px solid #2a2e39;">
-      <span style="color:#8892b0;">Net Settlement Deducted:</span><br><b style="color:#ff5252;">-₹17.58</b> (P&L + Charges)
-    </div>
-    <div style="background:#0d1117; padding:10px 14px; border-radius:8px; border:1px solid #00c853;">
-      <span style="color:#8892b0;">Live Available Balance:</span><br><b style="color:#00e676;">₹282.42</b> (Verified from RMS)
-    </div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-
         col_s1, col_s2 = st.columns([3, 1])
         with col_s1:
-            st.markdown("#### 🇮🇳 Angel One Executed Orders Log")
+            st.markdown("#### 🇮🇳 Angel One Executed Orders & Settlement Ledger")
         with col_s2:
             if st.button("🔄 Refresh Orders", key="btn_ref_angel_orders", use_container_width=True):
+                try:
+                    db_helper.sync_cloud_to_local(is_futures=False)
+                except Exception:
+                    pass
                 st.rerun()
 
         df_perf = db_helper.get_trade_history_df(is_futures=False)
+        if (df_perf.empty or len(df_perf) <= 10) and os.path.exists('trades_log.csv'):
+            try:
+                csv_df = pd.read_csv('trades_log.csv')
+                if len(csv_df) > len(df_perf):
+                    df_perf = csv_df
+            except Exception:
+                pass
+
         df_perf_valid = pd.DataFrame()
-        if not df_perf.empty:
+        if not df_perf.empty and 'Symbol' in df_perf.columns:
             df_perf_valid = df_perf[df_perf['Symbol'].astype(str).str.endswith(('.NS', '.BO'))].copy()
 
         if not df_perf_valid.empty:
+            # Calculate dynamic performance metrics
+            sells_valid = df_perf_valid[df_perf_valid['Action'].astype(str).str.upper() == 'SELL']
+            total_sell_cnt = len(sells_valid)
+            tot_gross = 0.0
+            tot_net = 0.0
+            win_cnt = 0
+            for idx, r in sells_valid.iterrows():
+                try:
+                    p = float(str(r.get('Profit', '0.0')).replace('₹', '').replace(',', '').strip() or 0.0)
+                    tot_gross += p
+                    c_charge = 15.0
+                    tot_net += (p - c_charge)
+                    if p > 0: win_cnt += 1
+                except: pass
+
+            win_rate_val = round((win_cnt / total_sell_cnt * 100.0), 1) if total_sell_cnt > 0 else 0.0
+
+            m1, m2, m3, m4 = st.columns(4)
+            with m1:
+                st.metric("📦 Total Orders", f"{len(df_perf_valid)} Orders", f"{total_sell_cnt} Closed")
+            with m2:
+                p_col = "normal" if tot_gross >= 0 else "inverse"
+                st.metric("💰 Gross Realized P&L", f"₹{tot_gross:+,.2f}", f"₹{tot_net:+,.2f} Net", delta_color=p_col)
+            with m3:
+                st.metric("🎯 Win Rate", f"{win_rate_val:.1f}%", f"{win_cnt}/{total_sell_cnt} Wins")
+            with m4:
+                st.metric("⚡ Active Broker Mode", "Angel One Virtual", "₹50,000 Practice")
+
+            st.markdown("---")
             enriched_spot = []
             for idx, r in df_perf_valid.iterrows():
                 pr = float(r.get('Price', 0))

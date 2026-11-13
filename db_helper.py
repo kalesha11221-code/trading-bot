@@ -2,6 +2,7 @@ import os
 import json
 import csv
 import io
+import time
 import pandas as pd
 from datetime import datetime, timezone, timedelta
 
@@ -32,16 +33,17 @@ except Exception:
 
 _client = None
 _db = None
-_connection_attempted = False
+_last_connection_attempt = 0
 
 def get_mongo_db():
-    global _client, _db, _connection_attempted
+    global _client, _db, _last_connection_attempt
     if _db is not None:
         return _db
-    if _connection_attempted:
+    now_ts = time.time()
+    if _last_connection_attempt and (now_ts - _last_connection_attempt < 10):
         return None
         
-    _connection_attempted = True
+    _last_connection_attempt = now_ts
     if not (MONGO_URI and HAS_PYMONGO):
         print("ℹ️ pymongo not available or MONGO_URI missing. Using local fallback mode.", flush=True)
         return None
