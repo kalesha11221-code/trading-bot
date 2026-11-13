@@ -1,8 +1,9 @@
 {
-    "risk_level": "Safe (Low Risk)",
-    "trading_style": "Swing (Hold for Targets)",
-    "capital_mode": "Smart Dynamic",
+    "risk_level": "Sniper Precision",
+    "trading_style": "Morning Momentum Breakout",
+    "capital_mode": "10k High Profit",
     "panic_mode": false,
-    "daily_target_inr": 1500,
-    "daily_target_usd": 18.0
+    "user_capital_inr": 10000,
+    "daily_target_inr": 1000,
+    "daily_target_usd": 12.0
 }
