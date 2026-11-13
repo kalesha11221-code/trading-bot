@@ -10,6 +10,7 @@ streamlit-mic-recorder
 google-genai
 google-generativeai
 pymongo==4.6.1
+dnspython
 certifi
 scikit-learn
 smartapi-python
