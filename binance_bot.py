@@ -1196,29 +1196,38 @@ def calculate_trade_charges(sym, buy_value, sell_value):
         return round((buy_value + sell_value) * 0.001, 2)
 
 
-def get_today_realized_pnl(is_indian=True):
+def get_today_trade_stats(is_indian=True):
     """
-    Computes today's net booked PnL for Indian stocks from trades_log in real time.
+    Computes today's net booked PnL and trade count for Indian stocks from trades_log in real time.
     """
     try:
         today_str = get_ist_now().strftime('%Y-%m-%d')
         df = db_helper.get_trade_history_df(is_futures=False)
         if df.empty or 'Time' not in df.columns or 'Action' not in df.columns:
-            return 0.0
+            return 0.0, 0
         sells = df[(df['Action'] == 'SELL') & (df['Time'].str.startswith(today_str))]
         if sells.empty:
-            return 0.0
+            return 0.0, 0
         
         tot_net = 0.0
+        cnt = 0
         for _, row in sells.iterrows():
             sym = str(row.get('Symbol', ''))
             if is_indian and not (sym.endswith('.NS') or sym.endswith('.BO')):
                 continue
             p_val = float(str(row.get('Profit', '0.0')).replace('₹', '').replace(',', '').strip() or 0.0)
             tot_net += p_val
-        return round(tot_net, 2)
+            cnt += 1
+        return round(tot_net, 2), cnt
     except Exception:
-        return 0.0
+        return 0.0, 0
+
+
+def get_today_realized_pnl(is_indian=True):
+    """
+    Computes today's net booked PnL for Indian stocks from trades_log in real time.
+    """
+    return get_today_trade_stats(is_indian=is_indian)[0]
 
 
 def get_capital_profit_target_plan(capital, is_indian=True):
@@ -1761,8 +1770,8 @@ def process_symbol(sym):
             curr_t = now.time()
             t_market_open = datetime.strptime("09:15", "%H:%M").time()
             t_first_candle = datetime.strptime("09:20", "%H:%M").time()
-            t_base_cutoff = datetime.strptime("13:30", "%H:%M").time()
-            t_hard_cutoff = datetime.strptime("14:15", "%H:%M").time()
+            t_base_cutoff = datetime.strptime("11:15", "%H:%M").time()
+            t_hard_cutoff = datetime.strptime("11:45", "%H:%M").time()
 
             # 1. ⏰ 09:15 - 09:20 AM Opening Noise Buffer:
             if t_market_open <= curr_t < t_first_candle:
@@ -1775,8 +1784,8 @@ def process_symbol(sym):
                     "dca_layer": 0, "timestamp": get_ist_now().strftime('%H:%M:%S IST'), "is_indian": is_indian
                 }
 
-            # 2. 🛡️ DAILY PROFIT GOAL LOCK (+₹800) & LOSS CAP (-₹500):
-            today_net_pnl = get_today_realized_pnl(is_indian=True)
+            # 2. 🛡️ DAILY PROFIT GOAL LOCK (+₹800) & LOSS CAP (-₹500) & MAX 3 SNIPER TRADES:
+            today_net_pnl, today_trades_cnt = get_today_trade_stats(is_indian=True)
             if today_net_pnl >= 800.0:
                 return {
                     "symbol": sym, "clean_name": clean_name, "price": round(current_price, 2),
@@ -1795,13 +1804,22 @@ def process_symbol(sym):
                     "total_qty": 0.0, "target_price": 0.0, "peak_price": 0.0, "invested": 0.0,
                     "dca_layer": 0, "timestamp": get_ist_now().strftime('%H:%M:%S IST'), "is_indian": is_indian
                 }
+            if today_trades_cnt >= 3 and today_net_pnl > 0:
+                return {
+                    "symbol": sym, "clean_name": clean_name, "price": round(current_price, 2),
+                    "signal": "HOLD", "thought": f"🎯 [SNIPER PROFIT LOCK]: నేటికి 3 క్వాలిటీ ట్రేడ్స్ పూర్తయ్యాయి (+₹{today_net_pnl:,.2f} నికర లాభం). ఆక్యురసీని కాపాడుకోవడానికి ఓవర్-ట్రేడింగ్ చేయకుండా ట్రేడింగ్ ముగించాను.",
+                    "strategy": "daily_goal_lock", "rsi": 50.0, "trend": "LOCKED",
+                    "action_taken": "HOLD", "has_position": False, "pnl_pct": 0.0, "avg_price": 0.0,
+                    "total_qty": 0.0, "target_price": 0.0, "peak_price": 0.0, "invested": 0.0,
+                    "dca_layer": 0, "timestamp": get_ist_now().strftime('%H:%M:%S IST'), "is_indian": is_indian
+                }
 
-            # 3. ⏰ 02:15 PM AFTERNOON ENTRY CUTOFF:
+            # 3. ⏰ 11:45 AM GOLDEN SNIPER WINDOW CUTOFF:
             if curr_t > t_hard_cutoff:
                 return {
                     "symbol": sym, "clean_name": clean_name, "price": round(current_price, 2),
-                    "signal": "HOLD", "thought": "⏰ [AFTERNOON CUTOFF]: 02:15 PM దాటింది. 3:08 PM లోపు లాభాలతో ట్రేడ్స్ క్లోజ్ చేయాలి కాబట్టి కొత్త ఎంట్రీస్ ఆపేశాను.",
-                    "strategy": strat_used, "rsi": round(float(last['RSI']), 1), "trend": htf_status,
+                    "signal": "HOLD", "thought": "⏰ [GOLDEN SNIPER WINDOW CLOSED]: 11:45 AM దాటింది. మార్నింగ్ ఇన్స్టిట్యూషనల్ బ్రేకవుట్స్ ముగిశాయి. మధ్యాహ్నం ఫేక్-మూవ్స్ లో పడకుండా కొత్త ఎంట్రీస్ ఆపేశాను.",
+                    "strategy": strat_used, "rsi": round(rsi_val, 1), "trend": htf_status,
                     "action_taken": "HOLD", "has_position": False, "pnl_pct": 0.0, "avg_price": 0.0,
                     "total_qty": 0.0, "target_price": 0.0, "peak_price": 0.0, "invested": 0.0,
                     "dca_layer": 0, "timestamp": get_ist_now().strftime('%H:%M:%S IST'), "is_indian": is_indian
@@ -1830,20 +1848,20 @@ def process_symbol(sym):
                     "dca_layer": 0, "timestamp": get_ist_now().strftime('%H:%M:%S IST'), "is_indian": is_indian
                 }
 
-            # Between 01:30 PM and 02:15 PM:
+            # Between 11:15 AM and 11:45 AM (Late morning high-conviction only):
             if curr_t > t_base_cutoff:
                 is_market_bullish = (n_status in ('BULLISH', 'STABLE', 'NEUTRAL'))
                 is_pakka_profit = (
                     is_market_bullish and
-                    (last['close'] >= last['VWAP'] * 0.998) and
-                    (last['EMA_9'] >= last['EMA_21'] * 0.998) and
+                    (last['close'] >= last['VWAP'] * 0.999) and
+                    (last['EMA_9'] >= last['EMA_21'] * 0.999) and
                     (strat_used in ('morning_momentum_breakout', 'institutional_volume_surge', 'order_block_bounce', 'morning_dip_bounce', 'trend_pullback_ema'))
                 )
                 if not is_pakka_profit:
                     return {
                         "symbol": sym, "clean_name": clean_name, "price": round(current_price, 2),
-                        "signal": "HOLD", "thought": "⏰ [AFTERNOON CONVICTION]: 01:30 PM దాటింది. VWAP & EMA 9 పాజిటివ్ కన్ఫర్మేషన్ ఉన్నప్పుడు మాత్రమే మధ్యాహ్నం ఎంట్రీస్ తీసుకుంటాను.",
-                        "strategy": strat_used, "rsi": round(float(last['RSI']), 1), "trend": htf_status,
+                        "signal": "HOLD", "thought": "⏰ [LATE MORNING CONVICTION]: 11:15 AM దాటింది. కేవలం హై-వాల్యూమ్ ఇన్స్టిట్యూషనల్ కన్ఫర్మేషన్ ఉన్నప్పుడు మాత్రమే ఎంట్రీ తీసుకుంటాను.",
+                        "strategy": strat_used, "rsi": round(rsi_val, 1), "trend": htf_status,
                         "action_taken": "HOLD", "has_position": False, "pnl_pct": 0.0, "avg_price": 0.0,
                         "total_qty": 0.0, "target_price": 0.0, "peak_price": 0.0, "invested": 0.0,
                         "dca_layer": 0, "timestamp": get_ist_now().strftime('%H:%M:%S IST'), "is_indian": is_indian
