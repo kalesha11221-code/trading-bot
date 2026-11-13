@@ -1679,11 +1679,13 @@ if is_angel_mode:
 
     # Live Cash calculation
     if is_angel_virtual:
-        live_cash = 50000.0
         initial_capital = 50000.0
+        portfolio_value = round(initial_capital + total_profit, 2)
+        live_cash = portfolio_value
     else:
         live_cash = angel_live_cash if angel_live_cash > 0 else 282.42
         initial_capital = 300.0
+        portfolio_value = round(live_cash, 2)
 
     spot_invested = sum(float(d_info.get('total_cost', 0.0)) for d_info in dca_positions.values())
     futures_invested = 0.0
@@ -1692,8 +1694,7 @@ if is_angel_mode:
     # 5x Intraday MIS Leverage:
     # Margin blocked from user capital is 20% (1/5th) of spot_invested
     blocked_margin = round(spot_invested / 5.0, 2)
-    available_cash = max(0.0, round(live_cash - blocked_margin, 2))
-    portfolio_value = round(live_cash, 2)
+    available_cash = max(0.0, round(portfolio_value - blocked_margin, 2))
     invested_amount = spot_invested
     roi = ((portfolio_value - initial_capital) / initial_capital) * 100 if initial_capital > 0 else 0.0
 
