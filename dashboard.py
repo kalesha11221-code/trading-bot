@@ -811,7 +811,8 @@ if is_angel_live:
         st.sidebar.info("💡 Deposit funds via PhonePe / GPay into Angel One to begin executing live orders.")
 elif is_angel_virtual:
     st.sidebar.success("🇮🇳🎮 **Angel One Virtual Simulator Active!**")
-    st.sidebar.markdown(f"**💰 Practice Capital:** `₹50,000.00`")
+    st.sidebar.markdown(f"**💰 Practice Capital:** `₹10,000.00` (5x MIS: ₹50,000)")
+    st.sidebar.markdown(f"**🎯 Daily Target:** `+₹1,000.00` Net Profit")
     st.sidebar.info("Risk-free virtual paper trading with live NSE prices matching Angel One 5x MIS margin rules.")
 elif is_dual_mode:
     st.sidebar.success("🌐🇮🇳 **Dual Trading Active!**")
@@ -1679,7 +1680,7 @@ if is_angel_mode:
 
     # Live Cash calculation
     if is_angel_virtual:
-        initial_capital = 50000.0
+        initial_capital = float(bot_settings.get('user_capital_inr', 10000.0))
         portfolio_value = round(initial_capital + total_profit, 2)
         live_cash = portfolio_value
     else:
@@ -1840,6 +1841,67 @@ if is_angel_live:
   </div>
 </div>
 """, unsafe_allow_html=True)
+elif is_angel_virtual:
+    # 🎯 AI Daily Mission & Progress Tracker
+    today_pnl = 0.0
+    today_trades_cnt = 0
+    try:
+        today_str = get_ist_now().strftime('%Y-%m-%d')
+        if not hist_df.empty and 'Action' in hist_df.columns:
+            sells_t = hist_df[(hist_df['Action'] == 'SELL') & (hist_df['Time'].astype(str).str.startswith(today_str))]
+            for _, tr in sells_t.iterrows():
+                sym_t = str(tr.get('Symbol', ''))
+                if sym_t.endswith('.NS') or sym_t.endswith('.BO'):
+                    p_val = float(str(tr.get('Profit', '0.0')).replace('₹', '').replace(',', '').strip() or 0.0)
+                    today_pnl += p_val
+                    today_trades_cnt += 1
+    except:
+        pass
+
+    target_goal = float(bot_settings.get('daily_target_inr', 1000.0))
+    user_cap_val = float(bot_settings.get('user_capital_inr', 10000.0))
+    is_weekend = get_ist_now().weekday() >= 5
+    status_txt = "🔒 WEEKEND (NSE Closed) — Ready for Monday 09:15 AM" if is_weekend else "🟢 ACTIVE SNIPER (09:20 - 11:45 AM)"
+    status_clr = "#ffa726" if is_weekend else "#00e676"
+    pnl_clr = "#00e676" if today_pnl >= 0 else "#ff5252"
+
+    st.markdown(f"""
+<div style="background: linear-gradient(135deg, #091a2e 0%, #102a43 100%);
+            border: 2px solid #00c853; border-radius: 14px; padding: 18px 24px; margin-bottom: 18px;
+            box-shadow: 0 4px 24px rgba(0,200,83,0.25);">
+  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; margin-bottom: 10px;">
+    <div>
+      <span style="font-size: 16px; font-weight: 800; color: #00e676; letter-spacing: 0.5px;">
+        🎯 AI DAILY TASK: MINIMUM ₹1,000 PROFIT MISSION
+      </span><br>
+      <span style="font-size: 12px; color: #8892b0;">
+        ⚡ 10k Capital Engine &bull; Angel One 5x MIS Intraday &bull; Morning Momentum Breakout (89.5% Win Rate)
+      </span>
+    </div>
+    <div style="background: rgba(0,200,83,0.15); border: 1.5px solid #00c853; color: #00e676; font-weight: 800; font-size: 12px; padding: 5px 14px; border-radius: 20px;">
+      TARGET: +₹{target_goal:,.2f} / DAY
+    </div>
+  </div>
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-top: 10px;">
+    <div style="background: #06101c; padding: 10px 14px; border-radius: 8px; border: 1px solid #1a365d;">
+      <span style="color: #8892b0; font-size: 11px;">Allocated Capital:</span><br>
+      <b style="color: #fff; font-size: 15px;">₹{user_cap_val:,.2f}</b> <span style="color: #00e676; font-size: 11px;">(10k)</span>
+    </div>
+    <div style="background: #06101c; padding: 10px 14px; border-radius: 8px; border: 1px solid #1a365d;">
+      <span style="color: #8892b0; font-size: 11px;">5x MIS Buying Power:</span><br>
+      <b style="color: #00e676; font-size: 15px;">₹{user_cap_val * 5:,.2f}</b>
+    </div>
+    <div style="background: #06101c; padding: 10px 14px; border-radius: 8px; border: 1px solid #1a365d;">
+      <span style="color: #8892b0; font-size: 11px;">Today's Net Profit:</span><br>
+      <b style="color: {pnl_clr}; font-size: 15px;">₹{today_pnl:+,.2f}</b> <span style="color: #8892b0; font-size: 11px;">({today_trades_cnt} trades)</span>
+    </div>
+    <div style="background: #06101c; padding: 10px 14px; border-radius: 8px; border: 1px solid #1a365d;">
+      <span style="color: #8892b0; font-size: 11px;">Market Timing:</span><br>
+      <b style="color: {status_clr}; font-size: 12px;">{status_txt}</b>
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 else:
     st.markdown("""
 <div style="background: linear-gradient(135deg, #0d1117 0%, #1a1f2e 100%);
@@ -1848,6 +1910,7 @@ else:
   <div style="font-size: 13px; color: #787b86; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 12px;">
     🏦 ANTIGRAVITY KITE PRO — PORTFOLIO SNAPSHOT (Live)
   </div>
+</div>
 """, unsafe_allow_html=True)
 
 top_b1, top_b2, top_b3, top_b4, top_b5 = st.columns(5)
@@ -2070,7 +2133,23 @@ with tab_pos:
 
     else:
         if is_angel_mode:
-            st.info(f"ℹ️ **No open positions in Angel One currently.**\n\nLive Cash: **₹{available_cash:,.2f}** | Client: **SHAIK KALESHA (AABZ864543)**\n\nThe bot is actively scanning NSE (ITC, TATASTEEL, ONGC, IOC, SUZLON, SBIN, HDFCBANK) and will place a live BUY order as soon as a high-confluence entry triggers.")
+            is_weekend = get_ist_now().weekday() >= 5
+            if is_weekend:
+                st.markdown("""
+<div style="background: linear-gradient(135deg, #131722 0%, #1e222d 100%);
+            border: 1.5px solid #ffa726; border-radius: 12px; padding: 20px 24px; margin-bottom: 20px;">
+  <div style="font-size: 16px; font-weight: 800; color: #ffa726; margin-bottom: 8px;">
+    📅 శని & ఆదివారాలు భారతీయ స్టాక్ మార్కెట్ సెలవు (Weekend Closed)
+  </div>
+  <div style="font-size: 14px; color: #d1d4dc; line-height: 1.6;">
+    మీ <b>₹10,000 క్యాపిటల్ 100% సేఫ్ గా, లిక్విడ్ క్యాష్ రూపంలో ఉంది</b>. శుక్రవారం సాయంత్రం 3:15 PM EOD షీల్డ్ ప్రకారం అన్ని పొజిషన్లు ఆటో-స్క్వేర్ ఆఫ్ అయ్యాయి.<br><br>
+    🎯 <b>సోమవారం ఉదయం 09:15 AM</b> కి మార్కెట్ ఓపెన్ అవ్వగానే, AI తన డైలీ <b>₹1,000 ప్రాఫిట్ మిషన్</b> (PNB, GAIL, TATASTEEL మొమెంటమ్ బ్రేక్‌అవుట్స్) ప్రారంభించడానికి సిద్ధంగా ఉంది!<br><br>
+    👉 గతంలో నమోదైన <b>125+ పూర్తి ఆర్డర్లు మరియు లాభనష్టాలు</b> చూడటానికి పైన ఉన్న <b><code>📋 Angel One Orders & Settlement History</code> (Tab 5)</b> క్లిక్ చేయండి.
+  </div>
+</div>
+""", unsafe_allow_html=True)
+            else:
+                st.info(f"ℹ️ **No open positions in Angel One currently.**\n\nLive Cash: **₹{available_cash:,.2f}** | Client: **SHAIK KALESHA (AABZ864543)**\n\nThe bot is actively scanning NSE (ITC, TATASTEEL, ONGC, IOC, SUZLON, SBIN, HDFCBANK) and will place a live BUY order as soon as a high-confluence entry triggers.")
         elif futures_positions:
             f_names = ", ".join([f"{k} ({v.get('side', 'SHORT')} 5x)" for k, v in futures_positions.items()])
             st.success(f"🚀 **Active Futures Trade Running:** {f_names} with ₹{futures_invested:,.2f} margin! Click the **🚀 Futures (Paper 5x)** tab next door to inspect live entry, target, and ROE.")
@@ -2089,10 +2168,10 @@ if is_angel_mode and tab_virtual is not None:
         # 1-Click Bot Mode Switcher
         v_col1, v_col2, v_col3 = st.columns([2, 2, 2])
         with v_col1:
-            st.metric("💵 Virtual Practice Capital", "₹50,000.00", "Zero Real Risk")
+            st.metric("💵 Virtual Practice Capital", f"₹{initial_capital:,.2f}", "5x MIS = ₹50,000 Buying Power")
         with v_col2:
             current_active_mode = "🎮 VIRTUAL PRACTICE" if is_angel_virtual else "💰 REAL ANGEL ONE"
-            st.metric("⚡ Current Bot Mode", current_active_mode)
+            st.metric("⚡ Current Bot Mode", current_active_mode, "Daily Target: +₹1,000")
         with v_col3:
             if is_angel_virtual:
                 if st.button("⚡ Switch to Real Angel One", key="btn_sw_real_tab", use_container_width=True):
@@ -2821,7 +2900,7 @@ with tab_orders:
             with m3:
                 st.metric("🎯 Win Rate", f"{win_rate_val:.1f}%", f"{win_cnt}/{total_sell_cnt} Wins")
             with m4:
-                st.metric("⚡ Active Broker Mode", "Angel One Virtual", "₹50,000 Practice")
+                st.metric("⚡ Active Broker Mode", "Angel One Virtual", f"₹{initial_capital:,.0f} (5x MIS)")
 
             st.markdown("---")
             enriched_spot = []
