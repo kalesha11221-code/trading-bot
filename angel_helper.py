@@ -26,6 +26,12 @@ class AngelOneEngine:
         self.cached_cash = 300.0
         self.last_cash_time = 0
         self._lock = threading.Lock()
+        self._api_throttle_lock = threading.Lock()
+        self._cache_lock = threading.Lock()
+        self._ltp_cache = {}
+        self._candle_cache = {}
+        self._last_candle_api_ts = 0.0
+        self._angel_cooldown_until = 0.0
         self.tokens_map = self._load_tokens_map()
 
     def _load_tokens_map(self):
@@ -115,7 +121,7 @@ class AngelOneEngine:
             pass
 
         try:
-            client = SmartConnect(api_key=api_key)
+            client = SmartConnect(api_key=api_key, timeout=4)
             totp = pyotp.TOTP(totp_secret).now()
             res = client.generateSession(client_code, pin, totp)
             if res and isinstance(res, dict) and res.get('status'):
@@ -263,71 +269,176 @@ class AngelOneEngine:
             except Exception as e:
                 return False, str(e)
 
-    def get_live_ltp(self, nse_symbol):
-        """
-        Fetches official NSE real-time Last Traded Price (0-second delay) directly from Angel One SmartAPI.
-        """
+    def _handle_api_issue(self, err_obj):
+        """Trip brief cooldown on AB1021 rate limits or network timeouts so Yahoo v8 fallback takes over instantly."""
+        msg = str(err_obj).lower()
+        code = str(err_obj.get('errorcode', err_obj.get('errorCode', ''))) if isinstance(err_obj, dict) else ''
+        if code == 'AB1021' or 'ab1021' in msg or 'too many requests' in msg or 'timed out' in msg or 'timeout' in msg:
+            self._angel_cooldown_until = time.time() + 35.0
+            return True
+        if code == 'AG8001' or 'invalid token' in msg:
+            try:
+                self.ensure_session(force=True)
+            except Exception:
+                pass
+        return False
+
+    def refresh_all_ltps_batch(self, nse_symbols):
+        """Fetch live 0-second LTP for up to 50 NSE symbols in ONE SmartAPI batch call."""
+        now_ts = time.time()
+        if now_ts < self._angel_cooldown_until:
+            return {}
         if not self.ensure_session():
-            return None
+            return {}
+
+        tokens = []
+        for sym in nse_symbols:
+            if not (sym.endswith('.NS') or sym.endswith('.BO')):
+                continue
+            clean_sym = sym.replace('.NS', '').replace('.BO', '').upper()
+            t_info = self.tokens_map.get(f"{clean_sym}-EQ")
+            if t_info and t_info.get('token'):
+                tokens.append(str(t_info['token']))
+        if not tokens:
+            return {}
+
+        updated = {}
+        with self._api_throttle_lock:
+            if time.time() < self._angel_cooldown_until:
+                return {}
+            try:
+                res = self.smart_api.getMarketData('LTP', {'NSE': tokens[:50]})
+                if isinstance(res, dict) and res.get('status') and isinstance(res.get('data'), dict):
+                    fetched = res['data'].get('fetched', [])
+                    ts_now = time.time()
+                    with self._cache_lock:
+                        for item in fetched:
+                            tsym = str(item.get('tradingSymbol', '')).upper()
+                            ltp = float(item.get('ltp', 0.0) or 0.0)
+                            if tsym and ltp > 0:
+                                self._ltp_cache[tsym] = (ts_now, ltp)
+                                updated[tsym] = ltp
+                elif res:
+                    self._handle_api_issue(res)
+            except Exception as e:
+                self._handle_api_issue(e)
+        return updated
+
+    def get_live_ltp(self, nse_symbol, cache_only=False):
+        """
+        Fetches official NSE real-time Last Traded Price (0-second delay) with 15s cache & batch/cooldown protection.
+        """
         clean_sym = nse_symbol.replace('.NS', '').replace('.BO', '').upper()
         tradingsymbol = f"{clean_sym}-EQ"
+
+        with self._cache_lock:
+            cached = self._ltp_cache.get(tradingsymbol)
+            if cached and (time.time() - cached[0]) < 20.0:
+                return cached[1]
+
+        if cache_only or time.time() < self._angel_cooldown_until:
+            return None
+        if not self.ensure_session():
+            return None
+
         token_info = self.tokens_map.get(tradingsymbol)
         if not token_info:
             return None
         symbol_token = str(token_info.get('token'))
-        try:
-            res = self.smart_api.ltpData('NSE', tradingsymbol, symbol_token)
-            if res and isinstance(res, dict) and res.get('status') and 'data' in res:
-                ltp = float(res['data'].get('ltp', 0.0))
-                if ltp > 0:
-                    return ltp
-        except Exception:
-            pass
+
+        with self._api_throttle_lock:
+            if time.time() < self._angel_cooldown_until:
+                return None
+            try:
+                res = self.smart_api.ltpData('NSE', tradingsymbol, symbol_token)
+                if res and isinstance(res, dict) and res.get('status') and 'data' in res:
+                    ltp = float(res['data'].get('ltp', 0.0))
+                    if ltp > 0:
+                        with self._cache_lock:
+                            self._ltp_cache[tradingsymbol] = (time.time(), ltp)
+                        return ltp
+                elif res:
+                    self._handle_api_issue(res)
+            except Exception as e:
+                self._handle_api_issue(e)
         return None
 
     def get_live_candles(self, nse_symbol, interval='FIVE_MINUTE'):
         """
-        Fetches official NSE historical/live candles from Angel One SmartAPI (0-second delay).
+        Fetches official NSE historical/live candles from Angel One SmartAPI using strict IST timestamps,
+        45s cache, and serialized rate-limit spacing to eliminate AB1021 throttling.
         """
         import pandas as pd
-        from datetime import datetime, timedelta
-        if not self.ensure_session():
-            return None
+        from datetime import datetime, timedelta, timezone
+
         clean_sym = nse_symbol.replace('.NS', '').replace('.BO', '').upper()
         tradingsymbol = f"{clean_sym}-EQ"
+        cache_key = f"{tradingsymbol}_{interval}"
+
+        with self._cache_lock:
+            cached = self._candle_cache.get(cache_key)
+            if cached and (time.time() - cached[0]) < 45.0:
+                return cached[1].copy()
+
+        if time.time() < self._angel_cooldown_until:
+            return None
+        if not self.ensure_session():
+            return None
+
         token_info = self.tokens_map.get(tradingsymbol)
         if not token_info:
             return None
         symbol_token = str(token_info.get('token'))
-        now = datetime.now()
-        from_d = (now - timedelta(days=5)).strftime('%Y-%m-%d 09:15')
-        to_d = now.strftime('%Y-%m-%d %H:%M')
-        try:
-            params = {
-                'exchange': 'NSE',
-                'symboltoken': symbol_token,
-                'interval': interval,
-                'fromdate': from_d,
-                'todate': to_d
-            }
-            res = self.smart_api.getCandleData(params)
-            if res and isinstance(res, dict) and res.get('status') and 'data' in res:
-                rows = []
-                for c in res['data']:
-                    rows.append({
-                        'timestamp': pd.to_datetime(c[0]),
-                        'open': float(c[1]),
-                        'high': float(c[2]),
-                        'low': float(c[3]),
-                        'close': float(c[4]),
-                        'volume': float(c[5])
-                    })
-                if rows:
-                    df = pd.DataFrame(rows)
-                    if not df.empty:
-                        return df
-        except Exception:
-            pass
+
+        ist_tz = timezone(timedelta(hours=5, minutes=30))
+        now_ist = datetime.now(ist_tz)
+        from_d = (now_ist - timedelta(days=5)).strftime('%Y-%m-%d 09:15')
+        to_d = now_ist.strftime('%Y-%m-%d %H:%M')
+
+        with self._api_throttle_lock:
+            # Re-check cache & cooldown after waiting on lock
+            with self._cache_lock:
+                cached = self._candle_cache.get(cache_key)
+                if cached and (time.time() - cached[0]) < 45.0:
+                    return cached[1].copy()
+            if time.time() < self._angel_cooldown_until:
+                return None
+
+            elapsed = time.time() - self._last_candle_api_ts
+            if elapsed < 0.40:
+                time.sleep(0.40 - elapsed)
+            self._last_candle_api_ts = time.time()
+
+            try:
+                params = {
+                    'exchange': 'NSE',
+                    'symboltoken': symbol_token,
+                    'interval': interval,
+                    'fromdate': from_d,
+                    'todate': to_d
+                }
+                res = self.smart_api.getCandleData(params)
+                if res and isinstance(res, dict) and res.get('status') and 'data' in res and res['data']:
+                    rows = []
+                    for c in res['data']:
+                        rows.append({
+                            'timestamp': pd.to_datetime(c[0]),
+                            'open': float(c[1]),
+                            'high': float(c[2]),
+                            'low': float(c[3]),
+                            'close': float(c[4]),
+                            'volume': float(c[5])
+                        })
+                    if rows:
+                        df = pd.DataFrame(rows)
+                        if not df.empty:
+                            with self._cache_lock:
+                                self._candle_cache[cache_key] = (time.time(), df)
+                            return df.copy()
+                elif res:
+                    self._handle_api_issue(res)
+            except Exception as e:
+                self._handle_api_issue(e)
         return None
 
 # Singleton Instance

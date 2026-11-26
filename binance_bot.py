@@ -1523,10 +1523,10 @@ def process_symbol(sym):
             strat_used = 'rsi_vwap_confluence'
 
         current_price = df.iloc[-1]['close']
-        # ⚡ Real-Time Official NSE Price Feed (0-second delay from Angel One Gateway)
+        # ⚡ Real-Time Official NSE Price Feed (batch-cached 0-second LTP from Angel One Gateway)
         if is_indian and HAS_ANGEL:
             try:
-                real_ltp = angel_helper.angel_engine.get_live_ltp(sym)
+                real_ltp = angel_helper.angel_engine.get_live_ltp(sym, cache_only=(pos is None and signal != 'buy'))
                 if real_ltp and real_ltp > 0:
                     current_price = real_ltp
             except Exception:
@@ -2188,6 +2188,14 @@ def run_bot_loop():
                     except: pass
                 else:
                     active_symbols = filtered_nse
+
+            # ⚡ Batch-fetch all 26 NSE live LTPs in ONE Angel One API call (prevents AB1021 throttling)
+            if HAS_ANGEL and any(s.endswith(('.NS', '.BO')) for s in active_symbols):
+                try:
+                    if now_dt.weekday() < 5 and datetime.strptime("09:15", "%H:%M").time() <= now_dt.time() <= datetime.strptime("15:30", "%H:%M").time():
+                        angel_helper.angel_engine.refresh_all_ltps_batch(active_symbols)
+                except Exception:
+                    pass
 
             actions_taken = []
             # Reusable worker pool for active symbols (prevents thread exhaustion)
