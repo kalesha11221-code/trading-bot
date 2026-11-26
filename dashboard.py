@@ -115,30 +115,38 @@ def start_bot_thread(force=False):
 # Auto-start bot thread in Cloud (runs 24/7 on Streamlit Cloud even with laptop OFF)
 start_bot_thread()
 
+def _evaluate_heartbeat(hb):
+    """Validate heartbeat recency so stale MongoDB docs never mask a stopped bot."""
+    if not isinstance(hb, dict):
+        return None
+    try:
+        last_ping = float(hb.get('last_ping', 0) or 0)
+    except (TypeError, ValueError):
+        last_ping = 0.0
+    if last_ping <= 0:
+        return None
+    diff = max(0, int(time.time() - last_ping))
+    if hb.get('status') == 'RUNNING' and diff <= 300:
+        return "RUNNING", diff, hb
+    if diff <= 600:
+        return "DELAYED", diff, hb
+    return "STOPPED", diff, hb
+
 def get_bot_heartbeat():
     try:
         # 1. Direct Render status check
         if RENDER_STATE and "heartbeat" in RENDER_STATE and isinstance(RENDER_STATE["heartbeat"], dict):
-            hb = RENDER_STATE["heartbeat"]
-            if hb.get('status') == 'RUNNING':
-                return "RUNNING", 5, hb
+            res = _evaluate_heartbeat(RENDER_STATE["heartbeat"])
+            if res:
+                return res
 
         data = get_state_smart('bot_heartbeat', {})
-        if data and isinstance(data, dict):
-            if data.get('status') == 'RUNNING':
-                return "RUNNING", 5, data
-            if 'last_ping' in data:
-                last_ping = data.get('last_ping', 0)
-                diff = time.time() - last_ping
-                if diff <= 300:
-                    return "RUNNING", int(diff), data
-                elif diff <= 600:
-                    return "DELAYED", int(diff), data
-                else:
-                    return "STOPPED", int(diff), data
+        res = _evaluate_heartbeat(data)
+        if res:
+            return res
     except Exception:
         pass
-        
+
     return "STOPPED", 999, {"loop_count": 0, "last_action": "Bot not started yet"}
 
 
@@ -568,12 +576,19 @@ navbar_html = f"""<div class="zk-navbar">
 st.markdown(navbar_html, unsafe_allow_html=True)
 
 if bot_status != "RUNNING":
-    st.error("🔴 Trading Bot is currently stopped. Click below to start immediately.")
-    if st.button("▶️ Start Trading Bot Now"):
-        start_bot_thread(force=True)
-        st.toast("🚀 Trading Bot Started Successfully!", icon="🟢")
-        time.sleep(1)
-        st.rerun()
+    last_ts = bot_meta.get('timestamp', 'Unknown')
+    is_bg_alive = _is_standalone_bot_running() or any(
+        t.name == "AntigravityBotThread" and t.is_alive() for t in threading.enumerate()
+    )
+    if is_bg_alive:
+        st.warning(f"🟡 Trading Bot is warming up / running first market scan (Previous cloud ping: {last_ts}). Click 🔄 Sync in ~15s.")
+    else:
+        st.error(f"🔴 Trading Bot is currently stopped (Last active: {last_ts}). Click below to start immediately.")
+        if st.button("▶️ Start Trading Bot Now"):
+            start_bot_thread(force=True)
+            st.toast("🚀 Trading Bot Started Successfully!", icon="🟢")
+            time.sleep(1)
+            st.rerun()
 
 # Display Market Segment Badge
 st.markdown('''
