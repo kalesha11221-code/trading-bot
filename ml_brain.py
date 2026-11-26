@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import threading
 import urllib.request
 import warnings
 from datetime import datetime
@@ -10,7 +11,8 @@ from sklearn.ensemble import RandomForestClassifier
 
 warnings.filterwarnings("ignore")
 
-# Global caches
+# Global thread-safe caches
+_ml_cache_lock = threading.Lock()
 signal_cache = {}
 smc_cache = {}
 CACHE_DURATION = 600  # 5 minutes cache for real-time responsiveness
@@ -168,10 +170,11 @@ def get_smc_analysis(symbol):
     """
     global smc_cache
     now = time.time()
-    if symbol in smc_cache:
-        cached_t, cached_res = smc_cache[symbol]
-        if now - cached_t < 180:  # 3 min cache
-            return cached_res
+    with _ml_cache_lock:
+        if symbol in smc_cache:
+            cached_t, cached_res = smc_cache[symbol]
+            if now - cached_t < 180:  # 3 min cache
+                return cached_res
 
     df_1h = fetch_klines(symbol, interval='1h', limit=60)
     if df_1h.empty or len(df_1h) < 25:
@@ -222,7 +225,8 @@ def get_smc_analysis(symbol):
         "liquidity_sweep": has_bull_sweep if bias == "BULLISH" else (has_bear_sweep if bias == "BEARISH" else False)
     }
 
-    smc_cache[symbol] = (now, result)
+    with _ml_cache_lock:
+        smc_cache[symbol] = (now, result)
     return result
 
 # ══════════════════════════════════════════════════════════════
@@ -240,10 +244,11 @@ def get_ml_signal(symbol):
     global signal_cache
     now = time.time()
 
-    if symbol in signal_cache:
-        cached_time, cached_signal = signal_cache[symbol]
-        if now - cached_time < CACHE_DURATION:
-            return cached_signal
+    with _ml_cache_lock:
+        if symbol in signal_cache:
+            cached_time, cached_signal = signal_cache[symbol]
+            if now - cached_time < CACHE_DURATION:
+                return cached_signal
 
     try:
         df = fetch_klines(symbol, interval='1h', limit=200)
@@ -291,10 +296,8 @@ def get_ml_signal(symbol):
             weights = np.array([0.15, -0.10, 0.20, -0.15, 0.10, 0.20, 0.40])
             score = np.dot(df[features].iloc[-1:].values[0], weights)
             prediction = 1 if score > 0 else 0
-        import gc
-        gc.collect()
-
-        signal_cache[symbol] = (now, prediction)
+        with _ml_cache_lock:
+            signal_cache[symbol] = (now, prediction)
         bias_str = "🟢 INSTITUTIONAL PUMP (BULLISH)" if prediction == 1 else "🔴 INSTITUTIONAL DUMP (BEARISH)"
         print(f"🏛️ [AI SMC+ML] {symbol} Prediction: {bias_str}", flush=True)
 

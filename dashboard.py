@@ -93,23 +93,40 @@ def _is_standalone_bot_running():
     except:
         return False
 
+def _send_bot_command(cmd_str):
+    """Persist manual exit / panic / override command to both local file and MongoDB."""
+    try:
+        with open('ai_commands.txt', 'w', encoding='utf-8') as f:
+            f.write(cmd_str)
+    except Exception:
+        pass
+    try:
+        db_helper.save_state('ai_commands', {'command': cmd_str, 'timestamp': get_ist_now().strftime('%Y-%m-%d %H:%M:%S')})
+    except Exception:
+        pass
+
 def start_bot_thread(force=False):
     global _bg_bot_thread, _bg_futures_thread
     started = False
-    
+
+    # Ensure Futures 5x worker runs automatically in Crypto Paper / Dual modes
+    live_names = {t.name for t in threading.enumerate() if t.is_alive()}
+    if "AntigravityFuturesThread" not in live_names:
+        _bg_futures_thread = threading.Thread(target=_run_futures_bot_bg, name="AntigravityFuturesThread", daemon=True)
+        _bg_futures_thread.start()
+
     # 1. If running locally with standalone binance_bot.py, avoid duplicate
     if not force and _is_standalone_bot_running():
         return False
 
-    # 2. Check if thread is already running in this Python process
-    for t in threading.enumerate():
-        if t.name == "AntigravityBotThread" and t.is_alive():
-            return False
-        
+    # 2. Check if spot/equity thread is already running in this Python process
+    if "AntigravityBotThread" in live_names:
+        return False
+
     _bg_bot_thread = threading.Thread(target=_run_background_bot, name="AntigravityBotThread", daemon=True)
     _bg_bot_thread.start()
     started = True
-        
+
     return started
 
 # Auto-start bot thread in Cloud (runs 24/7 on Streamlit Cloud even with laptop OFF)
@@ -1875,10 +1892,24 @@ elif is_angel_virtual:
 
     target_goal = float(bot_settings.get('daily_target_inr', 1000.0))
     user_cap_val = float(bot_settings.get('user_capital_inr', 10000.0))
-    is_weekend = get_ist_now().weekday() >= 5
-    status_txt = "🔒 WEEKEND (NSE Closed) — Ready for Monday 09:15 AM" if is_weekend else "🟢 ACTIVE SNIPER (09:20 - 11:45 AM)"
-    status_clr = "#ffa726" if is_weekend else "#00e676"
+    now_ist = get_ist_now()
+    is_weekend = now_ist.weekday() >= 5
+    cur_hm = now_ist.hour * 60 + now_ist.minute
+    if is_weekend:
+        status_txt = "🔒 WEEKEND (NSE Closed) — Ready for Monday 09:15 AM"
+        status_clr = "#ffa726"
+    elif 555 <= cur_hm <= 705:
+        status_txt = "🟢 GOLDEN SNIPER LIVE (09:15 - 11:45 AM)"
+        status_clr = "#00e676"
+    elif 705 < cur_hm <= 930:
+        status_txt = "🟡 TRAILING & EXIT GUARD (11:45 AM - 03:30 PM)"
+        status_clr = "#4fc3f7"
+    else:
+        status_txt = "🌙 AFTER HOURS — Ready 09:15 AM Tomorrow"
+        status_clr = "#94a3b8"
     pnl_clr = "#00e676" if today_pnl >= 0 else "#ff5252"
+    pct_goal = min(100.0, max(0.0, (today_pnl / target_goal) * 100.0)) if target_goal > 0 else 0.0
+    rem_goal = max(0.0, target_goal - today_pnl)
 
     st.markdown(f"""
 <div style="background: linear-gradient(135deg, #091a2e 0%, #102a43 100%);
@@ -1890,7 +1921,7 @@ elif is_angel_virtual:
         🎯 AI DAILY TASK: MINIMUM ₹1,000 PROFIT MISSION
       </span><br>
       <span style="font-size: 12px; color: #8892b0;">
-        ⚡ 10k Capital Engine &bull; Angel One 5x MIS Intraday &bull; Morning Momentum Breakout (89.5% Win Rate)
+        ⚡ 10k Capital Engine &bull; Angel One 5x MIS Intraday &bull; Trailing Profit Maximizer + ML Brain
       </span>
     </div>
     <div style="background: rgba(0,200,83,0.15); border: 1.5px solid #00c853; color: #00e676; font-weight: 800; font-size: 12px; padding: 5px 14px; border-radius: 20px;">
@@ -1907,12 +1938,21 @@ elif is_angel_virtual:
       <b style="color: #00e676; font-size: 15px;">₹{user_cap_val * 5:,.2f}</b>
     </div>
     <div style="background: #06101c; padding: 10px 14px; border-radius: 8px; border: 1px solid #1a365d;">
-      <span style="color: #8892b0; font-size: 11px;">Today's Net Profit:</span><br>
-      <b style="color: {pnl_clr}; font-size: 15px;">₹{today_pnl:+,.2f}</b> <span style="color: #8892b0; font-size: 11px;">({today_trades_cnt} trades)</span>
+      <span style="color: #8892b0; font-size: 11px;">Today's Booked Profit:</span><br>
+      <b style="color: {pnl_clr}; font-size: 15px;">₹{today_pnl:+,.2f}</b> <span style="color: #8892b0; font-size: 11px;">({today_trades_cnt} closed)</span>
     </div>
     <div style="background: #06101c; padding: 10px 14px; border-radius: 8px; border: 1px solid #1a365d;">
       <span style="color: #8892b0; font-size: 11px;">Market Timing:</span><br>
       <b style="color: {status_clr}; font-size: 12px;">{status_txt}</b>
+    </div>
+  </div>
+  <div style="margin-top: 12px;">
+    <div style="display:flex; justify-content:space-between; font-size:11px; color:#cbd5e1; margin-bottom:4px;">
+      <span>📊 Daily Goal Progress: <b>{pct_goal:.1f}%</b></span>
+      <span>{"🎉 Mission Accomplished!" if rem_goal <= 0 else f"₹{rem_goal:,.2f} remaining to ₹{target_goal:,.0f} goal"}</span>
+    </div>
+    <div style="width:100%; height:8px; background:#06101c; border-radius:6px; overflow:hidden; border:1px solid #1a365d;">
+      <div style="width:{pct_goal:.1f}%; height:100%; background:linear-gradient(90deg, #00c853, #00e676);"></div>
     </div>
   </div>
 </div>
@@ -2137,14 +2177,21 @@ with tab_pos:
         st.markdown(textwrap.dedent(positions_table_html), unsafe_allow_html=True)
 
         st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-        st.markdown("##### 🔍 Click any asset below to inspect live candlestick chart & AI pattern:")
-        s_cols = st.columns(max(1, len(dca_positions)))
+        st.markdown("##### 🔍 Chart Inspection & 1-Click Manual Exit Controls:")
+        s_cols = st.columns(max(1, len(dca_positions)) + 1)
         for s_idx, ssym_btn in enumerate(dca_positions.keys()):
             with s_cols[s_idx]:
-                if st.button(f"📊 {ssym_btn} Chart & Pattern", key=f"btn_spot_chart_{ssym_btn}", use_container_width=True):
+                if st.button(f"📊 {ssym_btn} Chart", key=f"btn_spot_chart_{ssym_btn}", use_container_width=True):
                     st.session_state['selected_chart_sym'] = ssym_btn
-                    st.toast(f"✅ {ssym_btn} loaded! Inspect in '📊 Pro Charts & Patterns' tab.", icon="🕯️")
+                    st.toast(f"✅ {ssym_btn} loaded! Inspect in 'Charts' tab.", icon="🕯️")
                     st.rerun()
+                if st.button(f"🔴 Sell {ssym_btn.replace('.NS', '')} Now", key=f"btn_manual_sell_{ssym_btn}", use_container_width=True):
+                    _send_bot_command(f"SELL_SYMBOL {ssym_btn}")
+                    st.warning(f"⏳ Manual exit queued for {ssym_btn}! Bot closes on next scan (~10s).")
+        with s_cols[-1]:
+            if st.button("🚨 Close All Positions", key="btn_panic_close_all", use_container_width=True):
+                _send_bot_command("PANIC_SELL_ALL")
+                st.error("🚨 PANIC EXIT ALL queued! Bot will square off all positions on next scan.")
 
     else:
         if is_angel_mode:
@@ -2509,56 +2556,65 @@ with tab_mind:
             m_thought = m_asset.get('thought', '15m Higher Timeframe trend is strongly bullish. Entered sniper buy at institutional VWAP support.')
             clean_m = m_sym.replace('.NS', '').replace('-USD', '')
             rsi_val = m_asset.get('rsi', 52.0)
+            m_trend = m_asset.get('trend', 'BULLISH')
+            m_pnl = m_asset.get('pnl_pct', 0.0)
             strat_nm = m_info.get('strategy', 'Fair Value Gap (FVG Imbalance Fill)')
+            m_tgt = float(m_info.get('target_sell_price', 0.0))
             
-            with st.expander(f"🪙 {clean_m}  - Why did it buy? Why is it holding? (Click to expand)", expanded=True):
-                st.markdown(f"**🎯 Entry Thesis:**")
+            with st.expander(f"🪙 {clean_m} ({m_pnl:+.2f}%) - Why did it buy? Why is it holding?", expanded=True):
+                st.markdown(f"**🎯 Live AI Analysis & Entry Thesis:**")
                 st.info(m_thought)
                 
                 t_sub1, t_sub2, t_sub3 = st.columns(3)
-                t_sub1.markdown(f"📊 **RSI (14):** `{rsi_val:.1f}` (Optimal Buy)")
-                t_sub2.markdown(f"📈 **15m HTF Trend:** `BULLISH 🟢`")
+                t_sub1.markdown(f"📊 **RSI (14):** `{rsi_val:.1f}`")
+                t_sub2.markdown(f"📈 **Trend:** `{m_trend}`")
                 t_sub3.markdown(f"🧬 **Strategy:** `{strat_nm}`")
                 
-                st.markdown(f"**⚡ Holding Thesis:**")
-                st.write(f"Holding for target exit. Once +1.2% - +1.5% profit or dynamic trailing lock triggers, it automatically exits. Strong momentum prevents premature exits.")
+                st.markdown(f"**⚡ Trailing & Target Engine:**")
+                st.write(f"Target anchor: `₹{m_tgt:,.2f}`. Morning Trailing Maximizer arms above +1.25% to ride big breakouts while locking minimum +1.05% profit floor.")
                 
                 st.markdown(f"**🛡️ Capital Protection & Risk Guard:**")
-                st.caption(f"Unconditional hard stop-loss is armed to strictly limit downside. Zero-loss breakeven lock activates once the position moves into profit.")
+                st.caption(f"Strict -0.75% hard stop-loss and +0.60% breakeven lock protect your ₹10,000 base capital.")
     else:
         st.info("No active positions currently.")
 
     st.markdown("---")
 
     # 2. WATCHING & WAITING LIST
-    st.subheader("⏳ 2. Watchlist & Setup Monitoring")
-    st.caption("Assets continuously scanned by AI bot waiting for ideal technical breakout/confirmation:")
+    st.subheader("⏳ 2. Watchlist & Real-Time AI Scanner Feed")
+    st.caption("Assets continuously scanned by AI bot with live signals, RSI, and real AI reasoning:")
     
     watch_rows = []
     for sc_sym, sc_data in scanned_assets.items():
         if not sc_data.get('has_position', False):
             is_i = sc_data.get('is_indian', False) or sc_sym.endswith(('.NS', '.BO'))
-            if is_angel_live and not is_i:
+            if is_indian_mode and not is_i:
                 continue
-            if not is_angel_live and is_i:
+            if (not is_indian_mode) and (not is_dual_mode) and is_i:
                 continue
             clean_s = sc_data.get('clean_name', sc_sym).replace('.NS', '').replace('-USD', '')
-            pr_val = sc_data.get('price', 0.0)
+            pr_val = float(sc_data.get('price', 0.0) or 0.0)
             pr_fmt = f"₹{pr_val:,.2f}" if is_i else f"${pr_val:,.2f}"
-            rsi_s = sc_data.get('rsi', 50.0)
+            rsi_s = float(sc_data.get('rsi', 50.0) or 50.0)
+            sig_s = str(sc_data.get('signal', 'HOLD')).upper()
+            trend_s = str(sc_data.get('trend', 'NEUTRAL')).upper()
+            real_thought = str(sc_data.get('thought') or '').strip()
+            if not real_thought:
+                real_thought = f"Monitoring {clean_s} price action (RSI: {rsi_s:.1f}, Trend: {trend_s})."
             
             watch_rows.append({
                 "🪙 Asset": clean_s,
                 "💵 Live Price": pr_fmt,
+                "📊 Signal": sig_s,
+                "📈 Trend": trend_s,
                 "⚡ RSI (14)": f"{rsi_s:.1f}",
-                "🤖 Status": "⏳ Waiting (Awaiting confirmation)",
-                "🧠 AI Thesis & Reason": f"Market is in consolidation. RSI is at {rsi_s:.1f}. Waiting for confirmed support bounce or pullback before committing capital."
+                "🧠 Live AI Thought": real_thought
             })
             
     if watch_rows:
         safe_dataframe(pd.DataFrame(watch_rows), hide_index=True)
     else:
-        st.write("All target assets are currently being scanned.")
+        st.info("Waiting for next live market scan cycle (~15s) to populate watchlist reasoning.")
 
     st.markdown("---")
 
@@ -3245,48 +3301,37 @@ with tab_voice:
             
         t = final_prompt.lower()
         
-        # 🌟 1. IF REAL GEMINI KEY IS PROVIDED -> USE ADVANCED GOOGLE GEMINI 1.5 FLASH!
+        # 🌟 1. IF REAL GEMINI KEY IS PROVIDED -> USE GOOGLE GEMINI FLASH!
         gem_key_to_use = st.session_state.get('saved_gemini_key', '')
         gem_answered = False
         response = ""
         
         if gem_key_to_use and gem_key_to_use.startswith("AIza"):
             try:
-                sys_prompt = f"""You are 'Antigravity Scammer Brain 🥷', an aggressive, smart, funny and loyal AI trading assistant for your boss.
-Answer the boss in natural conversational Telugu (mix of Telugu and trading English words).
+                sys_prompt = f"""You are 'Antigravity Scammer Brain 🥷', a smart, loyal AI trading assistant for your boss.
+Answer concisely in 2-4 sentences in natural Telugu-English conversational style (address them as Boss).
 Current Portfolio Context:
 - Available Free Cash: ₹{available_cash:,.2f}
-- Invested Amount: ₹{invested_amount:,.2f}
+- Invested Exposure: ₹{invested_amount:,.2f}
 - Net Portfolio Value: ₹{portfolio_value:,.2f}
-- Active Open Coins: {list(dca_positions.keys()) if dca_positions else 'None'}
+- Active Open Positions: {list(dca_positions.keys()) if dca_positions else 'None'}
 - Live Floating PnL: ₹{total_floating_pnl:+,.2f}
 
-Boss asks: "{final_prompt}"
-Answer directly, smartly, and concisely in English in 2-3 sentences. Always address them as Boss:"""
+Boss asks: "{final_prompt}" """
                 if HAS_NEW_GENAI:
                     client_gem = genai.Client(api_key=gem_key_to_use)
                     res_gem = client_gem.models.generate_content(
-                        model='gemini-1.5-flash',
+                        model='gemini-3.8-flash',
                         contents=sys_prompt
                     )
                     if res_gem and hasattr(res_gem, 'text') and res_gem.text:
                         response = res_gem.text
                         gem_answered = True
-                elif genai is not None:
-                    genai.configure(api_key=gem_key_to_use)
-                    model_gem = genai.GenerativeModel('gemini-1.5-flash')
-                    res_gem = model_gem.generate_content(sys_prompt)
-                    if res_gem and hasattr(res_gem, 'text') and res_gem.text:
-                        response = res_gem.text
-                        gem_answered = True
-            except Exception as e:
-                gem_answered = False
+            except Exception:
                 gem_answered = False
 
         if not gem_answered:
-                # 🌟 2. BUILT-IN EXPANDED CONVERSATIONAL ENGINE
-            
-            # 🧠 INTELLIGENT SCAMMER BRAIN DIALOGUE ENGINE
+            # 🌟 2. BUILT-IN EXPANDED CONVERSATIONAL ENGINE
             coins_map = {
                 "btc": "BTC-USD", "bitcoin": "BTC-USD",
                 "eth": "ETH-USD", "ethereum": "ETH-USD",
@@ -3294,7 +3339,14 @@ Answer directly, smartly, and concisely in English in 2-3 sentences. Always addr
                 "bnb": "BNB-USD", "binance": "BNB-USD",
                 "doge": "DOGE-USD",
                 "xrp": "XRP-USD", "ripple": "XRP-USD",
-                "reliance": "RELIANCE.NS",
+                "reliance": "RELIANCE.NS", "pnb": "PNB.NS", "gail": "GAIL.NS",
+                "ongc": "ONGC.NS", "bhel": "BHEL.NS", "bel": "BEL.NS",
+                "irfc": "IRFC.NS", "tatasteel": "TATASTEEL.NS", "tata steel": "TATASTEEL.NS",
+                "itc": "ITC.NS", "suzlon": "SUZLON.NS", "motherson": "MOTHERSON.NS",
+                "ntpc": "NTPC.NS", "coalindia": "COALINDIA.NS", "coal": "COALINDIA.NS",
+                "infy": "INFY.NS", "icici": "ICICIBANK.NS", "eternal": "ETERNAL.NS", "zomato": "ETERNAL.NS",
+                "nhpc": "NHPC.NS", "tatapower": "TATAPOWER.NS", "canbk": "CANBK.NS",
+                "federal": "FEDERALBNK.NS", "idfc": "IDFCFIRSTB.NS", "ashok": "ASHOKLEY.NS", "ioc": "IOC.NS",
                 "tcs": "TCS.NS", "hdfc": "HDFCBANK.NS", "sbin": "SBIN.NS", "sbi": "SBIN.NS"
             }
             
@@ -3452,12 +3504,16 @@ Answer directly, smartly, and concisely in English in 2-3 sentences. Always addr
             st.write(response)
 
     st.markdown("---")
-    st.subheader("📝 Live Bot Execution Logs")
+    st.subheader("📝 Live Bot Execution Logs (Cloud + Local)")
     with st.expander("Inspect live terminal logs and execution traces"):
-        if os.path.exists('bot_logs.txt'):
+        cloud_logs = db_helper.get_state('bot_logs', [])
+        if isinstance(cloud_logs, list) and cloud_logs:
+            recent_logs = cloud_logs[-20:]
+            st.code("\n".join(str(x) for x in recent_logs), language="bash")
+        elif os.path.exists('bot_logs.txt'):
             with open('bot_logs.txt', 'r') as f_l:
                 logs = f_l.readlines()
-            recent_logs = logs[-15:] if len(logs) > 15 else logs
+            recent_logs = logs[-20:] if len(logs) > 20 else logs
             st.code("".join(recent_logs), language="bash")
         else:
             st.info("No logs generated yet.")

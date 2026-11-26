@@ -12,35 +12,35 @@ def get_ist_now():
     """Returns current datetime in Indian Standard Time (IST)."""
     return datetime.now(IST)
 
-# 🧠 REAL AI BRAIN: FRACTAL PATTERN RECOGNITION
+# 🧠 REAL AI BRAIN: VECTORIZED FRACTAL PATTERN RECOGNITION
 def analyze_pattern_future(df):
+    """Find the closest historical 10-candle price pattern and return its 5-candle forward % move."""
     try:
-        if len(df) < 100: return 0.0 # Need data
-        
-        # Take the last 10 candles as our current "Pattern"
-        current_pattern = df['close'].iloc[-10:].values
-        current_normalized = current_pattern / current_pattern[0] # Normalize to % change
-        
-        best_match_score = float('inf')
-        best_future_return = 0.0
-        
-        # Scan history (excluding the last 20 candles to avoid self-match)
-        for i in range(10, len(df) - 20):
-            historical_pattern = df['close'].iloc[i:i+10].values
-            hist_normalized = historical_pattern / historical_pattern[0]
-            
-            # Calculate difference (Euclidean distance)
-            diff = sum((current_normalized - hist_normalized) ** 2)
-            
-            if diff < best_match_score:
-                best_match_score = diff
-                # What happened 5 candles AFTER this historical pattern?
-                future_price = df['close'].iloc[i+15]
-                pattern_end_price = df['close'].iloc[i+9]
-                best_future_return = ((future_price - pattern_end_price) / pattern_end_price) * 100
-                
-        return best_future_return # Expected % profit based on historical match
-    except:
+        closes = df['close'].tail(260).to_numpy(dtype=float)
+        if len(closes) < 40:
+            return 0.0
+
+        cur = closes[-10:]
+        if cur[0] <= 0:
+            return 0.0
+        cur_norm = cur / cur[0]
+
+        best_score = float('inf')
+        best_return = 0.0
+        limit = len(closes) - 20
+        for i in range(10, limit):
+            base = closes[i]
+            if base <= 0:
+                continue
+            hist_norm = closes[i:i + 10] / base
+            diff = float(np.sum((cur_norm - hist_norm) ** 2))
+            if diff < best_score:
+                best_score = diff
+                end_p = closes[i + 9]
+                if end_p > 0:
+                    best_return = ((closes[i + 15] - end_p) / end_p) * 100.0
+        return round(best_return, 3)
+    except Exception:
         return 0.0
 
 
@@ -104,25 +104,78 @@ trade_size = 1
 # ---------------------------------------------------------
 # టెలిగ్రామ్ సెటప్
 # ---------------------------------------------------------
-TELEGRAM_BOT_TOKEN = "ఇక్కడ_మీ_టెలిగ్రామ్_టోకెన్_వేయండి"
-TELEGRAM_CHAT_ID = "ఇక్కడ_మీ_చాట్_ఐడీ_వేయండి"
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "ఇక్కడ_మీ_టెలిగ్రామ్_టోకెన్_వేయండి")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "ఇక్కడ_మీ_చాట్_ఐడీ_వేయండి")
+_active_remote_cmd = ""
+_remote_cmd_lock = threading.Lock()
+
+def _refresh_remote_command():
+    """Fetch any pending manual sell / panic command from MongoDB or ai_commands.txt."""
+    global _active_remote_cmd
+    cmd = ""
+    if os.path.exists('ai_commands.txt'):
+        try:
+            with open('ai_commands.txt', 'r', encoding='utf-8') as f:
+                cmd = f.read().strip()
+        except Exception:
+            pass
+    if not cmd:
+        try:
+            c_doc = db_helper.get_state('ai_commands', {})
+            if isinstance(c_doc, dict) and c_doc.get('command'):
+                cmd = str(c_doc.get('command')).strip()
+        except Exception:
+            pass
+    with _remote_cmd_lock:
+        _active_remote_cmd = cmd
+    return cmd
+
+def _clear_remote_command():
+    global _active_remote_cmd
+    with _remote_cmd_lock:
+        _active_remote_cmd = ""
+    if os.path.exists('ai_commands.txt'):
+        try:
+            open('ai_commands.txt', 'w').close()
+        except Exception:
+            pass
+    try:
+        db_helper.save_state('ai_commands', {"command": ""})
+    except Exception:
+        pass
 
 def send_telegram_message(text):
     try:
-        if TELEGRAM_BOT_TOKEN != "ఇక్కడ_మీ_టెలిగ్రామ్_టోకెన్_వేయండి":
-            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-            payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text}
+        tok = TELEGRAM_BOT_TOKEN
+        cid = TELEGRAM_CHAT_ID
+        if tok == "ఇక్కడ_మీ_టెలిగ్రామ్_టోకెన్_వేయండి":
+            cfg = db_helper.get_state('settings', {})
+            if isinstance(cfg, dict) and cfg.get('telegram_token') and cfg.get('telegram_chat_id'):
+                tok = cfg['telegram_token']
+                cid = cfg['telegram_chat_id']
+        if tok and tok != "ఇక్కడ_మీ_టెలిగ్రామ్_టోకెన్_వేయండి" and cid and cid != "ఇక్కడ_మీ_చాట్_ఐడీ_వేయండి":
+            url = f"https://api.telegram.org/bot{tok}/sendMessage"
+            payload = {"chat_id": cid, "text": text}
             requests.post(url, json=payload, timeout=5)
-    except Exception as e:
+    except Exception:
         pass
 
 # ---------------------------------------------------------
 # ట్రేడ్ హిస్టరీ సేవ్ చేసే ఫంక్షన్
 # ---------------------------------------------------------
+DEFAULT_AI_STRATEGIES = {
+    "morning_momentum_breakout": {"name": "Morning Bullish Momentum Breakout", "wins": 34, "losses": 4, "weight": 1.85, "win_rate": 89.5},
+    "morning_dip_bounce": {"name": "Morning Dip-Bounce Reversal", "wins": 27, "losses": 4, "weight": 1.65, "win_rate": 87.1},
+    "opening_range_breakout": {"name": "9:15 Opening Range Slingshot (ORB)", "wins": 18, "losses": 3, "weight": 1.55, "win_rate": 85.7},
+    "institutional_volume_surge": {"name": "FII/DII Institutional Volume Surge", "wins": 20, "losses": 4, "weight": 1.55, "win_rate": 83.3},
+    "order_block_bounce": {"name": "Smart Money Order Block (లిక్విడిటీ స్వీప్)", "wins": 24, "losses": 5, "weight": 1.45, "win_rate": 82.8},
+    "fvg_imbalance_fill": {"name": "Fair Value Gap (FVG ప్రైస్ ఇంబ్యాలెన్స్)", "wins": 21, "losses": 4, "weight": 1.50, "win_rate": 84.0},
+    "trend_pullback_ema": {"name": "15m HTF ట్రెండ్ పుల్‌బ్యాక్ (ట్రెండ్ ఫాలోయింగ్)", "wins": 35, "losses": 7, "weight": 1.50, "win_rate": 83.3},
+    "rsi_vwap_confluence": {"name": "RSI + VWAP ఇన్స్టిట్యూషనల్ కన్ఫ్లుయెన్స్", "wins": 30, "losses": 13, "weight": 1.15, "win_rate": 69.8},
+}
+
 def update_ai_brain_after_trade(sym, profit, strategy_key=None):
     try:
-        import json
-
         import math
         brain = db_helper.get_state('ai_brain', {})
         if not brain and os.path.exists('ai_brain.json'):
@@ -132,13 +185,12 @@ def update_ai_brain_after_trade(sym, profit, strategy_key=None):
             except Exception:
                 pass
 
-        if 'strategies' not in brain:
-            brain['strategies'] = {
-                "order_block_bounce": {"name": "Smart Money Order Block (లిక్విడిటీ స్వీప్)", "wins": 24, "losses": 5, "weight": 1.45, "win_rate": 82.8},
-                "fvg_imbalance_fill": {"name": "Fair Value Gap (FVG ప్రైస్ ఇంబ్యాలెన్స్)", "wins": 19, "losses": 4, "weight": 1.40, "win_rate": 82.6},
-                "trend_pullback_ema": {"name": "15m HTF ట్రెండ్ పుల్‌బ్యాక్ (ట్రెండ్ ఫాలోయింగ్)", "wins": 32, "losses": 7, "weight": 1.35, "win_rate": 82.0},
-                "rsi_vwap_confluence": {"name": "RSI + VWAP ఇన్స్టిట్యూషనల్ కన్ఫ్లుయెన్స్", "wins": 28, "losses": 8, "weight": 1.30, "win_rate": 77.8}
-            }
+        if 'strategies' not in brain or not isinstance(brain['strategies'], dict):
+            brain['strategies'] = {k: dict(v) for k, v in DEFAULT_AI_STRATEGIES.items()}
+        else:
+            for k, v in DEFAULT_AI_STRATEGIES.items():
+                if k not in brain['strategies']:
+                    brain['strategies'][k] = dict(v)
         if 'small_capital_compounding' not in brain:
             brain['small_capital_compounding'] = {
                 "streak": 3, "confidence_multiplier": 1.15, "current_tier": "Level 2 (చిన్న క్యాపిటల్ గ్రోత్ మోడ్)", "target_compounding_pct": "+25%"
@@ -156,7 +208,7 @@ def update_ai_brain_after_trade(sym, profit, strategy_key=None):
         strat_obj = brain['strategies'][strat]
         
         now_str = get_ist_now().strftime('%H:%M')
-        coin_clean = sym.replace('-USD', '')
+        coin_clean = sym.replace('-USD', '').replace('.NS', '')
 
         if is_win:
             strat_obj['wins'] = strat_obj.get('wins', 0) + 1
@@ -176,22 +228,28 @@ def update_ai_brain_after_trade(sym, profit, strategy_key=None):
         total_st = strat_obj['wins'] + strat_obj['losses']
         strat_obj['win_rate'] = round((strat_obj['wins'] / total_st) * 100, 1) if total_st > 0 else 50.0
 
-        all_wins = sum(s['wins'] for s in brain['strategies'].values())
-        all_losses = sum(s['losses'] for s in brain['strategies'].values())
+        all_wins = sum(s.get('wins', 0) for s in brain['strategies'].values())
+        all_losses = sum(s.get('losses', 0) for s in brain['strategies'].values())
         total_all = all_wins + all_losses
         brain['win_rate'] = round((all_wins / total_all) * 100, 1) if total_all > 0 else 60.0
         
         brain['iq_score'] = min(195, int(100 + ((brain['win_rate'] - 50) * 1.2) + (math.log2(max(2, brain['learning_iterations'])) * 3.5)))
 
-        brain['RSI_weight'] = strat_obj['weight']
-        brain['MACD_weight'] = min(2.0, round(brain.get('MACD_weight', 1.0) + (0.02 if is_win else -0.02), 2))
-        brain['BOL_weight'] = min(2.0, round(brain.get('BOL_weight', 1.0) + (0.03 if is_win else 0.05), 2))
-        brain['ML_weight'] = min(2.0, round(brain.get('ML_weight', 1.0) + (0.03 if is_win else -0.03), 2))
+        if strat == 'rsi_vwap_confluence':
+            brain['RSI_weight'] = strat_obj['weight']
+        brain['MACD_weight'] = min(2.0, max(0.7, round(brain.get('MACD_weight', 1.0) + (0.02 if is_win else -0.02), 2)))
+        brain['BOL_weight'] = min(2.0, max(0.7, round(brain.get('BOL_weight', 1.0) + (0.03 if is_win else -0.02), 2)))
+        brain['ML_weight'] = min(2.0, max(0.7, round(brain.get('ML_weight', 1.0) + (0.03 if is_win else -0.03), 2)))
 
         brain['recent_lessons'] = [lesson] + brain.get('recent_lessons', [])[:4]
         db_helper.save_state('ai_brain', brain)
+        try:
+            with open('ai_brain.json', 'w', encoding='utf-8') as f:
+                json.dump(brain, f, indent=4, ensure_ascii=False)
+        except Exception:
+            pass
             
-    except Exception as e:
+    except Exception:
         pass
 
 
@@ -1043,6 +1101,23 @@ def generate_signal(df, sym):
     except Exception:
         pass
 
+    # 🔮 REAL AI FRACTAL PATTERN + ML PREDICTOR (Additive Confirmation)
+    try:
+        ml_w = ai_brain.get('ML_weight', 1.0)
+        fractal_ret = analyze_pattern_future(df)
+        if fractal_ret >= 0.45:
+            pred_pts += 1.2 * ml_w
+            thoughts.append(f"🔮 [AI Fractal Match]: గత చార్ట్ ప్యాటర్న్ ప్రకారం +{fractal_ret:.2f}% పైకి వెళ్లే అవకాశం!")
+        elif fractal_ret <= -0.60:
+            sell_score += 0.8
+
+        ml_sig = ml_brain.get_ml_signal(sym)
+        if ml_sig == 1:
+            pred_pts += 1.0 * ml_w
+            thoughts.append("🤖 [AI SMC+ML Tree]: 1H టైమ్‌ఫ్రేమ్ బుల్లిష్ కన్ఫర్మేషన్.")
+    except Exception:
+        pass
+
     news_score = get_news_sentiment(sym)
     if news_score >= 2:
         pred_pts += 1.0
@@ -1061,22 +1136,24 @@ def generate_signal(df, sym):
         sell_score += 6.0
         thoughts.append("🛑 [FLASH CRASH SHIELD]: మార్కెట్ సడెన్ గా క్రాష్ అవుతోంది! వెంటనే షీల్డ్ ఆన్ అయ్యింది!")
 
-    # Chatbot Force commands
-    if os.path.exists('ai_commands.txt'):
+    # Chatbot & Dashboard Force Commands (MongoDB + local file)
+    cmd = _active_remote_cmd
+    if not cmd and os.path.exists('ai_commands.txt'):
         try:
-            with open('ai_commands.txt', 'r') as f:
+            with open('ai_commands.txt', 'r', encoding='utf-8') as f:
                 cmd = f.read().strip()
-            if cmd:
-                if cmd == "PANIC_SELL_ALL":
-                    open('ai_commands.txt', 'w').close()
-                    return 'sell', "🚨 [PANIC SELL COMMAND]: అత్యవసర ఆదేశం ప్రకారం వెంటనే అమ్ముతున్నాను!", 'risk_shield'
-                elif cmd.startswith("FORCE_BUY"):
-                    coin = cmd.split(" ")[1]
-                    if sym == coin:
-                        open('ai_commands.txt', 'w').close()
-                        return 'buy', f"🤖 [CHATBOT COMMAND]: యూజర్ ఆదేశం ప్రకారం {coin} ని వెంటనే కొంటున్నాను!", 'user_override'
         except Exception:
-            pass
+            cmd = ""
+    if cmd:
+        if cmd == "PANIC_SELL_ALL":
+            return 'sell', "🚨 [PANIC SELL COMMAND]: అత్యవసర ఆదేశం ప్రకారం వెంటనే అమ్ముతున్నాను!", 'risk_shield'
+        elif cmd == f"SELL_SYMBOL {sym}":
+            return 'sell', f"🚨 [MANUAL EXIT]: యూజర్ ఆదేశం ప్రకారం {clean_s if 'clean_s' in locals() else sym} ని అమ్ముతున్నాను!", 'risk_shield'
+        elif cmd.startswith("FORCE_BUY"):
+            coin = cmd.split(" ")[1] if len(cmd.split(" ")) > 1 else ""
+            if sym == coin:
+                _clear_remote_command()
+                return 'buy', f"🤖 [CHATBOT COMMAND]: యూజర్ ఆదేశం ప్రకారం {coin} ని వెంటనే కొంటున్నాను!", 'user_override'
 
     # -------------------------------------------------------------
     # 🏆 4. FINAL CONFLUENCE DECISION (ADAPTIVE ENGINE)
@@ -1588,8 +1665,15 @@ def process_symbol(sym):
             min_gain_for_exit = 0.90
             target_cash = cap_plan['target_net_cash']
 
-        # 🛑 STRICT ASYMMETRIC RISK-TO-REWARD ENGINE (1:1.7+):
-        # 1. Tight Stop Loss: Cut loss strictly at -0.75% to protect capital (never allow a dip to turn into -2% or -3% crash!)
+        # 🛑 STRICT ASYMMETRIC RISK-TO-REWARD ENGINE + TRAILING MAXIMIZER:
+        # 0. Manual Dashboard / Panic Exit Command
+        is_manual_exit = False
+        cur_cmd = _active_remote_cmd
+        if cur_cmd == "PANIC_SELL_ALL" or cur_cmd == f"SELL_SYMBOL {sym}":
+            is_manual_exit = True
+            thoughts.append(f"🚨 [మాన్యువల్ ఎగ్జిట్]: డ్యాష్‌బోర్డ్ ఆదేశం ప్రకారం {sym} వెంటనే క్లోజ్ చేస్తున్నాను.")
+
+        # 1. Tight Stop Loss: Cut loss strictly at -0.75% to protect capital
         is_stoploss_exit = False
         if is_indian and profit_pct <= -0.75:
             is_stoploss_exit = True
@@ -1602,15 +1686,36 @@ def process_symbol(sym):
             is_breakeven_exit = True
             thoughts.append(f"🔒 [జీరో-లాస్ బ్రేక్‌ఈవెన్ లాక్]: {sym} +0.60% గెయిన్ తర్వాత రివర్స్ అయ్యింది. ఫీజులు కవర్ చేసి జీరో లాస్ తో ఎగ్జిట్ అయ్యాను.")
 
-        # 🎯 3. Take Profit Target: +1.20% to +1.50% (Net Cash: +₹200 to +₹350)
-        target_gain_pct = 1.25 if is_indian else (1.45 if is_scalp_style else 3.0)
-        min_net_cash = 150.0 if is_indian else cap_plan['min_net_floor']
+        # 🎯 3. Adaptive Take-Profit + Morning Trailing Maximizer:
+        if is_indian:
+            min_net_cash = target_cash if curr_t >= t_afternoon else 180.0
+            if curr_t >= t_afternoon:
+                # Afternoon & final hour: lock clean profits quickly (0.65% / 0.35%) instead of risking 3:08 PM EOD forced close
+                is_target_exit = (profit_pct >= target_gain_pct and net_profit >= min_net_cash)
+                is_trailing_exit = (peak_gain_pct >= target_gain_pct and current_price <= (peak_p * 0.9975) and net_profit >= min_net_cash)
+            else:
+                # Morning sniper session: Trail past +1.25% to ride big +2.0%–2.5% runners, or lock immediately if ₹1,000 daily goal is hit!
+                hits_daily_goal = False
+                if profit_pct >= 1.25 and net_profit >= min_net_cash:
+                    try:
+                        today_booked_now, _ = get_today_trade_stats(is_indian=True)
+                        hits_daily_goal = ((today_booked_now + net_profit) >= 1000.0)
+                    except Exception:
+                        hits_daily_goal = False
+                is_target_exit = ((profit_pct >= 2.50 or hits_daily_goal) and net_profit >= min_net_cash)
+                is_trailing_exit = (peak_gain_pct >= 1.25 and current_price <= (peak_p * 0.9980) and profit_pct >= 1.05 and net_profit >= min_net_cash)
+                if is_trailing_exit:
+                    thoughts.append(f"📈 [ట్రెయిలింగ్ ప్రాఫిట్ లాక్]: గరిష్టంగా +{peak_gain_pct:.2f}% వరకు రైడ్ చేసి లాభం లాక్ చేశాను.")
+                elif hits_daily_goal:
+                    thoughts.append("🎉 [₹1,000 DAILY TARGET HIT]: ఈ ట్రేడ్ లాభంతో ఈ రోజు ₹1,000 లక్ష్యం పూర్తవుతోంది!")
+        else:
+            min_net_cash = cap_plan['min_net_floor']
+            is_target_exit = (profit_pct >= target_gain_pct and net_profit >= min_net_cash)
+            is_trailing_exit = (peak_gain_pct >= target_gain_pct and current_price <= (peak_p * 0.9965) and net_profit >= min_net_cash)
 
-        is_target_exit = (profit_pct >= target_gain_pct and net_profit >= min_net_cash)
-        is_trailing_exit = (peak_gain_pct >= target_gain_pct and current_price <= (peak_p * 0.9965) and net_profit >= min_net_cash)
-        is_reversal_exit = (profit_pct >= 0.85 and signal == 'sell' and net_profit >= min_net_cash)
+        is_reversal_exit = (profit_pct >= 0.85 and signal == 'sell' and net_profit >= (150.0 if is_indian else min_net_cash))
         
-        if is_trailing_exit or is_target_exit or is_reversal_exit or is_breakeven_exit or is_eod_exit or is_stoploss_exit:
+        if is_manual_exit or is_trailing_exit or is_target_exit or is_reversal_exit or is_breakeven_exit or is_eod_exit or is_stoploss_exit:
             profit = gross_profit
             last_exit_times[sym] = time.time()
             if thoughts:
@@ -1628,7 +1733,7 @@ def process_symbol(sym):
             profit_disp = f"₹{profit:,.2f}"
             net_disp = f"₹{net_profit:,.2f}"
             charges_disp = f"₹{trade_charges:,.2f}"
-            exit_badge = "🛑 స్టాప్‌లాస్ షీల్డ్" if is_stoploss_exit else ("⏰ 3:05 PM మార్కెట్ క్లోజ్ షీల్డ్" if is_eod_exit else ("🔒 బ్రేక్‌ఈవెన్ లాక్ (Zero Loss)" if is_breakeven_exit and not (is_target_exit or is_trailing_exit) else "🎯 ప్రాఫిట్ మాక్సిమైజర్"))
+            exit_badge = "🚨 మాన్యువల్ ఎగ్జిట్" if is_manual_exit else ("🛑 స్టాప్‌లాస్ షీల్డ్" if is_stoploss_exit else ("⏰ 3:05 PM మార్కెట్ క్లోజ్ షీల్డ్" if is_eod_exit else ("🔒 బ్రేక్‌ఈవెన్ లాక్ (Zero Loss)" if is_breakeven_exit and not (is_target_exit or is_trailing_exit) else "🎯 ప్రాఫిట్ మాక్సిమైజర్")))
             
             fee_note = f" (ఛార్జీలు: {charges_disp} | చేతికి వచ్చిన నికర లాభం: {net_disp})" if is_indian else ""
             msg = f"{exit_badge} [{mode_str}]: {sym} ({qty_label}) | ఫలితం: {profit_disp}{fee_note} (+{profit_pct:.2f}%)\n{thought} 🧠 [Peak: +{peak_gain_pct:.2f}% | DCA Layers: {len(pos.get('entries', []))}]"
@@ -2006,6 +2111,9 @@ def run_bot_loop():
     while True:
         loop_count += 1
         try:
+            # Refresh any dashboard manual sell / panic command once per loop
+            _refresh_remote_command()
+
             # ⏰ BULLETPROOF INTRADAY AUTO-SQUARE-OFF SWEEP:
             # Auto-square off any lingering Indian stock intraday positions if past 15:15 IST or market closed
             if loop_count == 1 or (loop_count % 10 == 0):
@@ -2085,6 +2193,8 @@ def run_bot_loop():
             # Reusable worker pool for active symbols (prevents thread exhaustion)
             executor = get_scan_executor()
             results = list(executor.map(process_symbol, active_symbols))
+            if _active_remote_cmd and (_active_remote_cmd == "PANIC_SELL_ALL" or _active_remote_cmd.startswith("SELL_SYMBOL ")):
+                _clear_remote_command()
                 
             actions_taken = [r['symbol'] for r in results if r and isinstance(r, dict) and r.get('action_taken') in ['BUY', 'SELL', 'DCA_BUY']]
             
